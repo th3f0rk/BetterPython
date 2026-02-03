@@ -1,0 +1,195 @@
+def main() -> int:
+    print("Run-Length Encoding Codec")
+    print("=========================")
+    print("")
+    
+    print("RLE Format: [count][byte][count][byte]...")
+    print("Example: 5A3B2C means AAAAABBBCC")
+    print("")
+    
+    print("Test 1: Encoding simple data")
+    let original: str = "AAAAABBBCC"
+    print("Original:", original)
+    
+    let encoded: str = ""
+    let i: int = 0
+    while i < len(original):
+        let current_char: str = str_char_at(original, i)
+        let count: int = 1
+        
+        let j: int = i + 1
+        while j < len(original):
+            let next_char: str = str_char_at(original, j)
+            if next_char == current_char:
+                count = count + 1
+                j = j + 1
+            else:
+                j = len(original)
+            
+        encoded = encoded + to_str(count) + current_char
+        i = i + count
+    
+    print("Encoded:", encoded)
+    print("")
+    
+    print("Test 2: Decoding RLE data")
+    let rle_data: str = "5A3B2C"
+    print("RLE Input:", rle_data)
+    
+    let decoded: str = ""
+    let k: int = 0
+    while k < len(rle_data):
+        let count_str: str = ""
+        
+        while k < len(rle_data):
+            let ch: str = str_char_at(rle_data, k)
+            if is_digit(ch):
+                count_str = count_str + ch
+                k = k + 1
+            else:
+                k = len(rle_data)
+        
+        if len(count_str) > 0 and k < len(rle_data):
+            let repeat_count: int = 0
+            let m: int = 0
+            while m < len(count_str):
+                let digit: str = str_char_at(count_str, m)
+                let digit_val: int = ord(digit) - 48
+                repeat_count = repeat_count * 10 + digit_val
+                m = m + 1
+            
+            let data_byte: str = str_char_at(rle_data, k)
+            k = k + 1
+            
+            let n: int = 0
+            while n < repeat_count:
+                decoded = decoded + data_byte
+                n = n + 1
+    
+    print("Decoded:", decoded)
+    print("")
+    
+    if decoded == original:
+        print("Success: Encode/decode round-trip works")
+    else:
+        print("Failed: Mismatch in round-trip")
+    
+    print("")
+    
+    print("Test 3: Binary data with base64")
+    let binary_text: str = "Hello World!"
+    print("Original text:", binary_text)
+    
+    let base64_encoded: str = base64_encode(binary_text)
+    print("Base64 encoded:", base64_encoded)
+    
+    let rle_binary: str = ""
+    let p: int = 0
+    while p < len(base64_encoded):
+        let curr: str = str_char_at(base64_encoded, p)
+        let run_count: int = 1
+        
+        let q: int = p + 1
+        while q < len(base64_encoded):
+            let nxt: str = str_char_at(base64_encoded, q)
+            if nxt == curr:
+                run_count = run_count + 1
+                q = q + 1
+            else:
+                q = len(base64_encoded)
+        
+        rle_binary = rle_binary + to_str(run_count) + curr
+        p = p + run_count
+    
+    print("RLE of base64:", rle_binary)
+    
+    let rle_decoded: str = ""
+    let r: int = 0
+    while r < len(rle_binary):
+        let num_str: str = ""
+        
+        while r < len(rle_binary):
+            let c: str = str_char_at(rle_binary, r)
+            if is_digit(c):
+                num_str = num_str + c
+                r = r + 1
+            else:
+                r = len(rle_binary)
+        
+        if len(num_str) > 0 and r < len(rle_binary):
+            let num: int = 0
+            let s: int = 0
+            while s < len(num_str):
+                let d: str = str_char_at(num_str, s)
+                num = num * 10 + (ord(d) - 48)
+                s = s + 1
+            
+            let byte_val: str = str_char_at(rle_binary, r)
+            r = r + 1
+            
+            let t: int = 0
+            while t < num:
+                rle_decoded = rle_decoded + byte_val
+                t = t + 1
+    
+    print("Decoded RLE:", rle_decoded)
+    
+    let final_decoded: str = base64_decode(rle_decoded)
+    print("Final decoded:", final_decoded)
+    
+    if final_decoded == binary_text:
+        print("Success: Binary round-trip works")
+    else:
+        print("Failed: Binary mismatch")
+    
+    print("")
+    print("Test 4: File compression simulation")
+    let test_file: str = "/tmp/rle_test.txt"
+    let test_data: str = "AAAABBBBCCCCDDDD"
+    
+    print("Writing test data:", test_data)
+    let write_ok: bool = file_write(test_file, test_data)
+    
+    if write_ok:
+        let original_size: int = file_size(test_file)
+        print("Original file size:", original_size, "bytes")
+        
+        let file_content: str = file_read(test_file)
+        
+        let compressed: str = ""
+        let v: int = 0
+        while v < len(file_content):
+            let byte: str = str_char_at(file_content, v)
+            let run: int = 1
+            
+            let w: int = v + 1
+            while w < len(file_content):
+                let next_byte: str = str_char_at(file_content, w)
+                if next_byte == byte:
+                    run = run + 1
+                    w = w + 1
+                else:
+                    w = len(file_content)
+            
+            compressed = compressed + to_str(run) + byte
+            v = v + run
+        
+        print("RLE compressed:", compressed)
+        
+        let compressed_file: str = "/tmp/rle_compressed.txt"
+        let comp_write_ok: bool = file_write(compressed_file, compressed)
+        
+        if comp_write_ok:
+            let compressed_size: int = file_size(compressed_file)
+            print("Compressed size:", compressed_size, "bytes")
+            
+            let ratio: int = (compressed_size * 100) / original_size
+            print("Compression ratio:", ratio, "%")
+            
+            file_delete(test_file)
+            file_delete(compressed_file)
+        
+    
+    print("")
+    print("RLE codec demonstration complete")
+    return 0

@@ -1,0 +1,47 @@
+def main() -> int:
+    print("=== Text Processing Demo ===")
+    print("")
+    
+    let input: str = "  THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG  "
+    print("Original text:")
+    print(input)
+    print("")
+    
+    print("Step 1: Trim whitespace")
+    let trimmed: str = str_trim(input)
+    print(trimmed)
+    print("")
+    
+    print("Step 2: Convert to lowercase")
+    let lower: str = str_lower(trimmed)
+    print(lower)
+    print("")
+    
+    print("Step 3: Replace 'the' with 'a'")
+    let replaced1: str = str_replace(lower, "the", "a")
+    print(replaced1)
+    print("")
+    
+    print("Step 4: Find 'fox'")
+    let pos: int = str_find(replaced1, "fox")
+    print("Position of 'fox':", pos)
+    print("")
+    
+    print("Step 5: Check prefix/suffix")
+    print("Starts with 'a':", starts_with(replaced1, "a"))
+    print("Ends with 'dog':", ends_with(replaced1, "dog"))
+    print("")
+    
+    print("Step 6: Encode to base64")
+    let encoded: str = base64_encode(replaced1)
+    print("Base64:", encoded)
+    print("")
+    
+    print("Step 7: Save to file")
+    let ok: bool = file_write("/tmp/processed.txt", replaced1)
+    if ok:
+        print("Saved to /tmp/processed.txt")
+    else:
+        print("Failed to save")
+    
+    return 0

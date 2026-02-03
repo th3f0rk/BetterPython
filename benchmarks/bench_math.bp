@@ -1,0 +1,53 @@
+def main() -> int:
+    print("Math Operations Benchmark")
+    print("")
+    
+    let iterations: int = 10000
+    
+    print("Benchmark 1: Basic arithmetic")
+    let start1: int = clock_ms()
+    let i: int = 0
+    let sum: int = 0
+    while i < iterations:
+        sum = sum + i * 2 - 1
+        i = i + 1
+    let end1: int = clock_ms()
+    print("Time:", end1 - start1, "ms for", iterations, "iterations")
+    print("Result:", sum)
+    print("")
+    
+    print("Benchmark 2: Power operations")
+    let start2: int = clock_ms()
+    let j: int = 0
+    let result: int = 0
+    while j < iterations:
+        result = pow(2, j % 10)
+        j = j + 1
+    let end2: int = clock_ms()
+    print("Time:", end2 - start2, "ms for", iterations, "iterations")
+    print("")
+    
+    print("Benchmark 3: Min/Max operations")
+    let start3: int = clock_ms()
+    let k: int = 0
+    let maxval: int = 0
+    while k < iterations:
+        maxval = max(maxval, k % 100)
+        k = k + 1
+    let end3: int = clock_ms()
+    print("Time:", end3 - start3, "ms for", iterations, "iterations")
+    print("Result:", maxval)
+    print("")
+    
+    print("Benchmark 4: Clamp operations")
+    let start4: int = clock_ms()
+    let m: int = 0
+    while m < iterations:
+        let clamped: int = clamp(m, 0, 100)
+        m = m + 1
+    let end4: int = clock_ms()
+    print("Time:", end4 - start4, "ms for", iterations, "iterations")
+    print("")
+    
+    print("Benchmarks complete")
+    return 0

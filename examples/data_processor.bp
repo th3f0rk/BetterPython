@@ -1,0 +1,55 @@
+def main() -> int:
+    print("Data Processing Pipeline Demo")
+    print("")
+    
+    let raw_data: str = "  JOHN DOE, 123 MAIN ST, ANYTOWN  "
+    print("Raw input:", raw_data)
+    print("")
+    
+    print("Step 1: Trim whitespace")
+    let trimmed: str = str_trim(raw_data)
+    print("Result:", trimmed)
+    print("")
+    
+    print("Step 2: Convert to proper case")
+    let lower: str = str_lower(trimmed)
+    print("Result:", lower)
+    print("")
+    
+    print("Step 3: Replace abbreviations")
+    let expanded: str = str_replace(lower, "st", "street")
+    print("Result:", expanded)
+    print("")
+    
+    print("Step 4: Validate format")
+    if str_contains(expanded, ","):
+        print("Validation: Contains comma separator - OK")
+    else:
+        print("Validation: Missing comma separator - FAIL")
+    
+    print("")
+    
+    print("Step 5: Count fields")
+    let comma_count: int = str_count(expanded, ",")
+    print("Number of commas:", comma_count)
+    print("Expected fields:", comma_count + 1)
+    print("")
+    
+    print("Step 6: Generate checksum")
+    let checksum: str = hash_md5(expanded)
+    print("Data checksum:", checksum)
+    print("")
+    
+    print("Step 7: Save processed data")
+    let output_file: str = "/tmp/processed_data.txt"
+    let success: bool = file_write(output_file, expanded)
+    if success:
+        print("Saved to:", output_file)
+        let size: int = file_size(output_file)
+        print("File size:", size, "bytes")
+    else:
+        print("Failed to save file")
+    
+    print("")
+    print("Processing pipeline complete")
+    return 0

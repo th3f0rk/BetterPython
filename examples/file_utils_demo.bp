@@ -1,0 +1,42 @@
+def main() -> int:
+    print("File Utilities Demonstration")
+    print("")
+    
+    let test_file: str = "/tmp/test_source.txt"
+    let copy_file: str = "/tmp/test_copy.txt"
+    
+    print("Test 1: File Operations")
+    print("Creating test file:", test_file)
+    let content: str = "This is a test file with multiple lines.\nLine 2\nLine 3\n"
+    let write_ok: bool = file_write(test_file, content)
+    print("Write successful:", write_ok)
+    print("")
+    
+    print("Test 2: File Size")
+    let size: int = file_size(test_file)
+    print("File size:", size, "bytes")
+    print("")
+    
+    print("Test 3: File Copy")
+    print("Copying to:", copy_file)
+    let copy_ok: bool = file_copy(test_file, copy_file)
+    print("Copy successful:", copy_ok)
+    let copy_size: int = file_size(copy_file)
+    print("Copy size:", copy_size, "bytes")
+    print("")
+    
+    print("Test 4: File Existence Check")
+    print("Source exists:", file_exists(test_file))
+    print("Copy exists:", file_exists(copy_file))
+    print("")
+    
+    print("Test 5: Cleanup")
+    let del1: bool = file_delete(test_file)
+    let del2: bool = file_delete(copy_file)
+    print("Deleted source:", del1)
+    print("Deleted copy:", del2)
+    print("Source exists after delete:", file_exists(test_file))
+    print("")
+    
+    print("All file utility tests complete")
+    return 0

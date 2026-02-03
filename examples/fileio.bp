@@ -1,0 +1,10 @@
+def main() -> int:
+    let path: str = "bp_test.txt"
+    let ok: bool = file_write(path, "hello file\n")
+    if not ok:
+        print("write failed")
+        return 1
+
+    let s: str = file_read(path)
+    print("read:", s)
+    return 0

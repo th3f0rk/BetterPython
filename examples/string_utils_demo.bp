@@ -1,0 +1,56 @@
+def main() -> int:
+    print("String Utilities Demonstration")
+    print("")
+    
+    print("Test 1: String Reverse")
+    let text: str = "Hello World"
+    let reversed: str = str_reverse(text)
+    print("Original:", text)
+    print("Reversed:", reversed)
+    print("")
+    
+    print("Test 2: String Repeat")
+    let pattern: str = "ABC"
+    let repeated: str = str_repeat(pattern, 3)
+    print("Pattern:", pattern)
+    print("Repeated 3x:", repeated)
+    print("")
+    
+    print("Test 3: String Padding")
+    let value: str = "42"
+    let padded_left: str = str_pad_left(value, 5, "0")
+    let padded_right: str = str_pad_right(value, 5, "*")
+    print("Value:", value)
+    print("Padded left:", padded_left)
+    print("Padded right:", padded_right)
+    print("")
+    
+    print("Test 4: String Contains and Count")
+    let sentence: str = "the quick brown fox jumps over the lazy dog"
+    print("Sentence:", sentence)
+    print("Contains 'fox':", str_contains(sentence, "fox"))
+    print("Contains 'cat':", str_contains(sentence, "cat"))
+    print("Count 'the':", str_count(sentence, "the"))
+    print("")
+    
+    print("Test 5: Character Access")
+    let word: str = "Hello"
+    let char: str = str_char_at(word, 1)
+    print("Word:", word)
+    print("Character at index 1:", char)
+    print("")
+    
+    print("Test 6: Validation Functions")
+    let digits: str = "12345"
+    let letters: str = "abcde"
+    let mixed: str = "abc123"
+    let spaces: str = "   "
+    
+    print("Is", digits, "all digits?", is_digit(digits))
+    print("Is", letters, "all alpha?", is_alpha(letters))
+    print("Is", mixed, "alphanumeric?", is_alnum(mixed))
+    print("Is spaces all whitespace?", is_space(spaces))
+    print("")
+    
+    print("All string utility tests complete")
+    return 0

@@ -1,0 +1,84 @@
+def main() -> int:
+    print("Running security function tests")
+    
+    let test_count: int = 0
+    let pass_count: int = 0
+    
+    print("Test: SHA256 deterministic")
+    test_count = test_count + 1
+    let h1: str = hash_sha256("test")
+    let h2: str = hash_sha256("test")
+    if h1 == h2:
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: SHA256 different for different input")
+    test_count = test_count + 1
+    let h3: str = hash_sha256("test1")
+    let h4: str = hash_sha256("test2")
+    if h3 != h4:
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: MD5 hash length")
+    test_count = test_count + 1
+    let md5: str = hash_md5("test")
+    if len(md5) == 32:
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: Secure compare matches")
+    test_count = test_count + 1
+    let s1: str = "secret"
+    let s2: str = "secret"
+    if secure_compare(s1, s2):
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: Secure compare rejects different")
+    test_count = test_count + 1
+    let s3: str = "secret1"
+    let s4: str = "secret2"
+    if not secure_compare(s3, s4):
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: Random bytes length")
+    test_count = test_count + 1
+    let rb: str = random_bytes(16)
+    if len(rb) == 16:
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: Hex conversion round-trip")
+    test_count = test_count + 1
+    let num: int = 12345
+    let hex: str = int_to_hex(num)
+    let back: int = hex_to_int(hex)
+    if back == num:
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("")
+    print("Results:", pass_count, "/", test_count, "tests passed")
+    
+    if pass_count == test_count:
+        print("All tests passed")
+        return 0
+    else:
+        print("Some tests failed")
+        return 1

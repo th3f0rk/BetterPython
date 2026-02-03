@@ -1,0 +1,53 @@
+def main() -> int:
+    print("String Operations Benchmark")
+    print("")
+    
+    let iterations: int = 1000
+    
+    print("Benchmark 1: String concatenation")
+    let start1: int = clock_ms()
+    let i: int = 0
+    let result: str = ""
+    while i < iterations:
+        result = result + "X"
+        i = i + 1
+    let end1: int = clock_ms()
+    print("Time:", end1 - start1, "ms for", iterations, "iterations")
+    print("")
+    
+    print("Benchmark 2: String hashing")
+    let start2: int = clock_ms()
+    let j: int = 0
+    while j < iterations:
+        let hash: str = hash_sha256("test string for hashing")
+        j = j + 1
+    let end2: int = clock_ms()
+    print("Time:", end2 - start2, "ms for", iterations, "iterations")
+    print("")
+    
+    print("Benchmark 3: String search")
+    let haystack: str = "the quick brown fox jumps over the lazy dog"
+    let start3: int = clock_ms()
+    let k: int = 0
+    while k < iterations:
+        let found: int = str_find(haystack, "lazy")
+        k = k + 1
+    let end3: int = clock_ms()
+    print("Time:", end3 - start3, "ms for", iterations, "iterations")
+    print("")
+    
+    print("Benchmark 4: String manipulation")
+    let text: str = "  Hello World  "
+    let start4: int = clock_ms()
+    let m: int = 0
+    while m < iterations:
+        let trimmed: str = str_trim(text)
+        let upper: str = str_upper(trimmed)
+        let lower: str = str_lower(upper)
+        m = m + 1
+    let end4: int = clock_ms()
+    print("Time:", end4 - start4, "ms for", iterations, "iterations")
+    print("")
+    
+    print("Benchmarks complete")
+    return 0

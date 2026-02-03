@@ -1,0 +1,101 @@
+def main() -> int:
+    print("Running string function tests")
+    
+    let test_count: int = 0
+    let pass_count: int = 0
+    
+    print("Test: str_reverse")
+    test_count = test_count + 1
+    if str_reverse("abc") == "cba":
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: str_repeat")
+    test_count = test_count + 1
+    if str_repeat("X", 3) == "XXX":
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: str_pad_left")
+    test_count = test_count + 1
+    if str_pad_left("5", 3, "0") == "005":
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: str_contains true")
+    test_count = test_count + 1
+    if str_contains("hello world", "world"):
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: str_contains false")
+    test_count = test_count + 1
+    if not str_contains("hello", "xyz"):
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: str_count")
+    test_count = test_count + 1
+    if str_count("aaa", "aa") == 1:
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: is_digit true")
+    test_count = test_count + 1
+    if is_digit("123"):
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: is_digit false")
+    test_count = test_count + 1
+    if not is_digit("12a"):
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: is_alpha")
+    test_count = test_count + 1
+    if is_alpha("abc"):
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: is_alnum")
+    test_count = test_count + 1
+    if is_alnum("abc123"):
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("Test: str_char_at")
+    test_count = test_count + 1
+    if str_char_at("hello", 1) == "e":
+        print("  PASS")
+        pass_count = pass_count + 1
+    else:
+        print("  FAIL")
+    
+    print("")
+    print("Results:", pass_count, "/", test_count, "tests passed")
+    
+    if pass_count == test_count:
+        return 0
+    else:
+        return 1

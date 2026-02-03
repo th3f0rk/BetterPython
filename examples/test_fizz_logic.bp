@@ -1,0 +1,18 @@
+def main() -> int:
+    let i: int = 1
+    let mod3: int = i % 3
+    let mod5: int = i % 5
+    print("i=", i, "mod3=", mod3, "mod5=", mod5)
+    if mod3 == 0 and mod5 == 0:
+        print("FizzBuzz")
+    else:
+        print("in else branch")
+        if mod3 == 0:
+            print("Fizz")
+        else:
+            print("in second else")
+            if mod5 == 0:
+                print("Buzz")
+            else:
+                print(i)
+    return 0

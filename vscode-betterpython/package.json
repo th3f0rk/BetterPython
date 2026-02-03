@@ -1,0 +1,157 @@
+{
+  "name": "betterpython",
+  "displayName": "BetterPython",
+  "description": "Language support for BetterPython with LSP, syntax highlighting, and debugging",
+  "version": "1.0.0",
+  "publisher": "betterpython",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/betterpython/betterpython"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Debuggers",
+    "Formatters",
+    "Linters"
+  ],
+  "keywords": [
+    "betterpython",
+    "bp",
+    "language"
+  ],
+  "activationEvents": [
+    "onLanguage:betterpython"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [{
+      "id": "betterpython",
+      "aliases": ["BetterPython", "betterpython", "BP"],
+      "extensions": [".bp"],
+      "configuration": "./language-configuration.json",
+      "icon": {
+        "light": "./icons/file-icon.svg",
+        "dark": "./icons/file-icon.svg"
+      }
+    }],
+    "grammars": [{
+      "language": "betterpython",
+      "scopeName": "source.betterpython",
+      "path": "./syntaxes/betterpython.tmLanguage.json"
+    }],
+    "commands": [{
+      "command": "betterpython.run",
+      "title": "BetterPython: Run File",
+      "icon": "$(play)"
+    }, {
+      "command": "betterpython.compile",
+      "title": "BetterPython: Compile File",
+      "icon": "$(gear)"
+    }, {
+      "command": "betterpython.format",
+      "title": "BetterPython: Format Document"
+    }, {
+      "command": "betterpython.lint",
+      "title": "BetterPython: Lint File"
+    }, {
+      "command": "betterpython.newProject",
+      "title": "BetterPython: New Project"
+    }],
+    "menus": {
+      "editor/title/run": [{
+        "when": "resourceLangId == betterpython",
+        "command": "betterpython.run",
+        "group": "navigation@1"
+      }],
+      "editor/context": [{
+        "when": "resourceLangId == betterpython",
+        "command": "betterpython.run",
+        "group": "navigation"
+      }, {
+        "when": "resourceLangId == betterpython",
+        "command": "betterpython.format",
+        "group": "1_modification"
+      }]
+    },
+    "keybindings": [{
+      "command": "betterpython.run",
+      "key": "f5",
+      "when": "editorTextFocus && resourceLangId == betterpython"
+    }, {
+      "command": "betterpython.format",
+      "key": "shift+alt+f",
+      "when": "editorTextFocus && resourceLangId == betterpython"
+    }],
+    "configuration": {
+      "type": "object",
+      "title": "BetterPython",
+      "properties": {
+        "betterpython.compilerPath": {
+          "type": "string",
+          "default": "bpcc",
+          "description": "Path to bpcc compiler executable"
+        },
+        "betterpython.vmPath": {
+          "type": "string",
+          "default": "bpvm",
+          "description": "Path to bpvm virtual machine executable"
+        },
+        "betterpython.lspPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to LSP server (auto-detected if empty)"
+        },
+        "betterpython.formatterPath": {
+          "type": "string",
+          "default": "bpfmt",
+          "description": "Path to formatter executable"
+        },
+        "betterpython.linterPath": {
+          "type": "string",
+          "default": "bplint",
+          "description": "Path to linter executable"
+        },
+        "betterpython.formatOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Format files on save"
+        },
+        "betterpython.lintOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run linter on save"
+        },
+        "betterpython.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "LSP server trace level"
+        }
+      }
+    },
+    "snippets": [{
+      "language": "betterpython",
+      "path": "./snippets/betterpython.json"
+    }]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.75.0",
+    "@vscode/vsce": "^2.19.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^8.1.0"
+  }
+}

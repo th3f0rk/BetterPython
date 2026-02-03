@@ -1,0 +1,111 @@
+def main() -> int:
+    print("===================================")
+    print("BetterPython Feature Showcase")
+    print("Divine Edition")
+    print("===================================")
+    print("")
+    
+    print("1. Basic Arithmetic")
+    let a: int = 10
+    let b: int = 3
+    print("  a =", a, "b =", b)
+    print("  a + b =", a + b)
+    print("  a - b =", a - b)
+    print("  a * b =", a * b)
+    print("  a / b =", a / b)
+    print("  a % b =", a % b)
+    print("")
+    
+    print("2. String Operations")
+    let hello: str = "Hello"
+    let world: str = "World"
+    print("  Concatenation:", hello + " " + world)
+    print("  Length:", len(hello))
+    print("  Substring:", substr(hello, 0, 4))
+    print("")
+    
+    print("3. Boolean Logic (FIXED!)")
+    let x: int = 7
+    print("  x =", x)
+    print("  x > 5 AND x < 10:", x > 5 and x < 10)
+    print("  x < 5 OR x > 10:", x < 5 or x > 10)
+    let is_seven: bool = x == 7
+    print("  NOT (x == 7):", not is_seven)
+    print("")
+    
+    print("4. Elif Chains (NEW!)")
+    let score: int = 85
+    print("  Score:", score)
+    if score >= 90:
+        print("  Grade: A")
+    elif score >= 80:
+        print("  Grade: B")
+    elif score >= 70:
+        print("  Grade: C")
+    elif score >= 60:
+        print("  Grade: D")
+    else:
+        print("  Grade: F")
+    print("")
+    
+    print("5. Loops")
+    print("  Counting to 5:")
+    let i: int = 1
+    while i <= 5:
+        print("   ", i)
+        i = i + 1
+    print("")
+    
+    print("6. FizzBuzz (1-20)")
+    let n: int = 1
+    while n <= 20:
+        if n % 15 == 0:
+            print("  ", n, "FizzBuzz")
+        elif n % 3 == 0:
+            print("  ", n, "Fizz")
+        elif n % 5 == 0:
+            print("  ", n, "Buzz")
+        else:
+            print("  ", n)
+        n = n + 1
+    print("")
+    
+    print("7. Character/ASCII Conversion")
+    print("  chr(65) =", chr(65))
+    print("  chr(72) =", chr(72))
+    print("  ord('A') =", ord("A"))
+    print("  ord('Z') =", ord("Z"))
+    print("")
+    
+    print("8. Base64 Encoding")
+    let message: str = "Divine!"
+    print("  Original:", message)
+    let encoded: str = base64_encode(message)
+    print("  Encoded:", encoded)
+    let decoded: str = base64_decode(encoded)
+    print("  Decoded:", decoded)
+    print("")
+    
+    print("9. Type Conversions")
+    let num: int = 42
+    let flag: bool = true
+    print("  to_str(42) =", to_str(num))
+    print("  to_str(true) =", to_str(flag))
+    print("")
+    
+    print("10. Time Measurement")
+    let start: int = clock_ms()
+    let count: int = 0
+    while count < 1000:
+        count = count + 1
+    let end: int = clock_ms()
+    print("  Counted to 1000 in", end - start, "ms")
+    print("")
+    
+    print("===================================")
+    print("All features demonstrated!")
+    print("BetterPython is ready to serve")
+    print("the Divine Singularity.")
+    print("===================================")
+    
+    return 0
