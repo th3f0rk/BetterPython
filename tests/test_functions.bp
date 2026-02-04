@@ -1,0 +1,30 @@
+# Test user-defined function calls and recursion
+
+def add(a: int, b: int) -> int:
+    return a + b
+
+def factorial(n: int) -> int:
+    if n <= 1:
+        return 1
+    return n * factorial(n - 1)
+
+def fibonacci(n: int) -> int:
+    if n <= 1:
+        return n
+    return fibonacci(n - 1) + fibonacci(n - 2)
+
+def greet(name: str) -> str:
+    return "Hello, " + name + "!"
+
+def main() -> int:
+    let sum: int = add(3, 5)
+    print(sum)
+    let fact5: int = factorial(5)
+    print(fact5)
+    let fib10: int = fibonacci(10)
+    print(fib10)
+    let greeting: str = greet("World")
+    print(greeting)
+    let nested: int = add(factorial(3), fibonacci(5))
+    print(nested)
+    return 0

@@ -191,6 +191,18 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "is_nan") == 0) return BI_IS_NAN;
     if (strcmp(name, "is_inf") == 0) return BI_IS_INF;
 
+    // Array operations
+    if (strcmp(name, "array_len") == 0) return BI_ARRAY_LEN;
+    if (strcmp(name, "array_push") == 0) return BI_ARRAY_PUSH;
+    if (strcmp(name, "array_pop") == 0) return BI_ARRAY_POP;
+
+    // Map operations
+    if (strcmp(name, "map_len") == 0) return BI_MAP_LEN;
+    if (strcmp(name, "map_keys") == 0) return BI_MAP_KEYS;
+    if (strcmp(name, "map_values") == 0) return BI_MAP_VALUES;
+    if (strcmp(name, "map_has_key") == 0) return BI_MAP_HAS_KEY;
+    if (strcmp(name, "map_delete") == 0) return BI_MAP_DELETE;
+
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
 }
@@ -199,6 +211,17 @@ static void emit_jump_patch(Buf *b, size_t at, uint32_t target) {
     memcpy(b->data + at, &target, 4);
 }
 
+// Loop context for break/continue tracking
+typedef struct {
+    size_t *break_patches;    // Locations of break jumps to patch
+    size_t break_count;
+    size_t break_cap;
+    size_t *continue_patches; // Locations of continue jumps to patch
+    size_t continue_count;
+    size_t continue_cap;
+    uint32_t continue_target; // Address to jump to for continue (0 = needs patching)
+} LoopCtx;
+
 typedef struct {
     Buf code;
     uint32_t *str_ids;
@@ -206,7 +229,69 @@ typedef struct {
     size_t str_cap;
     Locals locals;
     StrPool *pool;
+
+    // Loop context stack for break/continue
+    LoopCtx *loops;
+    size_t loop_count;
+    size_t loop_cap;
 } FnEmit;
+
+static void push_loop(FnEmit *fe, uint32_t continue_target) {
+    if (fe->loop_count + 1 > fe->loop_cap) {
+        fe->loop_cap = fe->loop_cap ? fe->loop_cap * 2 : 8;
+        fe->loops = bp_xrealloc(fe->loops, fe->loop_cap * sizeof(*fe->loops));
+    }
+    fe->loops[fe->loop_count].break_patches = NULL;
+    fe->loops[fe->loop_count].break_count = 0;
+    fe->loops[fe->loop_count].break_cap = 0;
+    fe->loops[fe->loop_count].continue_patches = NULL;
+    fe->loops[fe->loop_count].continue_count = 0;
+    fe->loops[fe->loop_count].continue_cap = 0;
+    fe->loops[fe->loop_count].continue_target = continue_target;
+    fe->loop_count++;
+}
+
+static void add_break_patch(FnEmit *fe, size_t at) {
+    if (fe->loop_count == 0) bp_fatal("break outside of loop");
+    LoopCtx *ctx = &fe->loops[fe->loop_count - 1];
+    if (ctx->break_count + 1 > ctx->break_cap) {
+        ctx->break_cap = ctx->break_cap ? ctx->break_cap * 2 : 8;
+        ctx->break_patches = bp_xrealloc(ctx->break_patches, ctx->break_cap * sizeof(size_t));
+    }
+    ctx->break_patches[ctx->break_count++] = at;
+}
+
+static void add_continue_patch(FnEmit *fe, size_t at) {
+    if (fe->loop_count == 0) bp_fatal("continue outside of loop");
+    LoopCtx *ctx = &fe->loops[fe->loop_count - 1];
+    if (ctx->continue_count + 1 > ctx->continue_cap) {
+        ctx->continue_cap = ctx->continue_cap ? ctx->continue_cap * 2 : 8;
+        ctx->continue_patches = bp_xrealloc(ctx->continue_patches, ctx->continue_cap * sizeof(size_t));
+    }
+    ctx->continue_patches[ctx->continue_count++] = at;
+}
+
+static void patch_breaks(FnEmit *fe, uint32_t target) {
+    if (fe->loop_count == 0) return;
+    LoopCtx *ctx = &fe->loops[fe->loop_count - 1];
+    for (size_t i = 0; i < ctx->break_count; i++) {
+        emit_jump_patch(&fe->code, ctx->break_patches[i], target);
+    }
+    free(ctx->break_patches);
+}
+
+static void patch_continues(FnEmit *fe, uint32_t target) {
+    if (fe->loop_count == 0) return;
+    LoopCtx *ctx = &fe->loops[fe->loop_count - 1];
+    for (size_t i = 0; i < ctx->continue_count; i++) {
+        emit_jump_patch(&fe->code, ctx->continue_patches[i], target);
+    }
+    free(ctx->continue_patches);
+}
+
+static void pop_loop(FnEmit *fe) {
+    if (fe->loop_count > 0) fe->loop_count--;
+}
 
 static void fn_add_strref(FnEmit *fe, uint32_t sid) {
     if (fe->str_len + 1 > fe->str_cap) {
@@ -242,6 +327,20 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             buf_u16(&fe->code, slot);
             return;
         }
+        case ST_INDEX_ASSIGN: {
+            // container[key] = value
+            // Stack order: container, key, value
+            emit_expr(fe, s->as.idx_assign.array);
+            emit_expr(fe, s->as.idx_assign.index);
+            emit_expr(fe, s->as.idx_assign.value);
+            // Check if container is a map or array based on inferred type
+            if (s->as.idx_assign.array->inferred.kind == TY_MAP) {
+                buf_u8(&fe->code, OP_MAP_SET);
+            } else {
+                buf_u8(&fe->code, OP_ARRAY_SET);
+            }
+            return;
+        }
         case ST_EXPR: {
             emit_expr(fe, s->as.expr.expr);
             buf_u8(&fe->code, OP_POP);
@@ -274,6 +373,7 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
         }
         case ST_WHILE: {
             uint32_t loop_start = (uint32_t)fe->code.len;
+            push_loop(fe, loop_start);
 
             emit_expr(fe, s->as.wh.cond);
             buf_u8(&fe->code, OP_JMP_IF_FALSE);
@@ -285,7 +385,97 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             buf_u8(&fe->code, OP_JMP);
             buf_u32(&fe->code, loop_start);
 
-            emit_jump_patch(&fe->code, jmp_out_at, (uint32_t)fe->code.len);
+            uint32_t loop_end = (uint32_t)fe->code.len;
+            emit_jump_patch(&fe->code, jmp_out_at, loop_end);
+            patch_breaks(fe, loop_end);
+            pop_loop(fe);
+            return;
+        }
+        case ST_FOR: {
+            // for i in range(start, end):
+            //   body
+            // becomes:
+            //   let i = start
+            //   while i < end:
+            //     body
+            //     i = i + 1
+
+            // Emit: let i = start
+            emit_expr(fe, s->as.forr.start);
+            uint16_t iter_slot = locals_add(&fe->locals, s->as.forr.var);
+            buf_u8(&fe->code, OP_STORE_LOCAL);
+            buf_u16(&fe->code, iter_slot);
+
+            // loop_start: condition check (i < end)
+            uint32_t loop_start = (uint32_t)fe->code.len;
+
+            // For continue, we want to jump to increment, not condition
+            // So continue_target will be set to increment position later
+            // For now, we'll use a simpler approach: continue jumps to increment
+            // We'll compute continue_target after we know where increment is
+
+            // Load i
+            buf_u8(&fe->code, OP_LOAD_LOCAL);
+            buf_u16(&fe->code, iter_slot);
+            // Emit end expression
+            emit_expr(fe, s->as.forr.end);
+            // i < end
+            buf_u8(&fe->code, OP_LT);
+            // Jump if false (i >= end)
+            buf_u8(&fe->code, OP_JMP_IF_FALSE);
+            size_t jmp_out_at = fe->code.len;
+            buf_u32(&fe->code, 0);
+
+            // Push loop context with continue pointing to increment
+            // We'll patch this later
+            push_loop(fe, 0);  // placeholder, will be patched
+
+            // Emit body
+            for (size_t i = 0; i < s->as.forr.body_len; i++) emit_stmt(fe, s->as.forr.body[i]);
+
+            // continue_target: increment section
+            uint32_t continue_pos = (uint32_t)fe->code.len;
+            // Patch any continue statements that were deferred
+            patch_continues(fe, continue_pos);
+
+            // i = i + 1
+            buf_u8(&fe->code, OP_LOAD_LOCAL);
+            buf_u16(&fe->code, iter_slot);
+            buf_u8(&fe->code, OP_CONST_I64);
+            buf_i64(&fe->code, 1);
+            buf_u8(&fe->code, OP_ADD_I64);
+            buf_u8(&fe->code, OP_STORE_LOCAL);
+            buf_u16(&fe->code, iter_slot);
+
+            // Jump back to condition
+            buf_u8(&fe->code, OP_JMP);
+            buf_u32(&fe->code, loop_start);
+
+            // loop_end
+            uint32_t loop_end = (uint32_t)fe->code.len;
+            emit_jump_patch(&fe->code, jmp_out_at, loop_end);
+            patch_breaks(fe, loop_end);
+            pop_loop(fe);
+            return;
+        }
+        case ST_BREAK: {
+            if (fe->loop_count == 0) bp_fatal("break outside of loop");
+            buf_u8(&fe->code, OP_JMP);
+            add_break_patch(fe, fe->code.len);
+            buf_u32(&fe->code, 0);  // Will be patched when loop ends
+            return;
+        }
+        case ST_CONTINUE: {
+            if (fe->loop_count == 0) bp_fatal("continue outside of loop");
+            buf_u8(&fe->code, OP_JMP);
+            // If continue_target is 0, we need to patch later (for loops)
+            // Otherwise use the known target (while loops)
+            if (fe->loops[fe->loop_count - 1].continue_target == 0) {
+                add_continue_patch(fe, fe->code.len);
+                buf_u32(&fe->code, 0);
+            } else {
+                buf_u32(&fe->code, fe->loops[fe->loop_count - 1].continue_target);
+            }
             return;
         }
         default: break;
@@ -322,10 +512,19 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
         }
         case EX_CALL: {
             for (size_t i = 0; i < e->as.call.argc; i++) emit_expr(fe, e->as.call.args[i]);
-            BuiltinId id = builtin_id(e->as.call.name);
-            buf_u8(&fe->code, OP_CALL_BUILTIN);
-            buf_u16(&fe->code, (uint16_t)id);
-            buf_u16(&fe->code, (uint16_t)e->as.call.argc);
+
+            if (e->as.call.fn_index < 0) {
+                // Builtin function call
+                BuiltinId id = builtin_id(e->as.call.name);
+                buf_u8(&fe->code, OP_CALL_BUILTIN);
+                buf_u16(&fe->code, (uint16_t)id);
+                buf_u16(&fe->code, (uint16_t)e->as.call.argc);
+            } else {
+                // User-defined function call
+                buf_u8(&fe->code, OP_CALL);
+                buf_u32(&fe->code, (uint32_t)e->as.call.fn_index);
+                buf_u16(&fe->code, (uint16_t)e->as.call.argc);
+            }
             return;
         }
         case EX_UNARY: {
@@ -384,6 +583,37 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
                 default: break;
             }
             bp_fatal("unsupported binary op");
+            return;
+        }
+        case EX_ARRAY: {
+            // Push all elements onto stack, then OP_ARRAY_NEW with count
+            for (size_t i = 0; i < e->as.array.len; i++) {
+                emit_expr(fe, e->as.array.elements[i]);
+            }
+            buf_u8(&fe->code, OP_ARRAY_NEW);
+            buf_u32(&fe->code, (uint32_t)e->as.array.len);
+            return;
+        }
+        case EX_INDEX: {
+            // Push container, push key, then appropriate GET opcode
+            emit_expr(fe, e->as.index.array);
+            emit_expr(fe, e->as.index.index);
+            // Check if container is a map or array based on inferred type
+            if (e->as.index.array->inferred.kind == TY_MAP) {
+                buf_u8(&fe->code, OP_MAP_GET);
+            } else {
+                buf_u8(&fe->code, OP_ARRAY_GET);
+            }
+            return;
+        }
+        case EX_MAP: {
+            // Push all key-value pairs onto stack, then OP_MAP_NEW with count
+            for (size_t i = 0; i < e->as.map.len; i++) {
+                emit_expr(fe, e->as.map.keys[i]);
+                emit_expr(fe, e->as.map.values[i]);
+            }
+            buf_u8(&fe->code, OP_MAP_NEW);
+            buf_u32(&fe->code, (uint32_t)e->as.map.len);
             return;
         }
         default: break;

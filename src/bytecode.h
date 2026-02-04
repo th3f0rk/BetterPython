@@ -45,6 +45,16 @@ typedef enum {
 
     OP_JMP,
     OP_JMP_IF_FALSE,
+    OP_BREAK,
+    OP_CONTINUE,
+
+    OP_ARRAY_NEW,       // Create new array with N elements from stack
+    OP_ARRAY_GET,       // Get element at index
+    OP_ARRAY_SET,       // Set element at index
+
+    OP_MAP_NEW,         // Create new map with N key-value pairs from stack
+    OP_MAP_GET,         // Get value by key
+    OP_MAP_SET,         // Set value by key
 
     OP_CALL_BUILTIN,
     OP_CALL,
@@ -164,7 +174,19 @@ typedef enum {
 
     // Float utilities
     BI_IS_NAN,
-    BI_IS_INF
+    BI_IS_INF,
+
+    // Array operations
+    BI_ARRAY_LEN,
+    BI_ARRAY_PUSH,
+    BI_ARRAY_POP,
+
+    // Map operations
+    BI_MAP_LEN,
+    BI_MAP_KEYS,
+    BI_MAP_VALUES,
+    BI_MAP_HAS_KEY,
+    BI_MAP_DELETE
 } BuiltinId;
 
 typedef struct {

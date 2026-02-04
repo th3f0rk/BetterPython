@@ -27,6 +27,44 @@ static void skip_newlines(Parser *p) {
 }
 
 static Type parse_type(Parser *p) {
+    // Handle array types: [int], [str], etc.
+    if (p->cur.kind == TOK_LBRACKET) {
+        next(p);  // consume '['
+        Type elem = parse_type(p);  // recursively parse element type
+        expect(p, TOK_RBRACKET, "expected ']' after array element type");
+        Type t;
+        t.kind = TY_ARRAY;
+        t.elem_type = type_new(elem.kind);
+        t.key_type = NULL;
+        if (elem.kind == TY_ARRAY && elem.elem_type) {
+            t.elem_type->elem_type = elem.elem_type;
+        }
+        return t;
+    }
+
+    // Handle map types: {str: int}, {str: [int]}, etc.
+    if (p->cur.kind == TOK_LBRACE) {
+        next(p);  // consume '{'
+        Type key = parse_type(p);  // parse key type
+        expect(p, TOK_COLON, "expected ':' in map type");
+        Type value = parse_type(p);  // parse value type
+        expect(p, TOK_RBRACE, "expected '}' after map value type");
+        Type t;
+        t.kind = TY_MAP;
+        t.key_type = type_new(key.kind);
+        if (key.kind == TY_ARRAY && key.elem_type) {
+            t.key_type->elem_type = key.elem_type;
+        }
+        t.elem_type = type_new(value.kind);
+        if (value.kind == TY_ARRAY && value.elem_type) {
+            t.elem_type->elem_type = value.elem_type;
+        } else if (value.kind == TY_MAP) {
+            t.elem_type->key_type = value.key_type;
+            t.elem_type->elem_type = value.elem_type;
+        }
+        return t;
+    }
+
     if (p->cur.kind != TOK_IDENT) bp_fatal("expected type name at %zu:%zu", p->cur.line, p->cur.col);
     const char *s = p->cur.lexeme;
     size_t n = p->cur.len;
@@ -52,26 +90,71 @@ static char *dup_lexeme(Token t) {
 
 static Expr *parse_expr(Parser *p);
 
+static Expr *parse_postfix(Parser *p, Expr *primary);
+
 static Expr *parse_primary(Parser *p) {
     size_t line = p->cur.line;
     if (p->cur.kind == TOK_INT) {
         int64_t v = p->cur.int_val;
         next(p);
-        return expr_new_int(v, line);
+        return parse_postfix(p, expr_new_int(v, line));
     }
     if (p->cur.kind == TOK_FLOAT) {
         double v = p->cur.float_val;
         next(p);
-        return expr_new_float(v, line);
+        return parse_postfix(p, expr_new_float(v, line));
     }
     if (p->cur.kind == TOK_STR) {
         char *s = bp_xstrdup(p->cur.str_val);
         free((void *)p->cur.str_val);
         next(p);
-        return expr_new_str(s, line);
+        return parse_postfix(p, expr_new_str(s, line));
     }
-    if (accept(p, TOK_TRUE)) return expr_new_bool(true, line);
-    if (accept(p, TOK_FALSE)) return expr_new_bool(false, line);
+    if (accept(p, TOK_TRUE)) return parse_postfix(p, expr_new_bool(true, line));
+    if (accept(p, TOK_FALSE)) return parse_postfix(p, expr_new_bool(false, line));
+
+    // Array literal: [expr, expr, ...]
+    if (p->cur.kind == TOK_LBRACKET) {
+        next(p);  // consume '['
+        Expr **elements = NULL;
+        size_t len = 0, cap = 0;
+        if (p->cur.kind != TOK_RBRACKET) {
+            for (;;) {
+                Expr *e = parse_expr(p);
+                if (len + 1 > cap) { cap = cap ? cap * 2 : 8; elements = bp_xrealloc(elements, cap * sizeof(*elements)); }
+                elements[len++] = e;
+                if (!accept(p, TOK_COMMA)) break;
+            }
+        }
+        expect(p, TOK_RBRACKET, "expected ']' after array elements");
+        return parse_postfix(p, expr_new_array(elements, len, line));
+    }
+
+    // Map literal: {key: value, key2: value2, ...}
+    if (p->cur.kind == TOK_LBRACE) {
+        next(p);  // consume '{'
+        Expr **keys = NULL;
+        Expr **values = NULL;
+        size_t len = 0, cap = 0;
+        if (p->cur.kind != TOK_RBRACE) {
+            for (;;) {
+                Expr *key = parse_expr(p);
+                expect(p, TOK_COLON, "expected ':' after map key");
+                Expr *value = parse_expr(p);
+                if (len + 1 > cap) {
+                    cap = cap ? cap * 2 : 8;
+                    keys = bp_xrealloc(keys, cap * sizeof(*keys));
+                    values = bp_xrealloc(values, cap * sizeof(*values));
+                }
+                keys[len] = key;
+                values[len] = value;
+                len++;
+                if (!accept(p, TOK_COMMA)) break;
+            }
+        }
+        expect(p, TOK_RBRACE, "expected '}' after map elements");
+        return parse_postfix(p, expr_new_map(keys, values, len, line));
+    }
 
     if (p->cur.kind == TOK_IDENT) {
         Token id = p->cur;
@@ -88,19 +171,31 @@ static Expr *parse_primary(Parser *p) {
                 }
             }
             expect(p, TOK_RPAREN, "expected ')'");
-            return expr_new_call(dup_lexeme(id), args, argc, line);
+            return parse_postfix(p, expr_new_call(dup_lexeme(id), args, argc, line));
         }
-        return expr_new_var(dup_lexeme(id), line);
+        return parse_postfix(p, expr_new_var(dup_lexeme(id), line));
     }
 
     if (accept(p, TOK_LPAREN)) {
         Expr *e = parse_expr(p);
         expect(p, TOK_RPAREN, "expected ')'");
-        return e;
+        return parse_postfix(p, e);
     }
 
     bp_fatal("unexpected token %s at %zu:%zu", token_kind_name(p->cur.kind), p->cur.line, p->cur.col);
     return NULL;
+}
+
+// Handle postfix operations like array indexing: arr[i][j]
+static Expr *parse_postfix(Parser *p, Expr *primary) {
+    while (p->cur.kind == TOK_LBRACKET) {
+        size_t line = p->cur.line;
+        next(p);  // consume '['
+        Expr *index = parse_expr(p);
+        expect(p, TOK_RBRACKET, "expected ']' after index");
+        primary = expr_new_index(primary, index, line);
+    }
+    return primary;
 }
 
 static Expr *parse_unary(Parser *p) {
@@ -226,11 +321,49 @@ static Stmt *parse_while(Parser *p) {
     return stmt_new_while(cond, body, body_len, line);
 }
 
+// Parses: for <var> in range(<start>, <end>):
+static Stmt *parse_for(Parser *p) {
+    size_t line = p->cur.line;
+    expect(p, TOK_FOR, "expected 'for'");
+
+    if (p->cur.kind != TOK_IDENT) bp_fatal("expected identifier after 'for' at %zu:%zu", p->cur.line, p->cur.col);
+    char *var = dup_lexeme(p->cur);
+    next(p);
+
+    expect(p, TOK_IN, "expected 'in' after for variable");
+
+    // Expect 'range' identifier
+    if (p->cur.kind != TOK_IDENT || p->cur.len != 5 || memcmp(p->cur.lexeme, "range", 5) != 0) {
+        bp_fatal("expected 'range' after 'in' at %zu:%zu", p->cur.line, p->cur.col);
+    }
+    next(p);
+
+    expect(p, TOK_LPAREN, "expected '(' after range");
+    Expr *start = parse_expr(p);
+    expect(p, TOK_COMMA, "expected ',' in range");
+    Expr *end = parse_expr(p);
+    expect(p, TOK_RPAREN, "expected ')' after range");
+    expect(p, TOK_COLON, "expected ':' after for header");
+
+    size_t body_len = 0;
+    Stmt **body = parse_block(p, &body_len);
+    return stmt_new_for(var, start, end, body, body_len, line);
+}
+
 static Stmt *parse_stmt(Parser *p) {
     size_t line = p->cur.line;
 
     if (p->cur.kind == TOK_IF) return parse_if(p);
     if (p->cur.kind == TOK_WHILE) return parse_while(p);
+    if (p->cur.kind == TOK_FOR) return parse_for(p);
+
+    if (accept(p, TOK_BREAK)) {
+        return stmt_new_break(line);
+    }
+
+    if (accept(p, TOK_CONTINUE)) {
+        return stmt_new_continue(line);
+    }
 
     if (accept(p, TOK_RETURN)) {
         if (p->cur.kind == TOK_NEWLINE) return stmt_new_return(NULL, line);
@@ -253,10 +386,30 @@ static Stmt *parse_stmt(Parser *p) {
         Token id = p->cur;
         Token peek = lexer_peek(p->lx);
         if (peek.kind == TOK_ASSIGN) {
+            // Simple variable assignment: x = value
             next(p);
             expect(p, TOK_ASSIGN, "expected '='");
             Expr *v = parse_expr(p);
             return stmt_new_assign(dup_lexeme(id), v, line);
+        }
+        if (peek.kind == TOK_LBRACKET) {
+            // Possible array index assignment: arr[idx] = value
+            // Parse the full expression first
+            Expr *arr_expr = parse_expr(p);
+            if (arr_expr->kind == EX_INDEX && p->cur.kind == TOK_ASSIGN) {
+                next(p);  // consume '='
+                Expr *v = parse_expr(p);
+                // Extract array and index from the index expression
+                Expr *arr = arr_expr->as.index.array;
+                Expr *idx = arr_expr->as.index.index;
+                // Clear the container so we don't double-free
+                arr_expr->as.index.array = NULL;
+                arr_expr->as.index.index = NULL;
+                free(arr_expr);  // Free just the wrapper expression
+                return stmt_new_index_assign(arr, idx, v, line);
+            }
+            // Not an assignment, treat as expression statement
+            return stmt_new_expr(arr_expr, line);
         }
     }
 

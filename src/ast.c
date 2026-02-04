@@ -1,6 +1,31 @@
 #include "ast.h"
 #include "util.h"
 #include <string.h>
+#include <stdlib.h>
+
+Type *type_new(TypeKind kind) {
+    Type *t = bp_xmalloc(sizeof(*t));
+    t->kind = kind;
+    t->elem_type = NULL;
+    t->key_type = NULL;
+    return t;
+}
+
+Type *type_array(Type *elem) {
+    Type *t = bp_xmalloc(sizeof(*t));
+    t->kind = TY_ARRAY;
+    t->elem_type = elem;
+    t->key_type = NULL;
+    return t;
+}
+
+Type *type_map(Type *key, Type *value) {
+    Type *t = bp_xmalloc(sizeof(*t));
+    t->kind = TY_MAP;
+    t->key_type = key;
+    t->elem_type = value;
+    return t;
+}
 
 static Expr *expr_alloc(ExprKind k, size_t line) {
     Expr *e = bp_xmalloc(sizeof(*e));
@@ -46,6 +71,7 @@ Expr *expr_new_call(char *name, Expr **args, size_t argc, size_t line) {
     e->as.call.name = name;
     e->as.call.args = args;
     e->as.call.argc = argc;
+    e->as.call.fn_index = -1;  // -1 = builtin, set by type checker for user functions
     return e;
 }
 
@@ -61,6 +87,28 @@ Expr *expr_new_binary(BinaryOp op, Expr *lhs, Expr *rhs, size_t line) {
     e->as.binary.op = op;
     e->as.binary.lhs = lhs;
     e->as.binary.rhs = rhs;
+    return e;
+}
+
+Expr *expr_new_array(Expr **elements, size_t len, size_t line) {
+    Expr *e = expr_alloc(EX_ARRAY, line);
+    e->as.array.elements = elements;
+    e->as.array.len = len;
+    return e;
+}
+
+Expr *expr_new_index(Expr *array, Expr *index, size_t line) {
+    Expr *e = expr_alloc(EX_INDEX, line);
+    e->as.index.array = array;
+    e->as.index.index = index;
+    return e;
+}
+
+Expr *expr_new_map(Expr **keys, Expr **values, size_t len, size_t line) {
+    Expr *e = expr_alloc(EX_MAP, line);
+    e->as.map.keys = keys;
+    e->as.map.values = values;
+    e->as.map.len = len;
     return e;
 }
 
@@ -84,6 +132,14 @@ Stmt *stmt_new_assign(char *name, Expr *value, size_t line) {
     Stmt *s = stmt_alloc(ST_ASSIGN, line);
     s->as.assign.name = name;
     s->as.assign.value = value;
+    return s;
+}
+
+Stmt *stmt_new_index_assign(Expr *array, Expr *index, Expr *value, size_t line) {
+    Stmt *s = stmt_alloc(ST_INDEX_ASSIGN, line);
+    s->as.idx_assign.array = array;
+    s->as.idx_assign.index = index;
+    s->as.idx_assign.value = value;
     return s;
 }
 
@@ -111,6 +167,26 @@ Stmt *stmt_new_while(Expr *cond, Stmt **body, size_t body_len, size_t line) {
     return s;
 }
 
+Stmt *stmt_new_for(char *var, Expr *start, Expr *end, Stmt **body, size_t body_len, size_t line) {
+    Stmt *s = stmt_alloc(ST_FOR, line);
+    s->as.forr.var = var;
+    s->as.forr.start = start;
+    s->as.forr.end = end;
+    s->as.forr.body = body;
+    s->as.forr.body_len = body_len;
+    return s;
+}
+
+Stmt *stmt_new_break(size_t line) {
+    Stmt *s = stmt_alloc(ST_BREAK, line);
+    return s;
+}
+
+Stmt *stmt_new_continue(size_t line) {
+    Stmt *s = stmt_alloc(ST_CONTINUE, line);
+    return s;
+}
+
 Stmt *stmt_new_return(Expr *value, size_t line) {
     Stmt *s = stmt_alloc(ST_RETURN, line);
     s->as.ret.value = value;
@@ -129,6 +205,22 @@ static void expr_free(Expr *e) {
             break;
         case EX_UNARY: expr_free(e->as.unary.rhs); break;
         case EX_BINARY: expr_free(e->as.binary.lhs); expr_free(e->as.binary.rhs); break;
+        case EX_ARRAY:
+            for (size_t i = 0; i < e->as.array.len; i++) expr_free(e->as.array.elements[i]);
+            free(e->as.array.elements);
+            break;
+        case EX_INDEX:
+            expr_free(e->as.index.array);
+            expr_free(e->as.index.index);
+            break;
+        case EX_MAP:
+            for (size_t i = 0; i < e->as.map.len; i++) {
+                expr_free(e->as.map.keys[i]);
+                expr_free(e->as.map.values[i]);
+            }
+            free(e->as.map.keys);
+            free(e->as.map.values);
+            break;
         default: break;
     }
     free(e);
@@ -145,6 +237,11 @@ static void stmt_free(Stmt *s) {
             free(s->as.assign.name);
             expr_free(s->as.assign.value);
             break;
+        case ST_INDEX_ASSIGN:
+            expr_free(s->as.idx_assign.array);
+            expr_free(s->as.idx_assign.index);
+            expr_free(s->as.idx_assign.value);
+            break;
         case ST_EXPR:
             expr_free(s->as.expr.expr);
             break;
@@ -159,6 +256,16 @@ static void stmt_free(Stmt *s) {
             expr_free(s->as.wh.cond);
             for (size_t i = 0; i < s->as.wh.body_len; i++) stmt_free(s->as.wh.body[i]);
             free(s->as.wh.body);
+            break;
+        case ST_FOR:
+            free(s->as.forr.var);
+            expr_free(s->as.forr.start);
+            expr_free(s->as.forr.end);
+            for (size_t i = 0; i < s->as.forr.body_len; i++) stmt_free(s->as.forr.body[i]);
+            free(s->as.forr.body);
+            break;
+        case ST_BREAK:
+        case ST_CONTINUE:
             break;
         case ST_RETURN:
             expr_free(s->as.ret.value);

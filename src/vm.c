@@ -3,6 +3,16 @@
 #include "util.h"
 #include <string.h>
 
+#define MAX_CALL_FRAMES 256
+
+// Call frame for function calls
+typedef struct {
+    BpFunc *fn;
+    const uint8_t *code;
+    size_t ip;
+    size_t locals_base;  // Index into locals array where this frame's locals start
+} CallFrame;
+
 static uint16_t rd_u16(const uint8_t *code, size_t *ip) {
     uint16_t x;
     memcpy(&x, code + *ip, 2);
@@ -88,17 +98,45 @@ static Value op_gte(Value a, Value b) { return v_bool(a.as.i >= b.as.i); }
 
 int vm_run(Vm *vm) {
     if (vm->mod.entry >= vm->mod.fn_len) bp_fatal("no entry function");
+
+    // Call frame stack
+    CallFrame frames[MAX_CALL_FRAMES];
+    size_t frame_count = 0;
+
+    // Calculate total locals needed across all frames (generous initial size)
+    size_t total_locals_cap = 1024;
+    vm->locals = bp_xmalloc(total_locals_cap * sizeof(Value));
+    for (size_t i = 0; i < total_locals_cap; i++) vm->locals[i] = v_null();
+
+    // Set up initial frame for main()
     BpFunc *fn = &vm->mod.funcs[vm->mod.entry];
+    frames[frame_count].fn = fn;
+    frames[frame_count].code = fn->code;
+    frames[frame_count].ip = 0;
+    frames[frame_count].locals_base = 0;
+    frame_count++;
 
     vm->localc = fn->locals;
-    vm->locals = bp_xmalloc(vm->localc * sizeof(Value));
-    for (size_t i = 0; i < vm->localc; i++) vm->locals[i] = v_null();
+    size_t locals_top = fn->locals;  // Next available local slot
 
-    // preload string constants referenced by this function are loaded lazily via OP_CONST_STR using module pool id.
     const uint8_t *code = fn->code;
     size_t ip = 0;
+    size_t locals_base = 0;
 
-    while (ip < fn->code_len) {
+    while (ip < fn->code_len || frame_count > 0) {
+        if (ip >= fn->code_len) {
+            // Implicit return at end of function
+            if (frame_count == 1) break;  // End of main
+            frame_count--;
+            fn = frames[frame_count - 1].fn;
+            code = frames[frame_count - 1].code;
+            ip = frames[frame_count - 1].ip;
+            locals_base = frames[frame_count - 1].locals_base;
+            locals_top = locals_base + fn->locals;
+            push(vm, v_int(0));  // Default return value
+            continue;
+        }
+
         uint8_t op = code[ip++];
         switch (op) {
             case OP_CONST_I64: {
@@ -131,14 +169,16 @@ int vm_run(Vm *vm) {
                 break;
             case OP_LOAD_LOCAL: {
                 uint16_t slot = rd_u16(code, &ip);
-                if (slot >= vm->localc) bp_fatal("bad local");
-                push(vm, vm->locals[slot]);
+                size_t abs_slot = locals_base + slot;
+                if (abs_slot >= total_locals_cap) bp_fatal("bad local");
+                push(vm, vm->locals[abs_slot]);
                 break;
             }
             case OP_STORE_LOCAL: {
                 uint16_t slot = rd_u16(code, &ip);
-                if (slot >= vm->localc) bp_fatal("bad local");
-                vm->locals[slot] = pop(vm);
+                size_t abs_slot = locals_base + slot;
+                if (abs_slot >= total_locals_cap) bp_fatal("bad local");
+                vm->locals[abs_slot] = pop(vm);
                 break;
             }
             case OP_ADD_I64: {
@@ -288,17 +328,157 @@ int vm_run(Vm *vm) {
                 push(vm, r);
                 break;
             }
+            case OP_CALL: {
+                uint32_t fn_idx = rd_u32(code, &ip);
+                uint16_t argc = rd_u16(code, &ip);
+
+                if (fn_idx >= vm->mod.fn_len) bp_fatal("bad function index");
+                if (frame_count >= MAX_CALL_FRAMES) bp_fatal("call stack overflow");
+
+                BpFunc *callee = &vm->mod.funcs[fn_idx];
+
+                // Save current frame
+                frames[frame_count - 1].ip = ip;
+
+                // Set up new frame
+                size_t new_locals_base = locals_top;
+
+                // Ensure we have enough locals space
+                size_t needed = new_locals_base + callee->locals;
+                if (needed > total_locals_cap) {
+                    while (needed > total_locals_cap) total_locals_cap *= 2;
+                    vm->locals = bp_xrealloc(vm->locals, total_locals_cap * sizeof(Value));
+                    for (size_t i = locals_top; i < total_locals_cap; i++) vm->locals[i] = v_null();
+                }
+
+                // Copy arguments to new frame's locals (parameters are first locals)
+                if (argc > vm->sp) bp_fatal("bad argc");
+                for (uint16_t i = 0; i < argc; i++) {
+                    vm->locals[new_locals_base + i] = vm->stack[vm->sp - argc + i];
+                }
+                vm->sp -= argc;
+
+                // Initialize remaining locals to null
+                for (size_t i = argc; i < callee->locals; i++) {
+                    vm->locals[new_locals_base + i] = v_null();
+                }
+
+                // Push new frame
+                frames[frame_count].fn = callee;
+                frames[frame_count].code = callee->code;
+                frames[frame_count].ip = 0;
+                frames[frame_count].locals_base = new_locals_base;
+                frame_count++;
+
+                // Switch to new function
+                fn = callee;
+                code = callee->code;
+                ip = 0;
+                locals_base = new_locals_base;
+                locals_top = new_locals_base + callee->locals;
+                break;
+            }
             case OP_RET: {
                 Value rv = pop(vm);
-                (void)rv;
-                if (vm->exiting) return vm->exit_code;
-                return (int)rv.as.i;
+
+                if (frame_count == 1) {
+                    // Returning from main
+                    if (vm->exiting) return vm->exit_code;
+                    return (int)rv.as.i;
+                }
+
+                // Pop frame and return to caller
+                frame_count--;
+                fn = frames[frame_count - 1].fn;
+                code = frames[frame_count - 1].code;
+                ip = frames[frame_count - 1].ip;
+                locals_base = frames[frame_count - 1].locals_base;
+                locals_top = locals_base + fn->locals;
+
+                // Push return value
+                push(vm, rv);
+                break;
+            }
+            case OP_ARRAY_NEW: {
+                uint32_t count = rd_u32(code, &ip);
+                BpArray *arr = gc_new_array(&vm->gc, count > 0 ? count : 8);
+                // Pop elements from stack (they're in order, so first pushed = first element)
+                // But we pop in reverse order, so collect then reverse
+                if (count > vm->sp) bp_fatal("stack underflow in array creation");
+                for (uint32_t i = 0; i < count; i++) {
+                    // Pop from top of stack
+                    Value v = vm->stack[vm->sp - count + i];
+                    gc_array_push(&vm->gc, arr, v);
+                }
+                vm->sp -= count;
+                push(vm, v_array(arr));
+                break;
+            }
+            case OP_ARRAY_GET: {
+                Value idx_val = pop(vm);
+                Value arr_val = pop(vm);
+                if (arr_val.type != VAL_ARRAY) bp_fatal("cannot index non-array");
+                if (idx_val.type != VAL_INT) bp_fatal("array index must be int");
+                int64_t idx = idx_val.as.i;
+                if (idx < 0) idx = (int64_t)arr_val.as.arr->len + idx;  // Support negative indexing
+                if (idx < 0 || (size_t)idx >= arr_val.as.arr->len) {
+                    bp_fatal("array index out of bounds: %lld (len %zu)", (long long)idx, arr_val.as.arr->len);
+                }
+                push(vm, gc_array_get(arr_val.as.arr, (size_t)idx));
+                break;
+            }
+            case OP_ARRAY_SET: {
+                Value val = pop(vm);
+                Value idx_val = pop(vm);
+                Value arr_val = pop(vm);
+                if (arr_val.type != VAL_ARRAY) bp_fatal("cannot index non-array");
+                if (idx_val.type != VAL_INT) bp_fatal("array index must be int");
+                int64_t idx = idx_val.as.i;
+                if (idx < 0) idx = (int64_t)arr_val.as.arr->len + idx;
+                if (idx < 0 || (size_t)idx >= arr_val.as.arr->len) {
+                    bp_fatal("array index out of bounds: %lld (len %zu)", (long long)idx, arr_val.as.arr->len);
+                }
+                gc_array_set(arr_val.as.arr, (size_t)idx, val);
+                break;
+            }
+            case OP_MAP_NEW: {
+                uint32_t count = rd_u32(code, &ip);
+                BpMap *map = gc_new_map(&vm->gc, count > 0 ? count * 2 : 16);
+                // Stack has key, value, key, value, ... (in order)
+                // Pop them all and insert into map
+                if (count * 2 > vm->sp) bp_fatal("stack underflow in map creation");
+                for (uint32_t i = 0; i < count; i++) {
+                    Value key = vm->stack[vm->sp - count * 2 + i * 2];
+                    Value val = vm->stack[vm->sp - count * 2 + i * 2 + 1];
+                    gc_map_set(&vm->gc, map, key, val);
+                }
+                vm->sp -= count * 2;
+                push(vm, v_map(map));
+                break;
+            }
+            case OP_MAP_GET: {
+                Value key = pop(vm);
+                Value map_val = pop(vm);
+                if (map_val.type != VAL_MAP) bp_fatal("cannot index non-map");
+                bool found;
+                Value result = gc_map_get(map_val.as.map, key, &found);
+                if (!found) bp_fatal("key not found in map");
+                push(vm, result);
+                break;
+            }
+            case OP_MAP_SET: {
+                Value val = pop(vm);
+                Value key = pop(vm);
+                Value map_val = pop(vm);
+                if (map_val.type != VAL_MAP) bp_fatal("cannot index non-map");
+                gc_map_set(&vm->gc, map_val.as.map, key, val);
+                break;
             }
             default:
                 bp_fatal("unknown opcode %u", op);
         }
 
-        if (vm->gc.bytes > vm->gc.next_gc) gc_collect(&vm->gc, vm->stack, vm->sp, vm->locals, vm->localc);
+        if (vm->gc.bytes > vm->gc.next_gc) gc_collect(&vm->gc, vm->stack, vm->sp, vm->locals, locals_top);
         if (vm->exiting) return vm->exit_code;
     }
 

@@ -8,18 +8,28 @@ typedef enum {
     TY_FLOAT,
     TY_BOOL,
     TY_STR,
-    TY_VOID
+    TY_VOID,
+    TY_ARRAY,
+    TY_MAP
 } TypeKind;
 
-typedef struct {
-    TypeKind kind;
-} Type;
+typedef struct Type Type;
 
-static inline Type type_int(void)   { Type t = {TY_INT}; return t; }
-static inline Type type_float(void) { Type t = {TY_FLOAT}; return t; }
-static inline Type type_bool(void)  { Type t = {TY_BOOL}; return t; }
-static inline Type type_str(void)   { Type t = {TY_STR}; return t; }
-static inline Type type_void(void)  { Type t = {TY_VOID}; return t; }
+struct Type {
+    TypeKind kind;
+    Type *elem_type;  // For TY_ARRAY: the element type, for TY_MAP: the value type
+    Type *key_type;   // For TY_MAP: the key type
+};
+
+static inline Type type_int(void)   { Type t = {TY_INT, NULL, NULL}; return t; }
+static inline Type type_float(void) { Type t = {TY_FLOAT, NULL, NULL}; return t; }
+static inline Type type_bool(void)  { Type t = {TY_BOOL, NULL, NULL}; return t; }
+static inline Type type_str(void)   { Type t = {TY_STR, NULL, NULL}; return t; }
+static inline Type type_void(void)  { Type t = {TY_VOID, NULL, NULL}; return t; }
+
+Type *type_new(TypeKind kind);
+Type *type_array(Type *elem);
+Type *type_map(Type *key, Type *value);
 
 typedef enum {
     EX_INT,
@@ -29,7 +39,10 @@ typedef enum {
     EX_VAR,
     EX_CALL,
     EX_UNARY,
-    EX_BINARY
+    EX_BINARY,
+    EX_ARRAY,
+    EX_INDEX,
+    EX_MAP
 } ExprKind;
 
 typedef enum {
@@ -68,6 +81,7 @@ struct Expr {
             char *name;
             Expr **args;
             size_t argc;
+            int fn_index;  // -1 = builtin, >= 0 = user function index
         } call;
 
         struct {
@@ -80,15 +94,35 @@ struct Expr {
             Expr *lhs;
             Expr *rhs;
         } binary;
+
+        struct {
+            Expr **elements;
+            size_t len;
+        } array;
+
+        struct {
+            Expr *array;
+            Expr *index;
+        } index;
+
+        struct {
+            Expr **keys;
+            Expr **values;
+            size_t len;
+        } map;
     } as;
 };
 
 typedef enum {
     ST_LET,
     ST_ASSIGN,
+    ST_INDEX_ASSIGN,
     ST_EXPR,
     ST_IF,
     ST_WHILE,
+    ST_FOR,
+    ST_BREAK,
+    ST_CONTINUE,
     ST_RETURN
 } StmtKind;
 
@@ -109,6 +143,12 @@ struct Stmt {
         } assign;
 
         struct {
+            Expr *array;
+            Expr *index;
+            Expr *value;
+        } idx_assign;
+
+        struct {
             Expr *expr;
         } expr;
 
@@ -125,6 +165,14 @@ struct Stmt {
             Stmt **body;
             size_t body_len;
         } wh;
+
+        struct {
+            char *var;      // iterator variable name
+            Expr *start;    // range start
+            Expr *end;      // range end
+            Stmt **body;
+            size_t body_len;
+        } forr;
 
         struct {
             Expr *value; // may be NULL
@@ -155,12 +203,19 @@ Expr *expr_new_var(char *name, size_t line);
 Expr *expr_new_call(char *name, Expr **args, size_t argc, size_t line);
 Expr *expr_new_unary(UnaryOp op, Expr *rhs, size_t line);
 Expr *expr_new_binary(BinaryOp op, Expr *lhs, Expr *rhs, size_t line);
+Expr *expr_new_array(Expr **elements, size_t len, size_t line);
+Expr *expr_new_index(Expr *array, Expr *index, size_t line);
+Expr *expr_new_map(Expr **keys, Expr **values, size_t len, size_t line);
 
 Stmt *stmt_new_let(char *name, Type t, Expr *init, size_t line);
 Stmt *stmt_new_assign(char *name, Expr *value, size_t line);
+Stmt *stmt_new_index_assign(Expr *array, Expr *index, Expr *value, size_t line);
 Stmt *stmt_new_expr(Expr *e, size_t line);
 Stmt *stmt_new_if(Expr *cond, Stmt **then_s, size_t then_len, Stmt **else_s, size_t else_len, size_t line);
 Stmt *stmt_new_while(Expr *cond, Stmt **body, size_t body_len, size_t line);
+Stmt *stmt_new_for(char *var, Expr *start, Expr *end, Stmt **body, size_t body_len, size_t line);
+Stmt *stmt_new_break(size_t line);
+Stmt *stmt_new_continue(size_t line);
 Stmt *stmt_new_return(Expr *value, size_t line);
 
 void module_free(Module *m);
