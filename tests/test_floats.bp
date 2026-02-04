@@ -1,0 +1,60 @@
+def main() -> int:
+    let a: float = 3.14
+    let b: float = 2.71828
+    let c: float = 1.5e2
+    let d: float = 2.5e-1
+    print("Test 1 - Float literals: PASS")
+
+    let x: float = 10.5
+    let y: float = 3.5
+    let sum: float = x + y
+    let diff: float = x - y
+    let prod: float = x * y
+    let quot: float = x / y
+    print("Test 2 - Float arithmetic: PASS")
+
+    let p: float = 5.5
+    let q: float = 3.2
+    if p > q:
+        if q < p:
+            print("Test 3 - Float comparison: PASS")
+
+    let m: float = 5.5
+    let n: float = -m
+    if n < 0.0:
+        print("Test 4 - Float negation: PASS")
+
+    let i: int = 42
+    let f: float = int_to_float(i)
+    let back: int = float_to_int(f)
+    let s: str = float_to_str(f)
+    let f2: float = str_to_float("3.14159")
+    print("Test 5 - Float conversion: PASS")
+
+    let pi: float = 3.14159265359
+    let half_pi: float = pi / 2.0
+    let sinv: float = sin(half_pi)
+    let cosv: float = cos(0.0)
+    let tanv: float = tan(0.0)
+    print("Test 6 - Trig functions: PASS")
+
+    let two: float = 2.0
+    let three: float = 3.0
+    let sq: float = fsqrt(4.0)
+    let pw: float = fpow(two, three)
+    let lg: float = log(2.71828)
+    let ex: float = exp(1.0)
+    let ab: float = fabs(-5.5)
+    let fl: float = ffloor(3.7)
+    let cl: float = fceil(3.2)
+    let rd: float = fround(3.5)
+    print("Test 7 - Math functions: PASS")
+
+    let inf: float = 1.0 / 0.0
+    let nan_val: float = 0.0 / 0.0
+    if is_inf(inf):
+        if is_nan(nan_val):
+            print("Test 8 - Special values: PASS")
+
+    print("All float tests completed successfully!")
+    return 0

@@ -892,18 +892,44 @@ static Value bi_str_count(Value *args, uint16_t argc) {
 
 static Value bi_int_to_hex(Value *args, uint16_t argc, Gc *gc) {
     if (argc != 1 || args[0].type != VAL_INT) bp_fatal("int_to_hex expects (int)");
-    
+
+    int64_t val = args[0].as.i;
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%llx", (long long)val);
+    return v_str(gc_new_str(gc, buf, strlen(buf)));
+}
+
+static Value bi_str_char_at(Value *args, uint16_t argc, Gc *gc) {
     if (argc != 2 || args[0].type != VAL_STR || args[1].type != VAL_INT)
         bp_fatal("str_char_at expects (str, int)");
     BpStr *s = args[0].as.s;
     int64_t index = args[1].as.i;
-    
+
     if (index < 0 || (size_t)index >= s->len) {
         return v_str(gc_new_str(gc, "", 0));
     }
-    
+
     char buf[2] = {s->data[index], '\0'};
     return v_str(gc_new_str(gc, buf, 1));
+}
+
+static Value bi_hex_to_int(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_STR) bp_fatal("hex_to_int expects (str)");
+
+    BpStr *s = args[0].as.s;
+    int64_t result = 0;
+
+    for (size_t i = 0; i < s->len; i++) {
+        char c = s->data[i];
+        int digit = 0;
+        if (c >= '0' && c <= '9') digit = c - '0';
+        else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+        else bp_fatal("hex_to_int: invalid hex character");
+        result = result * 16 + digit;
+    }
+
+    return v_int(result);
 }
 
 static Value bi_str_index_of(Value *args, uint16_t argc) {
@@ -914,31 +940,173 @@ static Value bi_str_index_of(Value *args, uint16_t argc) {
 
 /* Validation functions */
 static Value bi_is_digit(Value *args, uint16_t argc) {
-    if (argc != 2 || args[0].type != VAL_STR || args[1].type != VAL_STR)
-        bp_fatal("file_copy expects (str, str)");
-    
-    FILE *src = fopen(args[0].as.s->data, "rb");
-    if (!src) return v_bool(false);
-    
-    FILE *dst = fopen(args[1].as.s->data, "wb");
-    if (!dst) {
-        fclose(src);
-        return v_bool(false);
+    if (argc != 1 || args[0].type != VAL_STR) bp_fatal("is_digit expects (str)");
+
+    BpStr *s = args[0].as.s;
+    if (s->len == 0) return v_bool(false);
+
+    for (size_t i = 0; i < s->len; i++) {
+        if (!isdigit((unsigned char)s->data[i])) return v_bool(false);
     }
-    
-    char buffer[8192];
-    size_t n;
-    while ((n = fread(buffer, 1, sizeof(buffer), src)) > 0) {
-        if (fwrite(buffer, 1, n, dst) != n) {
-            fclose(src);
-            fclose(dst);
-            return v_bool(false);
-        }
-    }
-    
-    fclose(src);
-    fclose(dst);
     return v_bool(true);
+}
+
+static Value bi_is_alpha(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_STR) bp_fatal("is_alpha expects (str)");
+
+    BpStr *s = args[0].as.s;
+    if (s->len == 0) return v_bool(false);
+
+    for (size_t i = 0; i < s->len; i++) {
+        if (!isalpha((unsigned char)s->data[i])) return v_bool(false);
+    }
+    return v_bool(true);
+}
+
+static Value bi_is_alnum(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_STR) bp_fatal("is_alnum expects (str)");
+
+    BpStr *s = args[0].as.s;
+    if (s->len == 0) return v_bool(false);
+
+    for (size_t i = 0; i < s->len; i++) {
+        if (!isalnum((unsigned char)s->data[i])) return v_bool(false);
+    }
+    return v_bool(true);
+}
+
+static Value bi_is_space(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_STR) bp_fatal("is_space expects (str)");
+
+    BpStr *s = args[0].as.s;
+    if (s->len == 0) return v_bool(false);
+
+    for (size_t i = 0; i < s->len; i++) {
+        if (!isspace((unsigned char)s->data[i])) return v_bool(false);
+    }
+    return v_bool(true);
+}
+
+/* Float math functions */
+static Value bi_sin(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("sin expects (float)");
+    return v_float(sin(args[0].as.f));
+}
+
+static Value bi_cos(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("cos expects (float)");
+    return v_float(cos(args[0].as.f));
+}
+
+static Value bi_tan(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("tan expects (float)");
+    return v_float(tan(args[0].as.f));
+}
+
+static Value bi_asin(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("asin expects (float)");
+    return v_float(asin(args[0].as.f));
+}
+
+static Value bi_acos(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("acos expects (float)");
+    return v_float(acos(args[0].as.f));
+}
+
+static Value bi_atan(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("atan expects (float)");
+    return v_float(atan(args[0].as.f));
+}
+
+static Value bi_atan2(Value *args, uint16_t argc) {
+    if (argc != 2 || args[0].type != VAL_FLOAT || args[1].type != VAL_FLOAT)
+        bp_fatal("atan2 expects (float, float)");
+    return v_float(atan2(args[0].as.f, args[1].as.f));
+}
+
+static Value bi_log_f(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("log expects (float)");
+    return v_float(log(args[0].as.f));
+}
+
+static Value bi_log10_f(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("log10 expects (float)");
+    return v_float(log10(args[0].as.f));
+}
+
+static Value bi_log2_f(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("log2 expects (float)");
+    return v_float(log2(args[0].as.f));
+}
+
+static Value bi_exp_f(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("exp expects (float)");
+    return v_float(exp(args[0].as.f));
+}
+
+static Value bi_fabs(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("fabs expects (float)");
+    return v_float(fabs(args[0].as.f));
+}
+
+static Value bi_ffloor(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("ffloor expects (float)");
+    return v_float(floor(args[0].as.f));
+}
+
+static Value bi_fceil(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("fceil expects (float)");
+    return v_float(ceil(args[0].as.f));
+}
+
+static Value bi_fround(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("fround expects (float)");
+    return v_float(round(args[0].as.f));
+}
+
+static Value bi_fsqrt(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("fsqrt expects (float)");
+    return v_float(sqrt(args[0].as.f));
+}
+
+static Value bi_fpow(Value *args, uint16_t argc) {
+    if (argc != 2 || args[0].type != VAL_FLOAT || args[1].type != VAL_FLOAT)
+        bp_fatal("fpow expects (float, float)");
+    return v_float(pow(args[0].as.f, args[1].as.f));
+}
+
+/* Float conversion functions */
+static Value bi_int_to_float(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_INT) bp_fatal("int_to_float expects (int)");
+    return v_float((double)args[0].as.i);
+}
+
+static Value bi_float_to_int(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("float_to_int expects (float)");
+    return v_int((int64_t)args[0].as.f);
+}
+
+static Value bi_float_to_str(Value *args, uint16_t argc, Gc *gc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("float_to_str expects (float)");
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%g", args[0].as.f);
+    return v_str(gc_new_str(gc, buf, strlen(buf)));
+}
+
+static Value bi_str_to_float(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_STR) bp_fatal("str_to_float expects (str)");
+    return v_float(strtod(args[0].as.s->data, NULL));
+}
+
+/* Float utilities */
+static Value bi_is_nan(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("is_nan expects (float)");
+    return v_bool(isnan(args[0].as.f));
+}
+
+static Value bi_is_inf(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_FLOAT) bp_fatal("is_inf expects (float)");
+    return v_bool(isinf(args[0].as.f));
 }
 
 Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_code, bool *exiting) {
@@ -1021,7 +1189,36 @@ Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_co
         // File utilities
         case BI_FILE_SIZE: return bi_file_size(args, argc);
         case BI_FILE_COPY: return bi_file_copy(args, argc);
-        
+
+        // Float math functions
+        case BI_SIN: return bi_sin(args, argc);
+        case BI_COS: return bi_cos(args, argc);
+        case BI_TAN: return bi_tan(args, argc);
+        case BI_ASIN: return bi_asin(args, argc);
+        case BI_ACOS: return bi_acos(args, argc);
+        case BI_ATAN: return bi_atan(args, argc);
+        case BI_ATAN2: return bi_atan2(args, argc);
+        case BI_LOG: return bi_log_f(args, argc);
+        case BI_LOG10: return bi_log10_f(args, argc);
+        case BI_LOG2: return bi_log2_f(args, argc);
+        case BI_EXP: return bi_exp_f(args, argc);
+        case BI_FABS: return bi_fabs(args, argc);
+        case BI_FFLOOR: return bi_ffloor(args, argc);
+        case BI_FCEIL: return bi_fceil(args, argc);
+        case BI_FROUND: return bi_fround(args, argc);
+        case BI_FSQRT: return bi_fsqrt(args, argc);
+        case BI_FPOW: return bi_fpow(args, argc);
+
+        // Float conversion functions
+        case BI_INT_TO_FLOAT: return bi_int_to_float(args, argc);
+        case BI_FLOAT_TO_INT: return bi_float_to_int(args, argc);
+        case BI_FLOAT_TO_STR: return bi_float_to_str(args, argc, gc);
+        case BI_STR_TO_FLOAT: return bi_str_to_float(args, argc);
+
+        // Float utilities
+        case BI_IS_NAN: return bi_is_nan(args, argc);
+        case BI_IS_INF: return bi_is_inf(args, argc);
+
         default: break;
     }
     bp_fatal("unknown builtin id");

@@ -4,6 +4,7 @@
 
 typedef enum {
     OP_CONST_I64 = 1,
+    OP_CONST_F64,
     OP_CONST_BOOL,
     OP_CONST_STR,
     OP_POP,
@@ -17,6 +18,12 @@ typedef enum {
     OP_DIV_I64,
     OP_MOD_I64,
 
+    OP_ADD_F64,
+    OP_SUB_F64,
+    OP_MUL_F64,
+    OP_DIV_F64,
+    OP_NEG_F64,
+
     OP_ADD_STR,
 
     OP_EQ,
@@ -25,6 +32,11 @@ typedef enum {
     OP_LTE,
     OP_GT,
     OP_GTE,
+
+    OP_LT_F64,
+    OP_LTE_F64,
+    OP_GT_F64,
+    OP_GTE_F64,
 
     OP_NOT,
     OP_NEG,
@@ -123,7 +135,36 @@ typedef enum {
     
     // File utilities
     BI_FILE_SIZE,
-    BI_FILE_COPY
+    BI_FILE_COPY,
+
+    // Float math functions
+    BI_SIN,
+    BI_COS,
+    BI_TAN,
+    BI_ASIN,
+    BI_ACOS,
+    BI_ATAN,
+    BI_ATAN2,
+    BI_LOG,
+    BI_LOG10,
+    BI_LOG2,
+    BI_EXP,
+    BI_FABS,
+    BI_FFLOOR,
+    BI_FCEIL,
+    BI_FROUND,
+    BI_FSQRT,
+    BI_FPOW,
+
+    // Float conversion functions
+    BI_INT_TO_FLOAT,
+    BI_FLOAT_TO_INT,
+    BI_FLOAT_TO_STR,
+    BI_STR_TO_FLOAT,
+
+    // Float utilities
+    BI_IS_NAN,
+    BI_IS_INF
 } BuiltinId;
 
 typedef struct {

@@ -1,6 +1,7 @@
 #include "lexer.h"
 #include "util.h"
 #include <string.h>
+#include <stdlib.h>
 #include <ctype.h>
 
 struct Lexer {
@@ -25,6 +26,7 @@ static Token tok_make(TokenKind k, const char *lex, size_t len, size_t line, siz
     t.lexeme = lex;
     t.len = len;
     t.int_val = 0;
+    t.float_val = 0.0;
     t.str_val = NULL;
     t.line = line;
     t.col = col;
@@ -93,14 +95,51 @@ static Token lex_string(Lexer *lx) {
 static Token lex_number(Lexer *lx) {
     size_t line = lx->line, col = lx->col;
     size_t start = lx->i;
-    int64_t v = 0;
+    bool is_float = false;
 
+    // Parse integer part
     while (isdigit((unsigned char)cur(lx))) {
-        v = v * 10 + (cur(lx) - '0');
         adv(lx);
     }
-    Token t = tok_make(TOK_INT, lx->src + start, lx->i - start, line, col);
-    t.int_val = v;
+
+    // Check for decimal point
+    if (cur(lx) == '.' && isdigit((unsigned char)nxt(lx))) {
+        is_float = true;
+        adv(lx); // consume '.'
+        while (isdigit((unsigned char)cur(lx))) {
+            adv(lx);
+        }
+    }
+
+    // Check for exponent (scientific notation)
+    if (cur(lx) == 'e' || cur(lx) == 'E') {
+        is_float = true;
+        adv(lx); // consume 'e' or 'E'
+        if (cur(lx) == '+' || cur(lx) == '-') {
+            adv(lx); // consume sign
+        }
+        if (!isdigit((unsigned char)cur(lx))) {
+            bp_fatal("invalid number: expected digit after exponent at %zu:%zu", line, col);
+        }
+        while (isdigit((unsigned char)cur(lx))) {
+            adv(lx);
+        }
+    }
+
+    size_t len = lx->i - start;
+    char *num_str = bp_xmalloc(len + 1);
+    memcpy(num_str, lx->src + start, len);
+    num_str[len] = '\0';
+
+    Token t;
+    if (is_float) {
+        t = tok_make(TOK_FLOAT, lx->src + start, len, line, col);
+        t.float_val = strtod(num_str, NULL);
+    } else {
+        t = tok_make(TOK_INT, lx->src + start, len, line, col);
+        t.int_val = strtoll(num_str, NULL, 10);
+    }
+    free(num_str);
     return t;
 }
 
@@ -249,6 +288,7 @@ const char *token_kind_name(TokenKind k) {
         case TOK_DEDENT: return "DEDENT";
         case TOK_IDENT: return "IDENT";
         case TOK_INT: return "INT";
+        case TOK_FLOAT: return "FLOAT";
         case TOK_STR: return "STR";
         case TOK_LET: return "LET";
         case TOK_DEF: return "DEF";
