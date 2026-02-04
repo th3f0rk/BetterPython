@@ -4,6 +4,7 @@
 #include <string.h>
 
 #define MAX_CALL_FRAMES 256
+#define MAX_TRY_HANDLERS 64
 
 // Call frame for function calls
 typedef struct {
@@ -12,6 +13,16 @@ typedef struct {
     size_t ip;
     size_t locals_base;  // Index into locals array where this frame's locals start
 } CallFrame;
+
+// Exception handler for try/catch
+typedef struct {
+    uint32_t catch_addr;       // Address to jump to on exception
+    uint32_t finally_addr;     // Address of finally block (0 = none)
+    uint16_t catch_var_slot;   // Slot to store exception value
+    size_t frame_idx;          // Call frame index when handler was registered
+    size_t locals_base;        // Locals base when handler was registered
+    size_t stack_depth;        // Stack depth when handler was registered
+} TryHandler;
 
 static uint16_t rd_u16(const uint8_t *code, size_t *ip) {
     uint16_t x;
@@ -102,6 +113,10 @@ int vm_run(Vm *vm) {
     // Call frame stack
     CallFrame frames[MAX_CALL_FRAMES];
     size_t frame_count = 0;
+
+    // Exception handler stack
+    TryHandler try_handlers[MAX_TRY_HANDLERS];
+    size_t try_count = 0;
 
     // Calculate total locals needed across all frames (generous initial size)
     size_t total_locals_cap = 1024;
@@ -472,6 +487,54 @@ int vm_run(Vm *vm) {
                 Value map_val = pop(vm);
                 if (map_val.type != VAL_MAP) bp_fatal("cannot index non-map");
                 gc_map_set(&vm->gc, map_val.as.map, key, val);
+                break;
+            }
+            case OP_TRY_BEGIN: {
+                if (try_count >= MAX_TRY_HANDLERS) bp_fatal("too many nested try blocks");
+                uint32_t catch_addr = rd_u32(code, &ip);
+                uint32_t finally_addr = rd_u32(code, &ip);
+                uint16_t catch_var_slot = rd_u16(code, &ip);
+                try_handlers[try_count].catch_addr = catch_addr;
+                try_handlers[try_count].finally_addr = finally_addr;
+                try_handlers[try_count].catch_var_slot = catch_var_slot;
+                try_handlers[try_count].frame_idx = frame_count - 1;
+                try_handlers[try_count].locals_base = locals_base;
+                try_handlers[try_count].stack_depth = vm->sp;
+                try_count++;
+                break;
+            }
+            case OP_TRY_END: {
+                // Normal exit from try block - pop the handler
+                if (try_count > 0) try_count--;
+                break;
+            }
+            case OP_THROW: {
+                Value exc_val = pop(vm);
+                // Find a handler
+                if (try_count == 0) {
+                    // No handler - fatal error
+                    if (exc_val.type == VAL_STR) {
+                        bp_fatal("unhandled exception: %s", exc_val.as.s->data);
+                    } else {
+                        bp_fatal("unhandled exception");
+                    }
+                }
+                // Pop the handler and jump to catch
+                try_count--;
+                TryHandler *h = &try_handlers[try_count];
+                // Restore state
+                vm->sp = h->stack_depth;
+                frame_count = h->frame_idx + 1;
+                fn = frames[frame_count - 1].fn;
+                code = frames[frame_count - 1].code;
+                locals_base = h->locals_base;
+                locals_top = locals_base + fn->locals;
+                // Store exception value in catch variable slot
+                if (h->catch_var_slot > 0 || h->catch_addr > 0) {
+                    vm->locals[h->locals_base + h->catch_var_slot] = exc_val;
+                }
+                // Jump to catch handler
+                ip = h->catch_addr;
                 break;
             }
             default:

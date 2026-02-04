@@ -970,6 +970,33 @@ static void check_stmt(Stmt *st, Scope *s, Type ret_type) {
             if (!st->as.ret.value) bp_fatal("missing return value");
             if (!type_eq(check_expr(st->as.ret.value, s), ret_type)) bp_fatal("return type mismatch");
             return;
+        case ST_TRY: {
+            // Type check try body
+            for (size_t i = 0; i < st->as.try_catch.try_len; i++) {
+                check_stmt(st->as.try_catch.try_stmts[i], s, ret_type);
+            }
+            // If there's a catch variable, add it to scope for catch body
+            if (st->as.try_catch.catch_var) {
+                scope_put(s, st->as.try_catch.catch_var, type_str());  // Exceptions are strings
+            }
+            // Type check catch body
+            for (size_t i = 0; i < st->as.try_catch.catch_len; i++) {
+                check_stmt(st->as.try_catch.catch_stmts[i], s, ret_type);
+            }
+            // Type check finally body
+            for (size_t i = 0; i < st->as.try_catch.finally_len; i++) {
+                check_stmt(st->as.try_catch.finally_stmts[i], s, ret_type);
+            }
+            return;
+        }
+        case ST_THROW: {
+            // For now, thrown value must be a string
+            Type t = check_expr(st->as.throw.value, s);
+            if (t.kind != TY_STR) {
+                bp_fatal("throw value must be string, got %s", type_name(t));
+            }
+            return;
+        }
         default: break;
     }
     bp_fatal("unknown stmt");

@@ -350,12 +350,88 @@ static Stmt *parse_for(Parser *p) {
     return stmt_new_for(var, start, end, body, body_len, line);
 }
 
+static Stmt *parse_try(Parser *p) {
+    size_t line = p->cur.line;
+    expect(p, TOK_TRY, "expected 'try'");
+    expect(p, TOK_COLON, "expected ':' after try");
+    expect(p, TOK_NEWLINE, "expected newline after try:");
+    expect(p, TOK_INDENT, "expected indent");
+
+    // Parse try body
+    Stmt **try_stmts = NULL;
+    size_t try_len = 0, try_cap = 0;
+    while (p->cur.kind != TOK_DEDENT && p->cur.kind != TOK_EOF) {
+        skip_newlines(p);
+        if (p->cur.kind == TOK_DEDENT) break;
+        Stmt *s = parse_stmt(p);
+        if (try_len + 1 > try_cap) { try_cap = try_cap ? try_cap * 2 : 8; try_stmts = bp_xrealloc(try_stmts, try_cap * sizeof(*try_stmts)); }
+        try_stmts[try_len++] = s;
+        skip_newlines(p);
+    }
+    expect(p, TOK_DEDENT, "expected dedent after try body");
+    skip_newlines(p);
+
+    // Parse catch block
+    char *catch_var = NULL;
+    Stmt **catch_stmts = NULL;
+    size_t catch_len = 0, catch_cap = 0;
+    if (p->cur.kind == TOK_CATCH) {
+        next(p);  // consume 'catch'
+        if (p->cur.kind == TOK_IDENT) {
+            catch_var = dup_lexeme(p->cur);
+            next(p);
+        }
+        expect(p, TOK_COLON, "expected ':' after catch");
+        expect(p, TOK_NEWLINE, "expected newline after catch:");
+        expect(p, TOK_INDENT, "expected indent");
+
+        while (p->cur.kind != TOK_DEDENT && p->cur.kind != TOK_EOF) {
+            skip_newlines(p);
+            if (p->cur.kind == TOK_DEDENT) break;
+            Stmt *s = parse_stmt(p);
+            if (catch_len + 1 > catch_cap) { catch_cap = catch_cap ? catch_cap * 2 : 8; catch_stmts = bp_xrealloc(catch_stmts, catch_cap * sizeof(*catch_stmts)); }
+            catch_stmts[catch_len++] = s;
+            skip_newlines(p);
+        }
+        expect(p, TOK_DEDENT, "expected dedent after catch body");
+        skip_newlines(p);
+    }
+
+    // Parse optional finally block
+    Stmt **finally_stmts = NULL;
+    size_t finally_len = 0, finally_cap = 0;
+    if (p->cur.kind == TOK_FINALLY) {
+        next(p);  // consume 'finally'
+        expect(p, TOK_COLON, "expected ':' after finally");
+        expect(p, TOK_NEWLINE, "expected newline after finally:");
+        expect(p, TOK_INDENT, "expected indent");
+
+        while (p->cur.kind != TOK_DEDENT && p->cur.kind != TOK_EOF) {
+            skip_newlines(p);
+            if (p->cur.kind == TOK_DEDENT) break;
+            Stmt *s = parse_stmt(p);
+            if (finally_len + 1 > finally_cap) { finally_cap = finally_cap ? finally_cap * 2 : 8; finally_stmts = bp_xrealloc(finally_stmts, finally_cap * sizeof(*finally_stmts)); }
+            finally_stmts[finally_len++] = s;
+            skip_newlines(p);
+        }
+        expect(p, TOK_DEDENT, "expected dedent after finally body");
+    }
+
+    return stmt_new_try(try_stmts, try_len, catch_var, catch_stmts, catch_len, finally_stmts, finally_len, line);
+}
+
 static Stmt *parse_stmt(Parser *p) {
     size_t line = p->cur.line;
 
     if (p->cur.kind == TOK_IF) return parse_if(p);
     if (p->cur.kind == TOK_WHILE) return parse_while(p);
     if (p->cur.kind == TOK_FOR) return parse_for(p);
+    if (p->cur.kind == TOK_TRY) return parse_try(p);
+
+    if (accept(p, TOK_THROW)) {
+        Expr *v = parse_expr(p);
+        return stmt_new_throw(v, line);
+    }
 
     if (accept(p, TOK_BREAK)) {
         return stmt_new_break(line);

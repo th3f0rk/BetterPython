@@ -31,6 +31,16 @@ typedef enum {
     TOK_OR,
     TOK_NOT,
 
+    TOK_IMPORT,
+    TOK_EXPORT,
+    TOK_AS,
+    TOK_DOT,
+
+    TOK_TRY,
+    TOK_CATCH,
+    TOK_FINALLY,
+    TOK_THROW,
+
     TOK_COLON,
     TOK_COMMA,
     TOK_LPAREN,

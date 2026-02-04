@@ -193,6 +193,24 @@ Stmt *stmt_new_return(Expr *value, size_t line) {
     return s;
 }
 
+Stmt *stmt_new_try(Stmt **try_s, size_t try_len, char *catch_var, Stmt **catch_s, size_t catch_len, Stmt **finally_s, size_t finally_len, size_t line) {
+    Stmt *s = stmt_alloc(ST_TRY, line);
+    s->as.try_catch.try_stmts = try_s;
+    s->as.try_catch.try_len = try_len;
+    s->as.try_catch.catch_var = catch_var;
+    s->as.try_catch.catch_stmts = catch_s;
+    s->as.try_catch.catch_len = catch_len;
+    s->as.try_catch.finally_stmts = finally_s;
+    s->as.try_catch.finally_len = finally_len;
+    return s;
+}
+
+Stmt *stmt_new_throw(Expr *value, size_t line) {
+    Stmt *s = stmt_alloc(ST_THROW, line);
+    s->as.throw.value = value;
+    return s;
+}
+
 static void expr_free(Expr *e) {
     if (!e) return;
     switch (e->kind) {
@@ -269,6 +287,18 @@ static void stmt_free(Stmt *s) {
             break;
         case ST_RETURN:
             expr_free(s->as.ret.value);
+            break;
+        case ST_TRY:
+            for (size_t i = 0; i < s->as.try_catch.try_len; i++) stmt_free(s->as.try_catch.try_stmts[i]);
+            free(s->as.try_catch.try_stmts);
+            free(s->as.try_catch.catch_var);
+            for (size_t i = 0; i < s->as.try_catch.catch_len; i++) stmt_free(s->as.try_catch.catch_stmts[i]);
+            free(s->as.try_catch.catch_stmts);
+            for (size_t i = 0; i < s->as.try_catch.finally_len; i++) stmt_free(s->as.try_catch.finally_stmts[i]);
+            free(s->as.try_catch.finally_stmts);
+            break;
+        case ST_THROW:
+            expr_free(s->as.throw.value);
             break;
     }
     free(s);

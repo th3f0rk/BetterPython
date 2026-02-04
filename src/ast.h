@@ -123,7 +123,9 @@ typedef enum {
     ST_FOR,
     ST_BREAK,
     ST_CONTINUE,
-    ST_RETURN
+    ST_RETURN,
+    ST_TRY,
+    ST_THROW
 } StmtKind;
 
 struct Stmt {
@@ -177,6 +179,20 @@ struct Stmt {
         struct {
             Expr *value; // may be NULL
         } ret;
+
+        struct {
+            Stmt **try_stmts;
+            size_t try_len;
+            char *catch_var;         // Variable name to bind exception (may be NULL)
+            Stmt **catch_stmts;
+            size_t catch_len;
+            Stmt **finally_stmts;    // May be NULL
+            size_t finally_len;
+        } try_catch;
+
+        struct {
+            Expr *value;   // Exception value to throw
+        } throw;
     } as;
 };
 
@@ -217,5 +233,7 @@ Stmt *stmt_new_for(char *var, Expr *start, Expr *end, Stmt **body, size_t body_l
 Stmt *stmt_new_break(size_t line);
 Stmt *stmt_new_continue(size_t line);
 Stmt *stmt_new_return(Expr *value, size_t line);
+Stmt *stmt_new_try(Stmt **try_s, size_t try_len, char *catch_var, Stmt **catch_s, size_t catch_len, Stmt **finally_s, size_t finally_len, size_t line);
+Stmt *stmt_new_throw(Expr *value, size_t line);
 
 void module_free(Module *m);

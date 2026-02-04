@@ -478,6 +478,63 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             }
             return;
         }
+        case ST_TRY: {
+            // Allocate slot for catch variable if needed
+            uint16_t catch_var_slot = 0;
+            if (s->as.try_catch.catch_var) {
+                catch_var_slot = locals_add(&fe->locals, s->as.try_catch.catch_var);
+            }
+
+            // Emit: OP_TRY_BEGIN <catch_addr> <finally_addr> <catch_var_slot>
+            buf_u8(&fe->code, OP_TRY_BEGIN);
+            size_t catch_addr_at = fe->code.len;
+            buf_u32(&fe->code, 0);  // Placeholder for catch address
+            size_t finally_addr_at = fe->code.len;
+            buf_u32(&fe->code, 0);  // Placeholder for finally address (0 = none)
+            buf_u16(&fe->code, catch_var_slot);
+
+            // Emit try body
+            for (size_t i = 0; i < s->as.try_catch.try_len; i++) {
+                emit_stmt(fe, s->as.try_catch.try_stmts[i]);
+            }
+
+            // Emit: OP_TRY_END (normal exit - no exception)
+            buf_u8(&fe->code, OP_TRY_END);
+
+            // Jump to finally (or end if no finally)
+            buf_u8(&fe->code, OP_JMP);
+            size_t skip_catch_at = fe->code.len;
+            buf_u32(&fe->code, 0);
+
+            // Patch catch address
+            uint32_t catch_addr = (uint32_t)fe->code.len;
+            emit_jump_patch(&fe->code, catch_addr_at, catch_addr);
+
+            // Emit catch body
+            for (size_t i = 0; i < s->as.try_catch.catch_len; i++) {
+                emit_stmt(fe, s->as.try_catch.catch_stmts[i]);
+            }
+
+            // Patch skip_catch to jump to finally/end
+            uint32_t finally_addr = (uint32_t)fe->code.len;
+            emit_jump_patch(&fe->code, skip_catch_at, finally_addr);
+
+            // Patch finally address if there's a finally block
+            if (s->as.try_catch.finally_len > 0) {
+                emit_jump_patch(&fe->code, finally_addr_at, finally_addr);
+
+                // Emit finally body
+                for (size_t i = 0; i < s->as.try_catch.finally_len; i++) {
+                    emit_stmt(fe, s->as.try_catch.finally_stmts[i]);
+                }
+            }
+            return;
+        }
+        case ST_THROW: {
+            emit_expr(fe, s->as.throw.value);
+            buf_u8(&fe->code, OP_THROW);
+            return;
+        }
         default: break;
     }
     bp_fatal("unknown stmt");

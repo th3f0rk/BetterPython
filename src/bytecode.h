@@ -56,6 +56,10 @@ typedef enum {
     OP_MAP_GET,         // Get value by key
     OP_MAP_SET,         // Set value by key
 
+    OP_TRY_BEGIN,       // Register exception handler: u32 catch_addr, u32 finally_addr, u16 catch_var_slot
+    OP_TRY_END,         // Unregister current exception handler
+    OP_THROW,           // Throw exception (value on stack)
+
     OP_CALL_BUILTIN,
     OP_CALL,
     OP_RET
