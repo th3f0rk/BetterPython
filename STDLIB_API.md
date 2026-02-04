@@ -1,9 +1,10 @@
 # BetterPython Standard Library Reference
-## Production-Grade API Documentation
+
+## Version 1.0.0 - 98+ Built-in Functions
 
 ---
 
-## 📊 I/O FUNCTIONS
+## I/O Functions (2)
 
 ### `print(...) -> void`
 Print any number of values to stdout, separated by spaces.
@@ -19,7 +20,7 @@ let name: str = read_line()
 
 ---
 
-## 🔤 STRING FUNCTIONS
+## String Functions (21)
 
 ### Basic Operations
 
@@ -35,7 +36,7 @@ Extract a substring.
 let sub: str = substr("Hello World", 0, 5)  # "Hello"
 ```
 
-#### `to_str(value: int|bool|str) -> str`
+#### `to_str(value: int|bool|str|float) -> str`
 Convert any value to string.
 ```python
 let s: str = to_str(42)  # "42"
@@ -53,6 +54,18 @@ let c: str = chr(65)  # "A"
 Convert first character to ASCII code.
 ```python
 let code: int = ord("A")  # 65
+```
+
+#### `str_char_at(s: str, index: int) -> str`
+Get character at specific index.
+```python
+let c: str = str_char_at("Hello", 1)  # "e"
+```
+
+#### `str_index_of(s: str, char: str) -> int`
+Find index of character (-1 if not found).
+```python
+let pos: int = str_index_of("Hello", "l")  # 2
 ```
 
 ### String Manipulation
@@ -75,6 +88,30 @@ Remove leading and trailing whitespace.
 let trimmed: str = str_trim("  hello  ")  # "hello"
 ```
 
+#### `str_reverse(s: str) -> str`
+Reverse a string.
+```python
+let rev: str = str_reverse("hello")  # "olleh"
+```
+
+#### `str_repeat(s: str, count: int) -> str`
+Repeat string n times.
+```python
+let rep: str = str_repeat("ab", 3)  # "ababab"
+```
+
+#### `str_pad_left(s: str, length: int, char: str) -> str`
+Pad string on the left.
+```python
+let padded: str = str_pad_left("42", 5, "0")  # "00042"
+```
+
+#### `str_pad_right(s: str, length: int, char: str) -> str`
+Pad string on the right.
+```python
+let padded: str = str_pad_right("hi", 5, ".")  # "hi..."
+```
+
 ### String Searching
 
 #### `starts_with(s: str, prefix: str) -> bool`
@@ -89,11 +126,22 @@ Check if string ends with suffix.
 let result: bool = ends_with("Hello World", "World")  # true
 ```
 
+#### `str_contains(s: str, needle: str) -> bool`
+Check if string contains substring.
+```python
+let has: bool = str_contains("Hello World", "llo")  # true
+```
+
 #### `str_find(s: str, needle: str) -> int`
 Find first occurrence of substring. Returns -1 if not found.
 ```python
 let pos: int = str_find("Hello World", "World")  # 6
-let not_found: int = str_find("Hello", "xyz")    # -1
+```
+
+#### `str_count(s: str, needle: str) -> int`
+Count occurrences of substring.
+```python
+let n: int = str_count("ababa", "a")  # 3
 ```
 
 #### `str_replace(s: str, old: str, new: str) -> str`
@@ -103,11 +151,21 @@ let replaced: str = str_replace("Hello World", "World", "Universe")
 # "Hello Universe"
 ```
 
+#### `str_split(s: str, delimiter: str) -> [str]`
+Split string into array.
+```python
+let parts: [str] = str_split("a,b,c", ",")  # ["a", "b", "c"]
+```
+
+#### `str_join(arr: [str], delimiter: str) -> str`
+Join array into string.
+```python
+let joined: str = str_join(["a", "b", "c"], "-")  # "a-b-c"
+```
+
 ---
 
-## 🔢 MATH FUNCTIONS
-
-### Basic Math
+## Integer Math Functions (10)
 
 #### `abs(n: int) -> int`
 Absolute value.
@@ -134,7 +192,7 @@ let result: int = pow(2, 8)  # 256
 ```
 
 #### `sqrt(n: int) -> int`
-Square root (returns integer).
+Integer square root.
 ```python
 let result: int = sqrt(144)  # 12
 ```
@@ -157,23 +215,417 @@ Rounding function (identity for integers).
 let result: int = round(42)  # 42
 ```
 
+#### `clamp(value: int, min: int, max: int) -> int`
+Clamp value to range.
+```python
+let result: int = clamp(15, 0, 10)  # 10
+```
+
+#### `sign(n: int) -> int`
+Get sign (-1, 0, or 1).
+```python
+let s: int = sign(-42)  # -1
+```
+
 ---
 
-## 🎲 RANDOM FUNCTIONS
+## Float Math Functions (17)
 
-### `rand() -> int`
+### Trigonometry
+
+#### `sin(x: float) -> float`
+Sine function.
+```python
+let s: float = sin(3.14159 / 2.0)  # ~1.0
+```
+
+#### `cos(x: float) -> float`
+Cosine function.
+```python
+let c: float = cos(0.0)  # 1.0
+```
+
+#### `tan(x: float) -> float`
+Tangent function.
+```python
+let t: float = tan(0.0)  # 0.0
+```
+
+#### `asin(x: float) -> float`
+Arc sine function.
+```python
+let a: float = asin(1.0)  # ~1.5708
+```
+
+#### `acos(x: float) -> float`
+Arc cosine function.
+```python
+let a: float = acos(1.0)  # 0.0
+```
+
+#### `atan(x: float) -> float`
+Arc tangent function.
+```python
+let a: float = atan(1.0)  # ~0.7854
+```
+
+#### `atan2(y: float, x: float) -> float`
+Two-argument arc tangent.
+```python
+let a: float = atan2(1.0, 1.0)  # ~0.7854
+```
+
+### Logarithms & Exponentials
+
+#### `log(x: float) -> float`
+Natural logarithm.
+```python
+let l: float = log(2.71828)  # ~1.0
+```
+
+#### `log10(x: float) -> float`
+Base-10 logarithm.
+```python
+let l: float = log10(100.0)  # 2.0
+```
+
+#### `log2(x: float) -> float`
+Base-2 logarithm.
+```python
+let l: float = log2(8.0)  # 3.0
+```
+
+#### `exp(x: float) -> float`
+Exponential function (e^x).
+```python
+let e: float = exp(1.0)  # ~2.71828
+```
+
+### Rounding & Absolute
+
+#### `fabs(x: float) -> float`
+Absolute value (float).
+```python
+let a: float = fabs(-3.14)  # 3.14
+```
+
+#### `ffloor(x: float) -> float`
+Floor function (float).
+```python
+let f: float = ffloor(3.7)  # 3.0
+```
+
+#### `fceil(x: float) -> float`
+Ceiling function (float).
+```python
+let c: float = fceil(3.2)  # 4.0
+```
+
+#### `fround(x: float) -> float`
+Round to nearest (float).
+```python
+let r: float = fround(3.5)  # 4.0
+```
+
+### Power & Root
+
+#### `fsqrt(x: float) -> float`
+Square root (float).
+```python
+let s: float = fsqrt(16.0)  # 4.0
+```
+
+#### `fpow(base: float, exp: float) -> float`
+Power function (float).
+```python
+let p: float = fpow(2.0, 10.0)  # 1024.0
+```
+
+---
+
+## Type Conversion Functions (7)
+
+#### `to_str(value: any) -> str`
+Convert any value to string.
+
+#### `int_to_float(n: int) -> float`
+Convert integer to float.
+```python
+let f: float = int_to_float(42)  # 42.0
+```
+
+#### `float_to_int(f: float) -> int`
+Convert float to integer (truncates).
+```python
+let i: int = float_to_int(3.7)  # 3
+```
+
+#### `float_to_str(f: float) -> str`
+Convert float to string.
+```python
+let s: str = float_to_str(3.14)  # "3.140000"
+```
+
+#### `str_to_float(s: str) -> float`
+Parse string as float.
+```python
+let f: float = str_to_float("3.14")  # 3.14
+```
+
+#### `int_to_hex(n: int) -> str`
+Convert integer to hexadecimal string.
+```python
+let h: str = int_to_hex(255)  # "ff"
+```
+
+#### `hex_to_int(s: str) -> int`
+Parse hexadecimal string as integer.
+```python
+let n: int = hex_to_int("ff")  # 255
+```
+
+---
+
+## Array Operations (3)
+
+#### `array_len(arr: [T]) -> int`
+Get array length.
+```python
+let arr: [int] = [1, 2, 3, 4, 5]
+let length: int = array_len(arr)  # 5
+```
+
+#### `array_push(arr: [T], value: T) -> void`
+Add element to end of array.
+```python
+let arr: [int] = [1, 2]
+array_push(arr, 3)  # arr is now [1, 2, 3]
+```
+
+#### `array_pop(arr: [T]) -> T`
+Remove and return last element.
+```python
+let arr: [int] = [1, 2, 3]
+let last: int = array_pop(arr)  # 3, arr is now [1, 2]
+```
+
+---
+
+## Map Operations (5)
+
+#### `map_len(m: {K: V}) -> int`
+Get number of entries in map.
+```python
+let m: {str: int} = {"a": 1, "b": 2}
+let length: int = map_len(m)  # 2
+```
+
+#### `map_keys(m: {K: V}) -> [K]`
+Get array of all keys.
+```python
+let m: {str: int} = {"a": 1, "b": 2}
+let keys: [str] = map_keys(m)  # ["a", "b"]
+```
+
+#### `map_values(m: {K: V}) -> [V]`
+Get array of all values.
+```python
+let m: {str: int} = {"a": 1, "b": 2}
+let vals: [int] = map_values(m)  # [1, 2]
+```
+
+#### `map_has_key(m: {K: V}, key: K) -> bool`
+Check if key exists.
+```python
+let m: {str: int} = {"a": 1}
+let has: bool = map_has_key(m, "a")  # true
+```
+
+#### `map_delete(m: {K: V}, key: K) -> void`
+Remove entry by key.
+```python
+let m: {str: int} = {"a": 1, "b": 2}
+map_delete(m, "a")  # m is now {"b": 2}
+```
+
+---
+
+## File I/O Functions (7)
+
+#### `file_read(path: str) -> str`
+Read entire file as string.
+```python
+let content: str = file_read("/tmp/test.txt")
+```
+
+#### `file_write(path: str, data: str) -> bool`
+Write string to file (overwrites). Returns success.
+```python
+let ok: bool = file_write("/tmp/test.txt", "Hello")
+```
+
+#### `file_append(path: str, data: str) -> bool`
+Append string to file. Returns success.
+```python
+let ok: bool = file_append("/tmp/test.txt", "\nLine 2")
+```
+
+#### `file_exists(path: str) -> bool`
+Check if file exists.
+```python
+let exists: bool = file_exists("/tmp/test.txt")
+```
+
+#### `file_delete(path: str) -> bool`
+Delete file. Returns success.
+```python
+let ok: bool = file_delete("/tmp/test.txt")
+```
+
+#### `file_size(path: str) -> int`
+Get file size in bytes.
+```python
+let size: int = file_size("/tmp/test.txt")
+```
+
+#### `file_copy(src: str, dst: str) -> bool`
+Copy file from source to destination.
+```python
+let ok: bool = file_copy("/tmp/a.txt", "/tmp/b.txt")
+```
+
+---
+
+## Security Functions (4)
+
+#### `hash_sha256(data: str) -> str`
+Compute SHA-256 hash.
+```python
+let hash: str = hash_sha256("password")
+```
+
+#### `hash_md5(data: str) -> str`
+Compute MD5 hash.
+```python
+let hash: str = hash_md5("data")
+```
+
+#### `secure_compare(a: str, b: str) -> bool`
+Constant-time string comparison (prevents timing attacks).
+```python
+let equal: bool = secure_compare(hash1, hash2)
+```
+
+#### `random_bytes(length: int) -> str`
+Generate cryptographically secure random bytes (hex encoded).
+```python
+let bytes: str = random_bytes(16)  # 32 hex characters
+```
+
+---
+
+## Encoding Functions (4)
+
+#### `base64_encode(data: str) -> str`
+Encode string to base64.
+```python
+let encoded: str = base64_encode("Hello")  # "SGVsbG8="
+```
+
+#### `base64_decode(data: str) -> str`
+Decode base64 to string.
+```python
+let decoded: str = base64_decode("SGVsbG8=")  # "Hello"
+```
+
+#### `bytes_to_str(bytes: [int]) -> str`
+Convert byte array to string.
+
+#### `str_to_bytes(s: str) -> [int]`
+Convert string to byte array.
+
+---
+
+## Validation Functions (6)
+
+#### `is_digit(s: str) -> bool`
+Check if string contains only digits.
+```python
+let d: bool = is_digit("12345")  # true
+```
+
+#### `is_alpha(s: str) -> bool`
+Check if string contains only letters.
+```python
+let a: bool = is_alpha("Hello")  # true
+```
+
+#### `is_alnum(s: str) -> bool`
+Check if string is alphanumeric.
+```python
+let an: bool = is_alnum("Hello123")  # true
+```
+
+#### `is_space(s: str) -> bool`
+Check if string contains only whitespace.
+```python
+let sp: bool = is_space("   ")  # true
+```
+
+#### `is_nan(f: float) -> bool`
+Check if float is NaN (Not a Number).
+```python
+let nan: bool = is_nan(0.0 / 0.0)  # true
+```
+
+#### `is_inf(f: float) -> bool`
+Check if float is infinity.
+```python
+let inf: bool = is_inf(1.0 / 0.0)  # true
+```
+
+---
+
+## System Functions (7)
+
+#### `clock_ms() -> int`
+Get current time in milliseconds since epoch.
+```python
+let now: int = clock_ms()
+```
+
+#### `sleep(ms: int) -> void`
+Sleep for specified milliseconds.
+```python
+sleep(1000)  # Sleep 1 second
+```
+
+#### `getenv(name: str) -> str`
+Get environment variable value (empty string if not found).
+```python
+let user: str = getenv("USER")
+```
+
+#### `exit(code: int) -> void`
+Exit program with status code.
+```python
+exit(0)   # Success
+exit(1)   # Error
+```
+
+#### `rand() -> int`
 Generate pseudo-random integer (0-32767).
 ```python
 let r: int = rand()
 ```
 
-### `rand_range(min: int, max: int) -> int`
+#### `rand_range(min: int, max: int) -> int`
 Generate random integer in range [min, max).
 ```python
 let dice: int = rand_range(1, 7)  # 1-6
 ```
 
-### `rand_seed(seed: int) -> void`
+#### `rand_seed(seed: int) -> void`
 Seed the random number generator.
 ```python
 rand_seed(42)  # Reproducible random numbers
@@ -181,110 +633,27 @@ rand_seed(42)  # Reproducible random numbers
 
 ---
 
-## 🔐 ENCODING FUNCTIONS
+## Function Count Summary
 
-### `base64_encode(data: str) -> str`
-Encode string to base64.
-```python
-let encoded: str = base64_encode("Hello")
-# "SGVsbG8="
-```
-
-### `base64_decode(data: str) -> str`
-Decode base64 to string.
-```python
-let decoded: str = base64_decode("SGVsbG8=")
-# "Hello"
-```
-
----
-
-## 📁 FILE FUNCTIONS
-
-### `file_read(path: str) -> str`
-Read entire file as string.
-```python
-let content: str = file_read("/tmp/test.txt")
-```
-
-### `file_write(path: str, data: str) -> bool`
-Write string to file (overwrites). Returns success.
-```python
-let ok: bool = file_write("/tmp/test.txt", "Hello")
-```
-
-### `file_append(path: str, data: str) -> bool`
-Append string to file. Returns success.
-```python
-let ok: bool = file_append("/tmp/test.txt", "\nLine 2")
-```
-
-### `file_exists(path: str) -> bool`
-Check if file exists.
-```python
-let exists: bool = file_exists("/tmp/test.txt")
-```
-
-### `file_delete(path: str) -> bool`
-Delete file. Returns success.
-```python
-let ok: bool = file_delete("/tmp/test.txt")
-```
+| Category | Count |
+|----------|-------|
+| I/O | 2 |
+| String Operations | 21 |
+| Integer Math | 10 |
+| Float Math | 17 |
+| Type Conversion | 7 |
+| Array Operations | 3 |
+| Map Operations | 5 |
+| File I/O | 7 |
+| Security | 4 |
+| Encoding | 4 |
+| Validation | 6 |
+| System/Random | 7 |
+| **Total** | **93+** |
 
 ---
 
-## ⏰ TIME FUNCTIONS
-
-### `clock_ms() -> int`
-Get current time in milliseconds since epoch.
-```python
-let start: int = clock_ms()
-sleep(100)
-let end: int = clock_ms()
-let elapsed: int = end - start
-```
-
-### `sleep(ms: int) -> void`
-Sleep for specified milliseconds.
-```python
-sleep(1000)  # Sleep 1 second
-```
-
----
-
-## 🖥️ SYSTEM FUNCTIONS
-
-### `getenv(name: str) -> str`
-Get environment variable value (empty string if not found).
-```python
-let user: str = getenv("USER")
-let home: str = getenv("HOME")
-```
-
-### `exit(code: int) -> void`
-Exit program with status code.
-```python
-exit(0)   # Success
-exit(1)   # Error
-```
-
----
-
-## 📊 FUNCTION COUNT: 42 BUILTINS
-
-### Categories:
-- **I/O:** 2 functions
-- **Strings:** 13 functions
-- **Math:** 8 functions
-- **Random:** 3 functions
-- **Encoding:** 2 functions
-- **Files:** 5 functions
-- **Time:** 2 functions
-- **System:** 2 functions
-
----
-
-## 💡 USAGE EXAMPLES
+## Usage Examples
 
 ### Text Processing
 ```python
@@ -299,38 +668,39 @@ print(replaced)  # "hello universe"
 ```python
 rand_seed(clock_ms())
 let password: str = ""
-let i: int = 0
-while i < 8:
+for i in range(0, 12):
     let code: int = rand_range(65, 91)
     password = password + chr(code)
-    i = i + 1
 print(password)
 ```
 
-### File Processing
+### File Processing with Error Handling
 ```python
-if file_exists("input.txt"):
-    let data: str = file_read("input.txt")
-    let upper: str = str_upper(data)
-    file_write("output.txt", upper)
-    print("Processed!")
-else:
-    print("File not found")
+try:
+    if file_exists("input.txt"):
+        let data: str = file_read("input.txt")
+        let upper: str = str_upper(data)
+        file_write("output.txt", upper)
+        print("Processed!")
+    else:
+        throw "File not found"
+catch e:
+    print("Error: ")
+    print(e)
 ```
 
-### Math Calculations
+### Mathematical Calculations
 ```python
-let a: int = 10
-let b: int = 20
-let sum: int = a + b
-let product: int = a * b
-let maximum: int = max(a, b)
-let power: int = pow(2, 10)
-print("Results:", sum, product, maximum, power)
+let pi: float = 3.14159
+let radius: float = 5.0
+let area: float = pi * fpow(radius, 2.0)
+let circumference: float = 2.0 * pi * radius
+print(float_to_str(area))
+print(float_to_str(circumference))
 ```
 
 ---
 
-**Status:** ✅ Production-Grade Standard Library  
-**Version:** Divine Edition v2.0  
-**Total Functions:** 42 built-ins
+**BetterPython v1.0.0 - Standard Library**
+
+*The AI-Native Programming Language*
