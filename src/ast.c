@@ -17,6 +17,12 @@ Expr *expr_new_int(int64_t v, size_t line) {
     return e;
 }
 
+Expr *expr_new_float(double v, size_t line) {
+    Expr *e = expr_alloc(EX_FLOAT, line);
+    e->as.float_val = v;
+    return e;
+}
+
 Expr *expr_new_str(char *s, size_t line) {
     Expr *e = expr_alloc(EX_STR, line);
     e->as.str_val = s;

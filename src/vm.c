@@ -21,6 +21,12 @@ static int64_t rd_i64(const uint8_t *code, size_t *ip) {
     *ip += 8;
     return x;
 }
+static double rd_f64(const uint8_t *code, size_t *ip) {
+    double x;
+    memcpy(&x, code + *ip, 8);
+    *ip += 8;
+    return x;
+}
 
 void vm_init(Vm *vm, BpModule mod) {
     memset(vm, 0, sizeof(*vm));
@@ -64,6 +70,7 @@ static Value op_eq(Value a, Value b) {
     if (a.type != b.type) return v_bool(false);
     switch (a.type) {
         case VAL_INT: return v_bool(a.as.i == b.as.i);
+        case VAL_FLOAT: return v_bool(a.as.f == b.as.f);
         case VAL_BOOL: return v_bool(a.as.b == b.as.b);
         case VAL_NULL: return v_bool(true);
         case VAL_STR:
@@ -97,6 +104,11 @@ int vm_run(Vm *vm) {
             case OP_CONST_I64: {
                 int64_t x = rd_i64(code, &ip);
                 push(vm, v_int(x));
+                break;
+            }
+            case OP_CONST_F64: {
+                double x = rd_f64(code, &ip);
+                push(vm, v_float(x));
                 break;
             }
             case OP_CONST_BOOL: {
@@ -154,6 +166,31 @@ int vm_run(Vm *vm) {
                 push(vm, v_int(a.as.i % b.as.i));
                 break;
             }
+            case OP_ADD_F64: {
+                Value b = pop(vm), a = pop(vm);
+                push(vm, v_float(a.as.f + b.as.f));
+                break;
+            }
+            case OP_SUB_F64: {
+                Value b = pop(vm), a = pop(vm);
+                push(vm, v_float(a.as.f - b.as.f));
+                break;
+            }
+            case OP_MUL_F64: {
+                Value b = pop(vm), a = pop(vm);
+                push(vm, v_float(a.as.f * b.as.f));
+                break;
+            }
+            case OP_DIV_F64: {
+                Value b = pop(vm), a = pop(vm);
+                push(vm, v_float(a.as.f / b.as.f));
+                break;
+            }
+            case OP_NEG_F64: {
+                Value a = pop(vm);
+                push(vm, v_float(-a.as.f));
+                break;
+            }
             case OP_ADD_STR: {
                 Value b = pop(vm), a = pop(vm);
                 push(vm, add_str(vm, a, b));
@@ -188,6 +225,26 @@ int vm_run(Vm *vm) {
             case OP_GTE: {
                 Value b = pop(vm), a = pop(vm);
                 push(vm, op_gte(a, b));
+                break;
+            }
+            case OP_LT_F64: {
+                Value b = pop(vm), a = pop(vm);
+                push(vm, v_bool(a.as.f < b.as.f));
+                break;
+            }
+            case OP_LTE_F64: {
+                Value b = pop(vm), a = pop(vm);
+                push(vm, v_bool(a.as.f <= b.as.f));
+                break;
+            }
+            case OP_GT_F64: {
+                Value b = pop(vm), a = pop(vm);
+                push(vm, v_bool(a.as.f > b.as.f));
+                break;
+            }
+            case OP_GTE_F64: {
+                Value b = pop(vm), a = pop(vm);
+                push(vm, v_bool(a.as.f >= b.as.f));
                 break;
             }
             case OP_NOT: {

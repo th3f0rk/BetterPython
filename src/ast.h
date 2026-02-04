@@ -5,6 +5,7 @@
 
 typedef enum {
     TY_INT,
+    TY_FLOAT,
     TY_BOOL,
     TY_STR,
     TY_VOID
@@ -14,13 +15,15 @@ typedef struct {
     TypeKind kind;
 } Type;
 
-static inline Type type_int(void)  { Type t = {TY_INT}; return t; }
-static inline Type type_bool(void) { Type t = {TY_BOOL}; return t; }
-static inline Type type_str(void)  { Type t = {TY_STR}; return t; }
-static inline Type type_void(void) { Type t = {TY_VOID}; return t; }
+static inline Type type_int(void)   { Type t = {TY_INT}; return t; }
+static inline Type type_float(void) { Type t = {TY_FLOAT}; return t; }
+static inline Type type_bool(void)  { Type t = {TY_BOOL}; return t; }
+static inline Type type_str(void)   { Type t = {TY_STR}; return t; }
+static inline Type type_void(void)  { Type t = {TY_VOID}; return t; }
 
 typedef enum {
     EX_INT,
+    EX_FLOAT,
     EX_STR,
     EX_BOOL,
     EX_VAR,
@@ -56,6 +59,7 @@ struct Expr {
 
     union {
         int64_t int_val;
+        double float_val;
         char *str_val;
         bool bool_val;
         char *var_name;
@@ -144,6 +148,7 @@ typedef struct {
 } Module;
 
 Expr *expr_new_int(int64_t v, size_t line);
+Expr *expr_new_float(double v, size_t line);
 Expr *expr_new_str(char *s, size_t line);
 Expr *expr_new_bool(bool v, size_t line);
 Expr *expr_new_var(char *name, size_t line);

@@ -38,6 +38,7 @@ static bool type_eq(Type a, Type b) { return a.kind == b.kind; }
 static const char *type_name(Type t) {
     switch (t.kind) {
         case TY_INT: return "int";
+        case TY_FLOAT: return "float";
         case TY_BOOL: return "bool";
         case TY_STR: return "str";
         case TY_VOID: return "void";
@@ -359,6 +360,61 @@ static Type check_call(Expr *e, Scope *s) {
         return e->inferred;
     }
 
+    // Float math functions (single arg, return float)
+    if (strcmp(name, "sin") == 0 || strcmp(name, "cos") == 0 || strcmp(name, "tan") == 0 ||
+        strcmp(name, "asin") == 0 || strcmp(name, "acos") == 0 || strcmp(name, "atan") == 0 ||
+        strcmp(name, "log") == 0 || strcmp(name, "log10") == 0 || strcmp(name, "log2") == 0 ||
+        strcmp(name, "exp") == 0 || strcmp(name, "fabs") == 0 || strcmp(name, "ffloor") == 0 ||
+        strcmp(name, "fceil") == 0 || strcmp(name, "fround") == 0 || strcmp(name, "fsqrt") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("%s expects 1 arg", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_FLOAT) bp_fatal("%s expects float", name);
+        e->inferred = type_float();
+        return e->inferred;
+    }
+
+    // Float math functions (two args, return float)
+    if (strcmp(name, "atan2") == 0 || strcmp(name, "fpow") == 0) {
+        if (e->as.call.argc != 2) bp_fatal("%s expects 2 args", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_FLOAT) bp_fatal("%s arg0 must be float", name);
+        if (check_expr(e->as.call.args[1], s).kind != TY_FLOAT) bp_fatal("%s arg1 must be float", name);
+        e->inferred = type_float();
+        return e->inferred;
+    }
+
+    // Float conversion functions
+    if (strcmp(name, "int_to_float") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("int_to_float expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("int_to_float expects int");
+        e->inferred = type_float();
+        return e->inferred;
+    }
+    if (strcmp(name, "float_to_int") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("float_to_int expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_FLOAT) bp_fatal("float_to_int expects float");
+        e->inferred = type_int();
+        return e->inferred;
+    }
+    if (strcmp(name, "float_to_str") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("float_to_str expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_FLOAT) bp_fatal("float_to_str expects float");
+        e->inferred = type_str();
+        return e->inferred;
+    }
+    if (strcmp(name, "str_to_float") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("str_to_float expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("str_to_float expects str");
+        e->inferred = type_float();
+        return e->inferred;
+    }
+
+    // Float utilities
+    if (strcmp(name, "is_nan") == 0 || strcmp(name, "is_inf") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("%s expects 1 arg", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_FLOAT) bp_fatal("%s expects float", name);
+        e->inferred = type_bool();
+        return e->inferred;
+    }
+
     // User-defined functions not supported
     // v0: treat unknown as error.
     bp_fatal("unknown function '%s'", name);
@@ -368,6 +424,7 @@ static Type check_call(Expr *e, Scope *s) {
 static Type check_expr(Expr *e, Scope *s) {
     switch (e->kind) {
         case EX_INT: e->inferred = type_int(); return e->inferred;
+        case EX_FLOAT: e->inferred = type_float(); return e->inferred;
         case EX_STR: e->inferred = type_str(); return e->inferred;
         case EX_BOOL: e->inferred = type_bool(); return e->inferred;
         case EX_VAR: {
@@ -381,9 +438,9 @@ static Type check_expr(Expr *e, Scope *s) {
         case EX_UNARY: {
             Type r = check_expr(e->as.unary.rhs, s);
             if (e->as.unary.op == UOP_NEG) {
-                if (r.kind != TY_INT) bp_fatal("unary - expects int");
-                e->inferred = type_int();
-                return e->inferred;
+                if (r.kind == TY_INT) { e->inferred = type_int(); return e->inferred; }
+                if (r.kind == TY_FLOAT) { e->inferred = type_float(); return e->inferred; }
+                bp_fatal("unary - expects int or float");
             }
             if (e->as.unary.op == UOP_NOT) {
                 if (r.kind != TY_BOOL) bp_fatal("not expects bool");
@@ -399,11 +456,17 @@ static Type check_expr(Expr *e, Scope *s) {
             switch (e->as.binary.op) {
                 case BOP_ADD:
                     if (a.kind == TY_INT && b.kind == TY_INT) { e->inferred = type_int(); return e->inferred; }
+                    if (a.kind == TY_FLOAT && b.kind == TY_FLOAT) { e->inferred = type_float(); return e->inferred; }
                     if (a.kind == TY_STR && b.kind == TY_STR) { e->inferred = type_str(); return e->inferred; }
-                    bp_fatal("type error: + supports int+int or str+str");
+                    bp_fatal("type error: + supports int+int, float+float, or str+str");
                     break;
-                case BOP_SUB: case BOP_MUL: case BOP_DIV: case BOP_MOD:
-                    if (a.kind != TY_INT || b.kind != TY_INT) bp_fatal("arithmetic expects int");
+                case BOP_SUB: case BOP_MUL: case BOP_DIV:
+                    if (a.kind == TY_INT && b.kind == TY_INT) { e->inferred = type_int(); return e->inferred; }
+                    if (a.kind == TY_FLOAT && b.kind == TY_FLOAT) { e->inferred = type_float(); return e->inferred; }
+                    bp_fatal("arithmetic expects int or float");
+                    break;
+                case BOP_MOD:
+                    if (a.kind != TY_INT || b.kind != TY_INT) bp_fatal("mod expects int");
                     e->inferred = type_int();
                     return e->inferred;
                 case BOP_EQ: case BOP_NEQ:
@@ -411,9 +474,10 @@ static Type check_expr(Expr *e, Scope *s) {
                     e->inferred = type_bool();
                     return e->inferred;
                 case BOP_LT: case BOP_LTE: case BOP_GT: case BOP_GTE:
-                    if (a.kind != TY_INT || b.kind != TY_INT) bp_fatal("comparisons expect int");
-                    e->inferred = type_bool();
-                    return e->inferred;
+                    if (a.kind == TY_INT && b.kind == TY_INT) { e->inferred = type_bool(); return e->inferred; }
+                    if (a.kind == TY_FLOAT && b.kind == TY_FLOAT) { e->inferred = type_bool(); return e->inferred; }
+                    bp_fatal("comparisons expect int or float");
+                    break;
                 case BOP_AND: case BOP_OR:
                     if (a.kind != TY_BOOL || b.kind != TY_BOOL) bp_fatal("and/or expect bool");
                     e->inferred = type_bool();

@@ -11,6 +11,7 @@ typedef enum {
 
     TOK_IDENT,
     TOK_INT,
+    TOK_FLOAT,
     TOK_STR,
 
     TOK_LET,
@@ -52,6 +53,7 @@ typedef struct {
     const char *lexeme;
     size_t len;
     int64_t int_val;
+    double float_val;
     const char *str_val;
     size_t line;
     size_t col;

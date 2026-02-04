@@ -22,6 +22,7 @@ static void buf_u8(Buf *b, uint8_t x) { buf_put(b, &x, 1); }
 static void buf_u16(Buf *b, uint16_t x) { buf_put(b, &x, 2); }
 static void buf_u32(Buf *b, uint32_t x) { buf_put(b, &x, 4); }
 static void buf_i64(Buf *b, int64_t x) { buf_put(b, &x, 8); }
+static void buf_f64(Buf *b, double x) { buf_put(b, &x, 8); }
 
 typedef struct {
     char *name;
@@ -160,7 +161,36 @@ static BuiltinId builtin_id(const char *name) {
     // File utilities
     if (strcmp(name, "file_size") == 0) return BI_FILE_SIZE;
     if (strcmp(name, "file_copy") == 0) return BI_FILE_COPY;
-    
+
+    // Float math functions
+    if (strcmp(name, "sin") == 0) return BI_SIN;
+    if (strcmp(name, "cos") == 0) return BI_COS;
+    if (strcmp(name, "tan") == 0) return BI_TAN;
+    if (strcmp(name, "asin") == 0) return BI_ASIN;
+    if (strcmp(name, "acos") == 0) return BI_ACOS;
+    if (strcmp(name, "atan") == 0) return BI_ATAN;
+    if (strcmp(name, "atan2") == 0) return BI_ATAN2;
+    if (strcmp(name, "log") == 0) return BI_LOG;
+    if (strcmp(name, "log10") == 0) return BI_LOG10;
+    if (strcmp(name, "log2") == 0) return BI_LOG2;
+    if (strcmp(name, "exp") == 0) return BI_EXP;
+    if (strcmp(name, "fabs") == 0) return BI_FABS;
+    if (strcmp(name, "ffloor") == 0) return BI_FFLOOR;
+    if (strcmp(name, "fceil") == 0) return BI_FCEIL;
+    if (strcmp(name, "fround") == 0) return BI_FROUND;
+    if (strcmp(name, "fsqrt") == 0) return BI_FSQRT;
+    if (strcmp(name, "fpow") == 0) return BI_FPOW;
+
+    // Float conversion functions
+    if (strcmp(name, "int_to_float") == 0) return BI_INT_TO_FLOAT;
+    if (strcmp(name, "float_to_int") == 0) return BI_FLOAT_TO_INT;
+    if (strcmp(name, "float_to_str") == 0) return BI_FLOAT_TO_STR;
+    if (strcmp(name, "str_to_float") == 0) return BI_STR_TO_FLOAT;
+
+    // Float utilities
+    if (strcmp(name, "is_nan") == 0) return BI_IS_NAN;
+    if (strcmp(name, "is_inf") == 0) return BI_IS_INF;
+
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
 }
@@ -269,6 +299,10 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
             buf_u8(&fe->code, OP_CONST_I64);
             buf_i64(&fe->code, e->as.int_val);
             return;
+        case EX_FLOAT:
+            buf_u8(&fe->code, OP_CONST_F64);
+            buf_f64(&fe->code, e->as.float_val);
+            return;
         case EX_BOOL:
             buf_u8(&fe->code, OP_CONST_BOOL);
             buf_u8(&fe->code, e->as.bool_val ? 1 : 0);
@@ -296,8 +330,12 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
         }
         case EX_UNARY: {
             emit_expr(fe, e->as.unary.rhs);
-            if (e->as.unary.op == UOP_NEG) buf_u8(&fe->code, OP_NEG);
-            else buf_u8(&fe->code, OP_NOT);
+            if (e->as.unary.op == UOP_NEG) {
+                if (e->inferred.kind == TY_FLOAT) buf_u8(&fe->code, OP_NEG_F64);
+                else buf_u8(&fe->code, OP_NEG);
+            } else {
+                buf_u8(&fe->code, OP_NOT);
+            }
             return;
         }
         case EX_BINARY: {
@@ -310,21 +348,39 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
             }
             emit_expr(fe, e->as.binary.lhs);
             emit_expr(fe, e->as.binary.rhs);
+            bool is_float = (e->inferred.kind == TY_FLOAT);
             switch (e->as.binary.op) {
                 case BOP_ADD:
                     if (e->inferred.kind == TY_STR) buf_u8(&fe->code, OP_ADD_STR);
+                    else if (is_float) buf_u8(&fe->code, OP_ADD_F64);
                     else buf_u8(&fe->code, OP_ADD_I64);
                     return;
-                case BOP_SUB: buf_u8(&fe->code, OP_SUB_I64); return;
-                case BOP_MUL: buf_u8(&fe->code, OP_MUL_I64); return;
-                case BOP_DIV: buf_u8(&fe->code, OP_DIV_I64); return;
-                case BOP_MOD: buf_u8(&fe->code, OP_MOD_I64); return;
+                case BOP_SUB:
+                    buf_u8(&fe->code, is_float ? OP_SUB_F64 : OP_SUB_I64);
+                    return;
+                case BOP_MUL:
+                    buf_u8(&fe->code, is_float ? OP_MUL_F64 : OP_MUL_I64);
+                    return;
+                case BOP_DIV:
+                    buf_u8(&fe->code, is_float ? OP_DIV_F64 : OP_DIV_I64);
+                    return;
+                case BOP_MOD:
+                    buf_u8(&fe->code, OP_MOD_I64);
+                    return;
                 case BOP_EQ: buf_u8(&fe->code, OP_EQ); return;
                 case BOP_NEQ: buf_u8(&fe->code, OP_NEQ); return;
-                case BOP_LT: buf_u8(&fe->code, OP_LT); return;
-                case BOP_LTE: buf_u8(&fe->code, OP_LTE); return;
-                case BOP_GT: buf_u8(&fe->code, OP_GT); return;
-                case BOP_GTE: buf_u8(&fe->code, OP_GTE); return;
+                case BOP_LT:
+                    buf_u8(&fe->code, is_float ? OP_LT_F64 : OP_LT);
+                    return;
+                case BOP_LTE:
+                    buf_u8(&fe->code, is_float ? OP_LTE_F64 : OP_LTE);
+                    return;
+                case BOP_GT:
+                    buf_u8(&fe->code, is_float ? OP_GT_F64 : OP_GT);
+                    return;
+                case BOP_GTE:
+                    buf_u8(&fe->code, is_float ? OP_GTE_F64 : OP_GTE);
+                    return;
                 default: break;
             }
             bp_fatal("unsupported binary op");

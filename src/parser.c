@@ -33,6 +33,7 @@ static Type parse_type(Parser *p) {
 
     Type t = type_void();
     if (n == 3 && memcmp(s, "int", 3) == 0) t = type_int();
+    else if (n == 5 && memcmp(s, "float", 5) == 0) t = type_float();
     else if (n == 4 && memcmp(s, "bool", 4) == 0) t = type_bool();
     else if (n == 3 && memcmp(s, "str", 3) == 0) t = type_str();
     else if (n == 4 && memcmp(s, "void", 4) == 0) t = type_void();
@@ -57,6 +58,11 @@ static Expr *parse_primary(Parser *p) {
         int64_t v = p->cur.int_val;
         next(p);
         return expr_new_int(v, line);
+    }
+    if (p->cur.kind == TOK_FLOAT) {
+        double v = p->cur.float_val;
+        next(p);
+        return expr_new_float(v, line);
     }
     if (p->cur.kind == TOK_STR) {
         char *s = bp_xstrdup(p->cur.str_val);
