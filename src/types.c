@@ -29,8 +29,24 @@ typedef struct {
     size_t cap;
 } FnTable;
 
+// Struct type info for type checking
+typedef struct {
+    char *name;
+    char **field_names;
+    Type *field_types;
+    size_t field_count;
+    size_t struct_index;
+} StructInfo;
+
+typedef struct {
+    StructInfo *items;
+    size_t len;
+    size_t cap;
+} StructTable;
+
 static Module *g_module = NULL;  // Global reference for function lookup
 static FnTable g_fntable = {0};
+static StructTable g_structtable = {0};
 
 static void scope_put(Scope *s, const char *name, Type t) {
     for (size_t i = 0; i < s->len; i++) {
@@ -81,6 +97,41 @@ static void fntable_free(FnTable *ft) {
     memset(ft, 0, sizeof(*ft));
 }
 
+static void structtable_add(StructTable *st, const char *name, char **field_names, Type *field_types, size_t fc, size_t idx) {
+    if (st->len + 1 > st->cap) {
+        st->cap = st->cap ? st->cap * 2 : 16;
+        st->items = bp_xrealloc(st->items, st->cap * sizeof(*st->items));
+    }
+    st->items[st->len].name = bp_xstrdup(name);
+    st->items[st->len].field_names = field_names;
+    st->items[st->len].field_types = field_types;
+    st->items[st->len].field_count = fc;
+    st->items[st->len].struct_index = idx;
+    st->len++;
+}
+
+static StructInfo *structtable_get(StructTable *st, const char *name) {
+    for (size_t i = 0; i < st->len; i++) {
+        if (strcmp(st->items[i].name, name) == 0) return &st->items[i];
+    }
+    return NULL;
+}
+
+static int structtable_get_field_index(StructInfo *si, const char *field_name) {
+    for (size_t i = 0; i < si->field_count; i++) {
+        if (strcmp(si->field_names[i], field_name) == 0) return (int)i;
+    }
+    return -1;
+}
+
+static void structtable_free(StructTable *st) {
+    for (size_t i = 0; i < st->len; i++) {
+        free(st->items[i].name);
+    }
+    free(st->items);
+    memset(st, 0, sizeof(*st));
+}
+
 static bool type_eq(Type a, Type b) {
     if (a.kind != b.kind) return false;
     if (a.kind == TY_ARRAY) {
@@ -91,6 +142,10 @@ static bool type_eq(Type a, Type b) {
         if (!a.key_type || !b.key_type) return false;
         if (!a.elem_type || !b.elem_type) return false;
         return type_eq(*a.key_type, *b.key_type) && type_eq(*a.elem_type, *b.elem_type);
+    }
+    if (a.kind == TY_STRUCT) {
+        if (!a.struct_name || !b.struct_name) return false;
+        return strcmp(a.struct_name, b.struct_name) == 0;
     }
     return true;
 }
@@ -115,6 +170,9 @@ static const char *type_name(Type t) {
                 return buf;
             }
             return "{?: ?}";
+        case TY_STRUCT:
+            if (t.struct_name) return t.struct_name;
+            return "<struct>";
         default: return "?";
     }
 }
@@ -836,6 +894,56 @@ static Type check_expr(Expr *e, Scope *s) {
             e->inferred = map_type;
             return e->inferred;
         }
+        case EX_STRUCT_LITERAL: {
+            // Look up struct definition
+            StructInfo *si = structtable_get(&g_structtable, e->as.struct_literal.struct_name);
+            if (!si) {
+                bp_fatal("unknown struct type '%s'", e->as.struct_literal.struct_name);
+            }
+            // Check that all fields are provided and match expected types
+            for (size_t i = 0; i < e->as.struct_literal.field_count; i++) {
+                const char *fname = e->as.struct_literal.field_names[i];
+                int fidx = structtable_get_field_index(si, fname);
+                if (fidx < 0) {
+                    bp_fatal("struct '%s' has no field '%s'", si->name, fname);
+                }
+                Type fval_type = check_expr(e->as.struct_literal.field_values[i], s);
+                if (!type_eq(si->field_types[fidx], fval_type)) {
+                    bp_fatal("struct field '%s.%s' expects %s, got %s",
+                             si->name, fname, type_name(si->field_types[fidx]), type_name(fval_type));
+                }
+            }
+            // Check all fields are provided
+            if (e->as.struct_literal.field_count != si->field_count) {
+                bp_fatal("struct '%s' requires %zu fields, got %zu",
+                         si->name, si->field_count, e->as.struct_literal.field_count);
+            }
+            Type st_type;
+            st_type.kind = TY_STRUCT;
+            st_type.elem_type = NULL;
+            st_type.key_type = NULL;
+            st_type.struct_name = si->name;
+            e->inferred = st_type;
+            return e->inferred;
+        }
+        case EX_FIELD_ACCESS: {
+            Type obj_type = check_expr(e->as.field_access.object, s);
+            if (obj_type.kind != TY_STRUCT) {
+                bp_fatal("cannot access field '%s' on non-struct type %s",
+                         e->as.field_access.field_name, type_name(obj_type));
+            }
+            StructInfo *si = structtable_get(&g_structtable, obj_type.struct_name);
+            if (!si) {
+                bp_fatal("unknown struct type '%s'", obj_type.struct_name);
+            }
+            int fidx = structtable_get_field_index(si, e->as.field_access.field_name);
+            if (fidx < 0) {
+                bp_fatal("struct '%s' has no field '%s'", si->name, e->as.field_access.field_name);
+            }
+            e->as.field_access.field_index = fidx;  // Store for compiler
+            e->inferred = si->field_types[fidx];
+            return e->inferred;
+        }
         case EX_UNARY: {
             Type r = check_expr(e->as.unary.rhs, s);
             if (e->as.unary.op == UOP_NEG) {
@@ -1006,6 +1114,14 @@ void typecheck_module(Module *m) {
     // Build function table first (for forward references and recursion)
     g_module = m;
     fntable_free(&g_fntable);  // Clean any previous state
+    structtable_free(&g_structtable);  // Clean any previous state
+
+    // Build struct table first (structs must be defined before use)
+    for (size_t i = 0; i < m->structc; i++) {
+        StructDef *sd = &m->structs[i];
+        // Note: we don't copy field names/types, just reference them
+        structtable_add(&g_structtable, sd->name, sd->field_names, sd->field_types, sd->field_count, i);
+    }
 
     for (size_t i = 0; i < m->fnc; i++) {
         Function *f = &m->fns[i];
@@ -1035,5 +1151,5 @@ void typecheck_module(Module *m) {
         free(s.items);
     }
 
-    // Keep function table around for compiler (don't free yet)
+    // Keep function/struct tables around for compiler (don't free yet)
 }

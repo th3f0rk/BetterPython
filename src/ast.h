@@ -10,7 +10,8 @@ typedef enum {
     TY_STR,
     TY_VOID,
     TY_ARRAY,
-    TY_MAP
+    TY_MAP,
+    TY_STRUCT
 } TypeKind;
 
 typedef struct Type Type;
@@ -19,17 +20,19 @@ struct Type {
     TypeKind kind;
     Type *elem_type;  // For TY_ARRAY: the element type, for TY_MAP: the value type
     Type *key_type;   // For TY_MAP: the key type
+    char *struct_name; // For TY_STRUCT: the struct name
 };
 
-static inline Type type_int(void)   { Type t = {TY_INT, NULL, NULL}; return t; }
-static inline Type type_float(void) { Type t = {TY_FLOAT, NULL, NULL}; return t; }
-static inline Type type_bool(void)  { Type t = {TY_BOOL, NULL, NULL}; return t; }
-static inline Type type_str(void)   { Type t = {TY_STR, NULL, NULL}; return t; }
-static inline Type type_void(void)  { Type t = {TY_VOID, NULL, NULL}; return t; }
+static inline Type type_int(void)   { Type t = {TY_INT, NULL, NULL, NULL}; return t; }
+static inline Type type_float(void) { Type t = {TY_FLOAT, NULL, NULL, NULL}; return t; }
+static inline Type type_bool(void)  { Type t = {TY_BOOL, NULL, NULL, NULL}; return t; }
+static inline Type type_str(void)   { Type t = {TY_STR, NULL, NULL, NULL}; return t; }
+static inline Type type_void(void)  { Type t = {TY_VOID, NULL, NULL, NULL}; return t; }
 
 Type *type_new(TypeKind kind);
 Type *type_array(Type *elem);
 Type *type_map(Type *key, Type *value);
+Type *type_struct(char *name);
 
 typedef enum {
     EX_INT,
@@ -42,7 +45,9 @@ typedef enum {
     EX_BINARY,
     EX_ARRAY,
     EX_INDEX,
-    EX_MAP
+    EX_MAP,
+    EX_STRUCT_LITERAL,
+    EX_FIELD_ACCESS
 } ExprKind;
 
 typedef enum {
@@ -110,6 +115,19 @@ struct Expr {
             Expr **values;
             size_t len;
         } map;
+
+        struct {
+            char *struct_name;
+            char **field_names;
+            Expr **field_values;
+            size_t field_count;
+        } struct_literal;
+
+        struct {
+            Expr *object;
+            char *field_name;
+            int field_index;  // Set by type checker
+        } field_access;
     } as;
 };
 
@@ -207,8 +225,18 @@ typedef struct {
 } Function;
 
 typedef struct {
+    char *name;
+    char **field_names;
+    Type *field_types;
+    size_t field_count;
+    size_t line;
+} StructDef;
+
+typedef struct {
     Function *fns;
     size_t fnc;
+    StructDef *structs;
+    size_t structc;
 } Module;
 
 Expr *expr_new_int(int64_t v, size_t line);
@@ -222,6 +250,8 @@ Expr *expr_new_binary(BinaryOp op, Expr *lhs, Expr *rhs, size_t line);
 Expr *expr_new_array(Expr **elements, size_t len, size_t line);
 Expr *expr_new_index(Expr *array, Expr *index, size_t line);
 Expr *expr_new_map(Expr **keys, Expr **values, size_t len, size_t line);
+Expr *expr_new_struct_literal(char *struct_name, char **field_names, Expr **field_values, size_t field_count, size_t line);
+Expr *expr_new_field_access(Expr *object, char *field_name, size_t line);
 
 Stmt *stmt_new_let(char *name, Type t, Expr *init, size_t line);
 Stmt *stmt_new_assign(char *name, Expr *value, size_t line);

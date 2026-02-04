@@ -150,7 +150,8 @@ static TokenKind keyword_kind(const char *s, size_t n) {
         {"return", TOK_RETURN}, {"true", TOK_TRUE}, {"false", TOK_FALSE},
         {"and", TOK_AND}, {"or", TOK_OR}, {"not", TOK_NOT},
         {"import", TOK_IMPORT}, {"export", TOK_EXPORT}, {"as", TOK_AS},
-        {"try", TOK_TRY}, {"catch", TOK_CATCH}, {"finally", TOK_FINALLY}, {"throw", TOK_THROW}
+        {"try", TOK_TRY}, {"catch", TOK_CATCH}, {"finally", TOK_FINALLY}, {"throw", TOK_THROW},
+        {"struct", TOK_STRUCT}
     };
     for (size_t i = 0; i < sizeof(m) / sizeof(m[0]); i++) {
         if (strlen(m[i].k) == n && memcmp(s, m[i].k, n) == 0) return m[i].t;
@@ -322,6 +323,7 @@ const char *token_kind_name(TokenKind k) {
         case TOK_CATCH: return "CATCH";
         case TOK_FINALLY: return "FINALLY";
         case TOK_THROW: return "THROW";
+        case TOK_STRUCT: return "STRUCT";
         case TOK_COLON: return "COLON";
         case TOK_COMMA: return "COMMA";
         case TOK_LPAREN: return "LPAREN";

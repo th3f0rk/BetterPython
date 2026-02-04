@@ -34,10 +34,20 @@ struct BpMap {
     size_t count;      // Number of used entries (not tombstones)
 };
 
+struct BpStruct {
+    uint8_t marked;
+    struct BpStruct *next;
+
+    uint16_t type_id;       // Struct type identifier
+    Value *fields;          // Array of field values
+    size_t field_count;
+};
+
 typedef struct {
     BpStr *head;
     BpArray *arr_head;
     BpMap *map_head;
+    BpStruct *struct_head;
     size_t bytes;
     size_t next_gc;
 } Gc;
@@ -58,5 +68,9 @@ bool gc_map_has_key(BpMap *map, Value key);
 bool gc_map_delete(BpMap *map, Value key);
 BpArray *gc_map_keys(Gc *gc, BpMap *map);
 BpArray *gc_map_values(Gc *gc, BpMap *map);
+
+BpStruct *gc_new_struct(Gc *gc, uint16_t type_id, size_t field_count);
+Value gc_struct_get(BpStruct *st, size_t field_idx);
+void gc_struct_set(BpStruct *st, size_t field_idx, Value v);
 
 void gc_collect(Gc *gc, Value *stack, size_t sp, Value *locals, size_t localc);

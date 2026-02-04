@@ -40,6 +40,7 @@ typedef enum {
     TOK_CATCH,
     TOK_FINALLY,
     TOK_THROW,
+    TOK_STRUCT,
 
     TOK_COLON,
     TOK_COMMA,

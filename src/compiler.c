@@ -673,6 +673,22 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
             buf_u32(&fe->code, (uint32_t)e->as.map.len);
             return;
         }
+        case EX_STRUCT_LITERAL: {
+            // Push all field values onto stack
+            for (size_t i = 0; i < e->as.struct_literal.field_count; i++) {
+                emit_expr(fe, e->as.struct_literal.field_values[i]);
+            }
+            buf_u8(&fe->code, OP_STRUCT_NEW);
+            buf_u16(&fe->code, 0);  // struct type ID (simple for now)
+            buf_u16(&fe->code, (uint16_t)e->as.struct_literal.field_count);
+            return;
+        }
+        case EX_FIELD_ACCESS: {
+            emit_expr(fe, e->as.field_access.object);
+            buf_u8(&fe->code, OP_STRUCT_GET);
+            buf_u16(&fe->code, (uint16_t)e->as.field_access.field_index);
+            return;
+        }
         default: break;
     }
     bp_fatal("unknown expr");

@@ -537,6 +537,40 @@ int vm_run(Vm *vm) {
                 ip = h->catch_addr;
                 break;
             }
+            case OP_STRUCT_NEW: {
+                uint16_t type_id = rd_u16(code, &ip);
+                uint16_t field_count = rd_u16(code, &ip);
+                BP_UNUSED(type_id);  // For now, ignore type_id
+                BpStruct *st = gc_new_struct(&vm->gc, type_id, field_count);
+                // Pop field values from stack (in reverse order)
+                if (field_count > vm->sp) bp_fatal("stack underflow in struct creation");
+                for (uint16_t i = 0; i < field_count; i++) {
+                    st->fields[field_count - 1 - i] = pop(vm);
+                }
+                push(vm, v_struct(st));
+                break;
+            }
+            case OP_STRUCT_GET: {
+                uint16_t field_idx = rd_u16(code, &ip);
+                Value st_val = pop(vm);
+                if (st_val.type != VAL_STRUCT) bp_fatal("cannot access field on non-struct");
+                if (field_idx >= st_val.as.st->field_count) {
+                    bp_fatal("struct field index out of bounds: %u >= %zu", field_idx, st_val.as.st->field_count);
+                }
+                push(vm, gc_struct_get(st_val.as.st, field_idx));
+                break;
+            }
+            case OP_STRUCT_SET: {
+                uint16_t field_idx = rd_u16(code, &ip);
+                Value val = pop(vm);
+                Value st_val = pop(vm);
+                if (st_val.type != VAL_STRUCT) bp_fatal("cannot access field on non-struct");
+                if (field_idx >= st_val.as.st->field_count) {
+                    bp_fatal("struct field index out of bounds: %u >= %zu", field_idx, st_val.as.st->field_count);
+                }
+                gc_struct_set(st_val.as.st, field_idx, val);
+                break;
+            }
             default:
                 bp_fatal("unknown opcode %u", op);
         }

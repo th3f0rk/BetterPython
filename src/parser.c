@@ -75,7 +75,16 @@ static Type parse_type(Parser *p) {
     else if (n == 4 && memcmp(s, "bool", 4) == 0) t = type_bool();
     else if (n == 3 && memcmp(s, "str", 3) == 0) t = type_str();
     else if (n == 4 && memcmp(s, "void", 4) == 0) t = type_void();
-    else bp_fatal("unknown type '%.*s' at %zu:%zu", (int)n, s, p->cur.line, p->cur.col);
+    else {
+        // Assume it's a struct type
+        t.kind = TY_STRUCT;
+        t.elem_type = NULL;
+        t.key_type = NULL;
+        char *name = bp_xmalloc(n + 1);
+        memcpy(name, s, n);
+        name[n] = '\0';
+        t.struct_name = name;
+    }
 
     next(p);
     return t;
@@ -173,6 +182,34 @@ static Expr *parse_primary(Parser *p) {
             expect(p, TOK_RPAREN, "expected ')'");
             return parse_postfix(p, expr_new_call(dup_lexeme(id), args, argc, line));
         }
+        // Struct literal: Name{field: value, ...}
+        if (accept(p, TOK_LBRACE)) {
+            char **field_names = NULL;
+            Expr **field_values = NULL;
+            size_t field_count = 0, cap = 0;
+            if (p->cur.kind != TOK_RBRACE) {
+                for (;;) {
+                    if (p->cur.kind != TOK_IDENT) {
+                        bp_fatal("expected field name in struct literal at %zu:%zu", p->cur.line, p->cur.col);
+                    }
+                    char *fname = dup_lexeme(p->cur);
+                    next(p);
+                    expect(p, TOK_COLON, "expected ':' after field name");
+                    Expr *fval = parse_expr(p);
+                    if (field_count + 1 > cap) {
+                        cap = cap ? cap * 2 : 4;
+                        field_names = bp_xrealloc(field_names, cap * sizeof(*field_names));
+                        field_values = bp_xrealloc(field_values, cap * sizeof(*field_values));
+                    }
+                    field_names[field_count] = fname;
+                    field_values[field_count] = fval;
+                    field_count++;
+                    if (!accept(p, TOK_COMMA)) break;
+                }
+            }
+            expect(p, TOK_RBRACE, "expected '}' after struct literal");
+            return parse_postfix(p, expr_new_struct_literal(dup_lexeme(id), field_names, field_values, field_count, line));
+        }
         return parse_postfix(p, expr_new_var(dup_lexeme(id), line));
     }
 
@@ -186,14 +223,26 @@ static Expr *parse_primary(Parser *p) {
     return NULL;
 }
 
-// Handle postfix operations like array indexing: arr[i][j]
+// Handle postfix operations like array indexing: arr[i][j] and field access: obj.field
 static Expr *parse_postfix(Parser *p, Expr *primary) {
-    while (p->cur.kind == TOK_LBRACKET) {
+    for (;;) {
         size_t line = p->cur.line;
-        next(p);  // consume '['
-        Expr *index = parse_expr(p);
-        expect(p, TOK_RBRACKET, "expected ']' after index");
-        primary = expr_new_index(primary, index, line);
+        if (p->cur.kind == TOK_LBRACKET) {
+            next(p);  // consume '['
+            Expr *index = parse_expr(p);
+            expect(p, TOK_RBRACKET, "expected ']' after index");
+            primary = expr_new_index(primary, index, line);
+        } else if (p->cur.kind == TOK_DOT) {
+            next(p);  // consume '.'
+            if (p->cur.kind != TOK_IDENT) {
+                bp_fatal("expected field name after '.' at %zu:%zu", p->cur.line, p->cur.col);
+            }
+            char *field_name = dup_lexeme(p->cur);
+            next(p);
+            primary = expr_new_field_access(primary, field_name, line);
+        } else {
+            break;
+        }
     }
     return primary;
 }
@@ -493,6 +542,56 @@ static Stmt *parse_stmt(Parser *p) {
     return stmt_new_expr(e, line);
 }
 
+static StructDef parse_struct(Parser *p) {
+    StructDef sd;
+    memset(&sd, 0, sizeof(sd));
+
+    sd.line = p->cur.line;
+    expect(p, TOK_STRUCT, "expected 'struct'");
+    if (p->cur.kind != TOK_IDENT) bp_fatal("expected struct name at %zu:%zu", p->cur.line, p->cur.col);
+    sd.name = dup_lexeme(p->cur);
+    next(p);
+
+    expect(p, TOK_COLON, "expected ':' after struct name");
+    expect(p, TOK_NEWLINE, "expected newline after ':'");
+    expect(p, TOK_INDENT, "expected indent after struct header");
+
+    char **field_names = NULL;
+    Type *field_types = NULL;
+    size_t field_count = 0, cap = 0;
+
+    while (p->cur.kind != TOK_DEDENT && p->cur.kind != TOK_EOF) {
+        skip_newlines(p);
+        if (p->cur.kind == TOK_DEDENT || p->cur.kind == TOK_EOF) break;
+
+        if (p->cur.kind != TOK_IDENT) {
+            bp_fatal("expected field name in struct at %zu:%zu", p->cur.line, p->cur.col);
+        }
+        char *fname = dup_lexeme(p->cur);
+        next(p);
+        expect(p, TOK_COLON, "expected ':' after field name");
+        Type ftype = parse_type(p);
+
+        if (field_count + 1 > cap) {
+            cap = cap ? cap * 2 : 4;
+            field_names = bp_xrealloc(field_names, cap * sizeof(*field_names));
+            field_types = bp_xrealloc(field_types, cap * sizeof(*field_types));
+        }
+        field_names[field_count] = fname;
+        field_types[field_count] = ftype;
+        field_count++;
+
+        skip_newlines(p);
+    }
+
+    if (p->cur.kind == TOK_DEDENT) next(p);
+
+    sd.field_names = field_names;
+    sd.field_types = field_types;
+    sd.field_count = field_count;
+    return sd;
+}
+
 static Function parse_function(Parser *p) {
     Function f;
     memset(&f, 0, sizeof(f));
@@ -545,15 +644,21 @@ Module parse_module(const char *src) {
     Module m;
     memset(&m, 0, sizeof(m));
 
-    size_t cap = 0;
+    size_t fn_cap = 0, st_cap = 0;
     skip_newlines(&p);
 
     while (p.cur.kind != TOK_EOF) {
-        if (p.cur.kind != TOK_DEF) bp_fatal("expected 'def' at top level (line %zu)", p.cur.line);
-        Function f = parse_function(&p);
-
-        if (m.fnc + 1 > cap) { cap = cap ? cap * 2 : 8; m.fns = bp_xrealloc(m.fns, cap * sizeof(*m.fns)); }
-        m.fns[m.fnc++] = f;
+        if (p.cur.kind == TOK_DEF) {
+            Function f = parse_function(&p);
+            if (m.fnc + 1 > fn_cap) { fn_cap = fn_cap ? fn_cap * 2 : 8; m.fns = bp_xrealloc(m.fns, fn_cap * sizeof(*m.fns)); }
+            m.fns[m.fnc++] = f;
+        } else if (p.cur.kind == TOK_STRUCT) {
+            StructDef sd = parse_struct(&p);
+            if (m.structc + 1 > st_cap) { st_cap = st_cap ? st_cap * 2 : 8; m.structs = bp_xrealloc(m.structs, st_cap * sizeof(*m.structs)); }
+            m.structs[m.structc++] = sd;
+        } else {
+            bp_fatal("expected 'def' or 'struct' at top level (line %zu)", p.cur.line);
+        }
 
         skip_newlines(&p);
     }

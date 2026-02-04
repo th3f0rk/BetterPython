@@ -9,6 +9,7 @@
 typedef struct BpStr BpStr;
 typedef struct BpArray BpArray;
 typedef struct BpMap BpMap;
+typedef struct BpStruct BpStruct;
 
 typedef enum {
     VAL_INT,
@@ -17,7 +18,8 @@ typedef enum {
     VAL_NULL,
     VAL_STR,
     VAL_ARRAY,
-    VAL_MAP
+    VAL_MAP,
+    VAL_STRUCT
 } ValueType;
 
 typedef struct {
@@ -29,6 +31,7 @@ typedef struct {
         BpStr *s;
         BpArray *arr;
         BpMap *map;
+        BpStruct *st;
     } as;
 } Value;
 
@@ -39,6 +42,7 @@ static inline Value v_null(void)      { Value v; v.type = VAL_NULL; return v; }
 static inline Value v_str(BpStr *s)   { Value v; v.type = VAL_STR; v.as.s = s; return v; }
 static inline Value v_array(BpArray *a) { Value v; v.type = VAL_ARRAY; v.as.arr = a; return v; }
 static inline Value v_map(BpMap *m)   { Value v; v.type = VAL_MAP; v.as.map = m; return v; }
+static inline Value v_struct(BpStruct *st) { Value v; v.type = VAL_STRUCT; v.as.st = st; return v; }
 
 static inline bool v_is_truthy(Value v) {
     if (v.type == VAL_BOOL) return v.as.b;

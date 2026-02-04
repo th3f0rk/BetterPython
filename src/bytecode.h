@@ -60,6 +60,10 @@ typedef enum {
     OP_TRY_END,         // Unregister current exception handler
     OP_THROW,           // Throw exception (value on stack)
 
+    OP_STRUCT_NEW,      // Create new struct: u16 type_id, then N field values from stack
+    OP_STRUCT_GET,      // Get struct field: u16 field_index
+    OP_STRUCT_SET,      // Set struct field: u16 field_index
+
     OP_CALL_BUILTIN,
     OP_CALL,
     OP_RET
@@ -205,11 +209,20 @@ typedef struct {
 } BpFunc;
 
 typedef struct {
+    char *name;
+    char **field_names;
+    size_t field_count;
+} BpStructType;
+
+typedef struct {
     char **strings;
     size_t str_len;
 
     BpFunc *funcs;
     size_t fn_len;
+
+    BpStructType *struct_types;
+    size_t struct_type_len;
 
     uint32_t entry;
 } BpModule;

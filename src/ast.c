@@ -8,6 +8,7 @@ Type *type_new(TypeKind kind) {
     t->kind = kind;
     t->elem_type = NULL;
     t->key_type = NULL;
+    t->struct_name = NULL;
     return t;
 }
 
@@ -16,6 +17,7 @@ Type *type_array(Type *elem) {
     t->kind = TY_ARRAY;
     t->elem_type = elem;
     t->key_type = NULL;
+    t->struct_name = NULL;
     return t;
 }
 
@@ -24,6 +26,16 @@ Type *type_map(Type *key, Type *value) {
     t->kind = TY_MAP;
     t->key_type = key;
     t->elem_type = value;
+    t->struct_name = NULL;
+    return t;
+}
+
+Type *type_struct(char *name) {
+    Type *t = bp_xmalloc(sizeof(*t));
+    t->kind = TY_STRUCT;
+    t->elem_type = NULL;
+    t->key_type = NULL;
+    t->struct_name = name;
     return t;
 }
 
@@ -109,6 +121,22 @@ Expr *expr_new_map(Expr **keys, Expr **values, size_t len, size_t line) {
     e->as.map.keys = keys;
     e->as.map.values = values;
     e->as.map.len = len;
+    return e;
+}
+
+Expr *expr_new_struct_literal(char *struct_name, char **field_names, Expr **field_values, size_t field_count, size_t line) {
+    Expr *e = expr_alloc(EX_STRUCT_LITERAL, line);
+    e->as.struct_literal.struct_name = struct_name;
+    e->as.struct_literal.field_names = field_names;
+    e->as.struct_literal.field_values = field_values;
+    e->as.struct_literal.field_count = field_count;
+    return e;
+}
+
+Expr *expr_new_field_access(Expr *object, char *field_name, size_t line) {
+    Expr *e = expr_alloc(EX_FIELD_ACCESS, line);
+    e->as.field_access.object = object;
+    e->as.field_access.field_name = field_name;
     return e;
 }
 
@@ -239,6 +267,19 @@ static void expr_free(Expr *e) {
             free(e->as.map.keys);
             free(e->as.map.values);
             break;
+        case EX_STRUCT_LITERAL:
+            free(e->as.struct_literal.struct_name);
+            for (size_t i = 0; i < e->as.struct_literal.field_count; i++) {
+                free(e->as.struct_literal.field_names[i]);
+                expr_free(e->as.struct_literal.field_values[i]);
+            }
+            free(e->as.struct_literal.field_names);
+            free(e->as.struct_literal.field_values);
+            break;
+        case EX_FIELD_ACCESS:
+            expr_free(e->as.field_access.object);
+            free(e->as.field_access.field_name);
+            break;
         default: break;
     }
     free(e);
@@ -317,4 +358,15 @@ void module_free(Module *m) {
     free(m->fns);
     m->fns = NULL;
     m->fnc = 0;
+
+    for (size_t i = 0; i < m->structc; i++) {
+        StructDef *sd = &m->structs[i];
+        free(sd->name);
+        for (size_t j = 0; j < sd->field_count; j++) free(sd->field_names[j]);
+        free(sd->field_names);
+        free(sd->field_types);
+    }
+    free(m->structs);
+    m->structs = NULL;
+    m->structc = 0;
 }

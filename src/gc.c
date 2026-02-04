@@ -6,6 +6,7 @@ void gc_init(Gc *gc) {
     gc->head = NULL;
     gc->arr_head = NULL;
     gc->map_head = NULL;
+    gc->struct_head = NULL;
     gc->bytes = 0;
     gc->next_gc = 1024 * 1024;
 }
@@ -23,6 +24,11 @@ static void arr_free(BpArray *a) {
 static void map_free(BpMap *m) {
     free(m->entries);
     free(m);
+}
+
+static void struct_free(BpStruct *st) {
+    free(st->fields);
+    free(st);
 }
 
 void gc_free_all(Gc *gc) {
@@ -49,6 +55,14 @@ void gc_free_all(Gc *gc) {
         mit = n;
     }
     gc->map_head = NULL;
+
+    BpStruct *sit = gc->struct_head;
+    while (sit) {
+        BpStruct *n = sit->next;
+        struct_free(sit);
+        sit = n;
+    }
+    gc->struct_head = NULL;
 
     gc->bytes = 0;
 }
@@ -289,6 +303,31 @@ BpArray *gc_map_values(Gc *gc, BpMap *map) {
     return arr;
 }
 
+BpStruct *gc_new_struct(Gc *gc, uint16_t type_id, size_t field_count) {
+    BpStruct *st = bp_xmalloc(sizeof(*st));
+    st->marked = 0;
+    st->type_id = type_id;
+    st->field_count = field_count;
+    st->fields = bp_xmalloc(field_count * sizeof(Value));
+    for (size_t i = 0; i < field_count; i++) st->fields[i] = v_null();
+
+    st->next = gc->struct_head;
+    gc->struct_head = st;
+
+    gc->bytes += sizeof(*st) + field_count * sizeof(Value);
+    return st;
+}
+
+Value gc_struct_get(BpStruct *st, size_t field_idx) {
+    if (field_idx >= st->field_count) bp_fatal("struct field index out of bounds: %zu >= %zu", field_idx, st->field_count);
+    return st->fields[field_idx];
+}
+
+void gc_struct_set(BpStruct *st, size_t field_idx, Value v) {
+    if (field_idx >= st->field_count) bp_fatal("struct field index out of bounds: %zu >= %zu", field_idx, st->field_count);
+    st->fields[field_idx] = v;
+}
+
 static void mark_value(Value v);
 
 static void mark_array(BpArray *arr) {
@@ -310,6 +349,14 @@ static void mark_map(BpMap *map) {
     }
 }
 
+static void mark_struct(BpStruct *st) {
+    if (!st || st->marked) return;
+    st->marked = 1;
+    for (size_t i = 0; i < st->field_count; i++) {
+        mark_value(st->fields[i]);
+    }
+}
+
 static void mark_value(Value v) {
     if (v.type == VAL_STR && v.as.s) {
         v.as.s->marked = 1;
@@ -317,6 +364,8 @@ static void mark_value(Value v) {
         mark_array(v.as.arr);
     } else if (v.type == VAL_MAP && v.as.map) {
         mark_map(v.as.map);
+    } else if (v.type == VAL_STRUCT && v.as.st) {
+        mark_struct(v.as.st);
     }
 }
 
@@ -366,6 +415,20 @@ static void sweep(Gc *gc) {
         *mit = obj->next;
         gc->bytes -= sizeof(*obj) + obj->cap * sizeof(MapEntry);
         map_free(obj);
+    }
+
+    // Sweep structs
+    BpStruct **sit = &gc->struct_head;
+    while (*sit) {
+        BpStruct *obj = *sit;
+        if (obj->marked) {
+            obj->marked = 0;
+            sit = &obj->next;
+            continue;
+        }
+        *sit = obj->next;
+        gc->bytes -= sizeof(*obj) + obj->field_count * sizeof(Value);
+        struct_free(obj);
     }
 
     if (gc->bytes < 1024 * 1024) gc->next_gc = 1024 * 1024;

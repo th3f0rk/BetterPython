@@ -1,0 +1,43 @@
+# Test user-defined structs
+
+struct Point:
+    x: int
+    y: int
+
+def test_basic_struct() -> int:
+    print("Test basic struct:")
+    let p: Point = Point{x: 10, y: 20}
+    print(p.x)
+    print(p.y)
+    return 0
+
+def test_struct_arithmetic() -> int:
+    print("Test struct arithmetic:")
+    let p1: Point = Point{x: 5, y: 10}
+    let p2: Point = Point{x: 3, y: 4}
+    let dx: int = p1.x - p2.x
+    let dy: int = p1.y - p2.y
+    print(dx)
+    print(dy)
+    return 0
+
+struct Person:
+    age: int
+    name: str
+
+def test_mixed_types() -> int:
+    print("Test mixed types:")
+    let alice: Person = Person{age: 30, name: "Alice"}
+    print(alice.name)
+    print(alice.age)
+    return 0
+
+def main() -> int:
+    test_basic_struct()
+    print("")
+    test_struct_arithmetic()
+    print("")
+    test_mixed_types()
+    print("")
+    print("All struct tests completed!")
+    return 0
