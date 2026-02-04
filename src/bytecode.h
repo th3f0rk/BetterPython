@@ -45,6 +45,24 @@ typedef enum {
 
     OP_JMP,
     OP_JMP_IF_FALSE,
+    OP_BREAK,
+    OP_CONTINUE,
+
+    OP_ARRAY_NEW,       // Create new array with N elements from stack
+    OP_ARRAY_GET,       // Get element at index
+    OP_ARRAY_SET,       // Set element at index
+
+    OP_MAP_NEW,         // Create new map with N key-value pairs from stack
+    OP_MAP_GET,         // Get value by key
+    OP_MAP_SET,         // Set value by key
+
+    OP_TRY_BEGIN,       // Register exception handler: u32 catch_addr, u32 finally_addr, u16 catch_var_slot
+    OP_TRY_END,         // Unregister current exception handler
+    OP_THROW,           // Throw exception (value on stack)
+
+    OP_STRUCT_NEW,      // Create new struct: u16 type_id, then N field values from stack
+    OP_STRUCT_GET,      // Get struct field: u16 field_index
+    OP_STRUCT_SET,      // Set struct field: u16 field_index
 
     OP_CALL_BUILTIN,
     OP_CALL,
@@ -164,7 +182,19 @@ typedef enum {
 
     // Float utilities
     BI_IS_NAN,
-    BI_IS_INF
+    BI_IS_INF,
+
+    // Array operations
+    BI_ARRAY_LEN,
+    BI_ARRAY_PUSH,
+    BI_ARRAY_POP,
+
+    // Map operations
+    BI_MAP_LEN,
+    BI_MAP_KEYS,
+    BI_MAP_VALUES,
+    BI_MAP_HAS_KEY,
+    BI_MAP_DELETE
 } BuiltinId;
 
 typedef struct {
@@ -179,11 +209,20 @@ typedef struct {
 } BpFunc;
 
 typedef struct {
+    char *name;
+    char **field_names;
+    size_t field_count;
+} BpStructType;
+
+typedef struct {
     char **strings;
     size_t str_len;
 
     BpFunc *funcs;
     size_t fn_len;
+
+    BpStructType *struct_types;
+    size_t struct_type_len;
 
     uint32_t entry;
 } BpModule;

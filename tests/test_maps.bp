@@ -1,0 +1,92 @@
+# Test hash maps / dictionaries
+
+def test_map_literal() -> int:
+    let m: {str: int} = {"alice": 25, "bob": 30, "charlie": 35}
+    print(m["alice"])
+    print(m["bob"])
+    print(m["charlie"])
+    return 0
+
+def test_map_modify() -> int:
+    let m: {str: int} = {"x": 10}
+    m["x"] = 99
+    m["y"] = 42
+    print(m["x"])
+    print(m["y"])
+    return 0
+
+def test_map_len() -> int:
+    let m: {str: int} = {"a": 1, "b": 2, "c": 3}
+    let length: int = map_len(m)
+    print(length)
+    return 0
+
+def test_map_has_key() -> int:
+    let m: {str: int} = {"foo": 100, "bar": 200}
+    if map_has_key(m, "foo"):
+        print("has foo")
+    if map_has_key(m, "baz"):
+        print("has baz")
+    else:
+        print("no baz")
+    return 0
+
+def test_map_delete() -> int:
+    let m: {str: int} = {"a": 1, "b": 2}
+    print(map_len(m))
+    map_delete(m, "a")
+    print(map_len(m))
+    if map_has_key(m, "a"):
+        print("still has a")
+    else:
+        print("a deleted")
+    return 0
+
+def test_map_keys() -> int:
+    let m: {str: int} = {"x": 1, "y": 2, "z": 3}
+    let keys: [str] = map_keys(m)
+    print(array_len(keys))
+    return 0
+
+def test_map_values() -> int:
+    let m: {str: int} = {"a": 10, "b": 20, "c": 30}
+    let vals: [int] = map_values(m)
+    let sum: int = 0
+    for i in range(0, array_len(vals)):
+        sum = sum + vals[i]
+    print(sum)
+    return 0
+
+def test_int_keys() -> int:
+    let m: {int: str} = {1: "one", 2: "two", 3: "three"}
+    print(m[1])
+    print(m[2])
+    print(m[3])
+    return 0
+
+def main() -> int:
+    print("Test map literal:")
+    test_map_literal()
+
+    print("Test map modify:")
+    test_map_modify()
+
+    print("Test map_len:")
+    test_map_len()
+
+    print("Test map_has_key:")
+    test_map_has_key()
+
+    print("Test map_delete:")
+    test_map_delete()
+
+    print("Test map_keys:")
+    test_map_keys()
+
+    print("Test map_values:")
+    test_map_values()
+
+    print("Test int keys:")
+    test_int_keys()
+
+    return 0

@@ -1,0 +1,76 @@
+# Test exception handling (try/catch/finally/throw)
+
+def test_basic_throw() -> int:
+    print("Test basic throw:")
+    try:
+        print("Before throw")
+        throw "Test exception"
+        print("After throw - should not print")
+    catch e:
+        print("Caught: ")
+        print(e)
+    print("After try block")
+    return 0
+
+def test_finally() -> int:
+    print("Test finally:")
+    try:
+        print("In try block")
+    catch e:
+        print("Should not catch")
+    finally:
+        print("Finally executed")
+    print("After try block")
+    return 0
+
+def test_throw_with_finally() -> int:
+    print("Test throw with finally:")
+    try:
+        print("Before throw")
+        throw "Exception with finally"
+    catch e:
+        print("Caught exception")
+    finally:
+        print("Finally always runs")
+    print("After try block")
+    return 0
+
+def risky_function() -> int:
+    throw "Error from function"
+    return 42
+
+def test_exception_propagation() -> int:
+    print("Test exception propagation:")
+    try:
+        print("Calling risky function")
+        let x: int = risky_function()
+        print("Should not reach here")
+    catch e:
+        print("Caught propagated exception")
+    return 0
+
+def test_no_exception() -> int:
+    print("Test no exception:")
+    try:
+        let x: int = 10
+        let y: int = 20
+        print(x + y)
+    catch e:
+        print("Should not catch")
+    finally:
+        print("Finally runs anyway")
+    return 0
+
+def main() -> int:
+    test_basic_throw()
+    print("")
+    test_finally()
+    print("")
+    test_throw_with_finally()
+    print("")
+    test_exception_propagation()
+    print("")
+    test_no_exception()
+    print("")
+    print("All exception tests completed!")
+    return 0

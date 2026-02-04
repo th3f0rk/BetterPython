@@ -8,18 +8,31 @@ typedef enum {
     TY_FLOAT,
     TY_BOOL,
     TY_STR,
-    TY_VOID
+    TY_VOID,
+    TY_ARRAY,
+    TY_MAP,
+    TY_STRUCT
 } TypeKind;
 
-typedef struct {
-    TypeKind kind;
-} Type;
+typedef struct Type Type;
 
-static inline Type type_int(void)   { Type t = {TY_INT}; return t; }
-static inline Type type_float(void) { Type t = {TY_FLOAT}; return t; }
-static inline Type type_bool(void)  { Type t = {TY_BOOL}; return t; }
-static inline Type type_str(void)   { Type t = {TY_STR}; return t; }
-static inline Type type_void(void)  { Type t = {TY_VOID}; return t; }
+struct Type {
+    TypeKind kind;
+    Type *elem_type;  // For TY_ARRAY: the element type, for TY_MAP: the value type
+    Type *key_type;   // For TY_MAP: the key type
+    char *struct_name; // For TY_STRUCT: the struct name
+};
+
+static inline Type type_int(void)   { Type t = {TY_INT, NULL, NULL, NULL}; return t; }
+static inline Type type_float(void) { Type t = {TY_FLOAT, NULL, NULL, NULL}; return t; }
+static inline Type type_bool(void)  { Type t = {TY_BOOL, NULL, NULL, NULL}; return t; }
+static inline Type type_str(void)   { Type t = {TY_STR, NULL, NULL, NULL}; return t; }
+static inline Type type_void(void)  { Type t = {TY_VOID, NULL, NULL, NULL}; return t; }
+
+Type *type_new(TypeKind kind);
+Type *type_array(Type *elem);
+Type *type_map(Type *key, Type *value);
+Type *type_struct(char *name);
 
 typedef enum {
     EX_INT,
@@ -29,7 +42,12 @@ typedef enum {
     EX_VAR,
     EX_CALL,
     EX_UNARY,
-    EX_BINARY
+    EX_BINARY,
+    EX_ARRAY,
+    EX_INDEX,
+    EX_MAP,
+    EX_STRUCT_LITERAL,
+    EX_FIELD_ACCESS
 } ExprKind;
 
 typedef enum {
@@ -68,6 +86,7 @@ struct Expr {
             char *name;
             Expr **args;
             size_t argc;
+            int fn_index;  // -1 = builtin, >= 0 = user function index
         } call;
 
         struct {
@@ -80,16 +99,51 @@ struct Expr {
             Expr *lhs;
             Expr *rhs;
         } binary;
+
+        struct {
+            Expr **elements;
+            size_t len;
+        } array;
+
+        struct {
+            Expr *array;
+            Expr *index;
+        } index;
+
+        struct {
+            Expr **keys;
+            Expr **values;
+            size_t len;
+        } map;
+
+        struct {
+            char *struct_name;
+            char **field_names;
+            Expr **field_values;
+            size_t field_count;
+        } struct_literal;
+
+        struct {
+            Expr *object;
+            char *field_name;
+            int field_index;  // Set by type checker
+        } field_access;
     } as;
 };
 
 typedef enum {
     ST_LET,
     ST_ASSIGN,
+    ST_INDEX_ASSIGN,
     ST_EXPR,
     ST_IF,
     ST_WHILE,
-    ST_RETURN
+    ST_FOR,
+    ST_BREAK,
+    ST_CONTINUE,
+    ST_RETURN,
+    ST_TRY,
+    ST_THROW
 } StmtKind;
 
 struct Stmt {
@@ -107,6 +161,12 @@ struct Stmt {
             char *name;
             Expr *value;
         } assign;
+
+        struct {
+            Expr *array;
+            Expr *index;
+            Expr *value;
+        } idx_assign;
 
         struct {
             Expr *expr;
@@ -127,8 +187,30 @@ struct Stmt {
         } wh;
 
         struct {
+            char *var;      // iterator variable name
+            Expr *start;    // range start
+            Expr *end;      // range end
+            Stmt **body;
+            size_t body_len;
+        } forr;
+
+        struct {
             Expr *value; // may be NULL
         } ret;
+
+        struct {
+            Stmt **try_stmts;
+            size_t try_len;
+            char *catch_var;         // Variable name to bind exception (may be NULL)
+            Stmt **catch_stmts;
+            size_t catch_len;
+            Stmt **finally_stmts;    // May be NULL
+            size_t finally_len;
+        } try_catch;
+
+        struct {
+            Expr *value;   // Exception value to throw
+        } throw;
     } as;
 };
 
@@ -143,8 +225,18 @@ typedef struct {
 } Function;
 
 typedef struct {
+    char *name;
+    char **field_names;
+    Type *field_types;
+    size_t field_count;
+    size_t line;
+} StructDef;
+
+typedef struct {
     Function *fns;
     size_t fnc;
+    StructDef *structs;
+    size_t structc;
 } Module;
 
 Expr *expr_new_int(int64_t v, size_t line);
@@ -155,12 +247,23 @@ Expr *expr_new_var(char *name, size_t line);
 Expr *expr_new_call(char *name, Expr **args, size_t argc, size_t line);
 Expr *expr_new_unary(UnaryOp op, Expr *rhs, size_t line);
 Expr *expr_new_binary(BinaryOp op, Expr *lhs, Expr *rhs, size_t line);
+Expr *expr_new_array(Expr **elements, size_t len, size_t line);
+Expr *expr_new_index(Expr *array, Expr *index, size_t line);
+Expr *expr_new_map(Expr **keys, Expr **values, size_t len, size_t line);
+Expr *expr_new_struct_literal(char *struct_name, char **field_names, Expr **field_values, size_t field_count, size_t line);
+Expr *expr_new_field_access(Expr *object, char *field_name, size_t line);
 
 Stmt *stmt_new_let(char *name, Type t, Expr *init, size_t line);
 Stmt *stmt_new_assign(char *name, Expr *value, size_t line);
+Stmt *stmt_new_index_assign(Expr *array, Expr *index, Expr *value, size_t line);
 Stmt *stmt_new_expr(Expr *e, size_t line);
 Stmt *stmt_new_if(Expr *cond, Stmt **then_s, size_t then_len, Stmt **else_s, size_t else_len, size_t line);
 Stmt *stmt_new_while(Expr *cond, Stmt **body, size_t body_len, size_t line);
+Stmt *stmt_new_for(char *var, Expr *start, Expr *end, Stmt **body, size_t body_len, size_t line);
+Stmt *stmt_new_break(size_t line);
+Stmt *stmt_new_continue(size_t line);
 Stmt *stmt_new_return(Expr *value, size_t line);
+Stmt *stmt_new_try(Stmt **try_s, size_t try_len, char *catch_var, Stmt **catch_s, size_t catch_len, Stmt **finally_s, size_t finally_len, size_t line);
+Stmt *stmt_new_throw(Expr *value, size_t line);
 
 void module_free(Module *m);

@@ -146,8 +146,12 @@ static Token lex_number(Lexer *lx) {
 static TokenKind keyword_kind(const char *s, size_t n) {
     struct { const char *k; TokenKind t; } m[] = {
         {"let", TOK_LET}, {"def", TOK_DEF}, {"if", TOK_IF}, {"elif", TOK_ELIF}, {"else", TOK_ELSE},
-        {"while", TOK_WHILE}, {"return", TOK_RETURN}, {"true", TOK_TRUE}, {"false", TOK_FALSE},
-        {"and", TOK_AND}, {"or", TOK_OR}, {"not", TOK_NOT}
+        {"while", TOK_WHILE}, {"for", TOK_FOR}, {"in", TOK_IN}, {"break", TOK_BREAK}, {"continue", TOK_CONTINUE},
+        {"return", TOK_RETURN}, {"true", TOK_TRUE}, {"false", TOK_FALSE},
+        {"and", TOK_AND}, {"or", TOK_OR}, {"not", TOK_NOT},
+        {"import", TOK_IMPORT}, {"export", TOK_EXPORT}, {"as", TOK_AS},
+        {"try", TOK_TRY}, {"catch", TOK_CATCH}, {"finally", TOK_FINALLY}, {"throw", TOK_THROW},
+        {"struct", TOK_STRUCT}
     };
     for (size_t i = 0; i < sizeof(m) / sizeof(m[0]); i++) {
         if (strlen(m[i].k) == n && memcmp(s, m[i].k, n) == 0) return m[i].t;
@@ -249,6 +253,11 @@ static Token lex_one(Lexer *lx) {
     if (c == ',' ) { adv(lx); return tok_make(TOK_COMMA, NULL, 0, line, col); }
     if (c == '(' ) { adv(lx); return tok_make(TOK_LPAREN, NULL, 0, line, col); }
     if (c == ')' ) { adv(lx); return tok_make(TOK_RPAREN, NULL, 0, line, col); }
+    if (c == '[' ) { adv(lx); return tok_make(TOK_LBRACKET, NULL, 0, line, col); }
+    if (c == ']' ) { adv(lx); return tok_make(TOK_RBRACKET, NULL, 0, line, col); }
+    if (c == '{' ) { adv(lx); return tok_make(TOK_LBRACE, NULL, 0, line, col); }
+    if (c == '}' ) { adv(lx); return tok_make(TOK_RBRACE, NULL, 0, line, col); }
+    if (c == '.' ) { adv(lx); return tok_make(TOK_DOT, NULL, 0, line, col); }
 
     if (c == '-' && nxt(lx) == '>') { adv(lx); adv(lx); return tok_make(TOK_ARROW, NULL, 0, line, col); }
 
@@ -296,16 +305,33 @@ const char *token_kind_name(TokenKind k) {
         case TOK_ELIF: return "ELIF";
         case TOK_ELSE: return "ELSE";
         case TOK_WHILE: return "WHILE";
+        case TOK_FOR: return "FOR";
+        case TOK_IN: return "IN";
+        case TOK_BREAK: return "BREAK";
+        case TOK_CONTINUE: return "CONTINUE";
         case TOK_RETURN: return "RETURN";
         case TOK_TRUE: return "TRUE";
         case TOK_FALSE: return "FALSE";
         case TOK_AND: return "AND";
         case TOK_OR: return "OR";
         case TOK_NOT: return "NOT";
+        case TOK_IMPORT: return "IMPORT";
+        case TOK_EXPORT: return "EXPORT";
+        case TOK_AS: return "AS";
+        case TOK_DOT: return "DOT";
+        case TOK_TRY: return "TRY";
+        case TOK_CATCH: return "CATCH";
+        case TOK_FINALLY: return "FINALLY";
+        case TOK_THROW: return "THROW";
+        case TOK_STRUCT: return "STRUCT";
         case TOK_COLON: return "COLON";
         case TOK_COMMA: return "COMMA";
         case TOK_LPAREN: return "LPAREN";
         case TOK_RPAREN: return "RPAREN";
+        case TOK_LBRACKET: return "LBRACKET";
+        case TOK_RBRACKET: return "RBRACKET";
+        case TOK_LBRACE: return "LBRACE";
+        case TOK_RBRACE: return "RBRACE";
         case TOK_ARROW: return "ARROW";
         case TOK_ASSIGN: return "ASSIGN";
         case TOK_PLUS: return "PLUS";

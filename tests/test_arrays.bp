@@ -1,0 +1,77 @@
+# Test arrays and indexing
+
+def test_array_literal() -> int:
+    let arr: [int] = [1, 2, 3, 4, 5]
+    print(arr[0])
+    print(arr[2])
+    print(arr[4])
+    return 0
+
+def test_array_modify() -> int:
+    let arr: [int] = [10, 20, 30]
+    arr[1] = 99
+    print(arr[0])
+    print(arr[1])
+    print(arr[2])
+    return 0
+
+def test_array_len() -> int:
+    let arr: [int] = [1, 2, 3, 4, 5, 6]
+    let length: int = array_len(arr)
+    print(length)
+    return 0
+
+def test_array_push() -> int:
+    let arr: [int] = [1, 2]
+    array_push(arr, 3)
+    array_push(arr, 4)
+    print(array_len(arr))
+    print(arr[2])
+    print(arr[3])
+    return 0
+
+def test_array_pop() -> int:
+    let arr: [int] = [10, 20, 30]
+    let last: int = array_pop(arr)
+    print(last)
+    print(array_len(arr))
+    return 0
+
+def test_array_loop() -> int:
+    let arr: [int] = [5, 10, 15, 20]
+    let sum: int = 0
+    for i in range(0, array_len(arr)):
+        sum = sum + arr[i]
+    print(sum)
+    return 0
+
+def test_string_array() -> int:
+    let names: [str] = ["Alice", "Bob", "Charlie"]
+    print(names[0])
+    print(names[1])
+    print(names[2])
+    return 0
+
+def main() -> int:
+    print("Test array literal:")
+    test_array_literal()
+
+    print("Test array modify:")
+    test_array_modify()
+
+    print("Test array_len:")
+    test_array_len()
+
+    print("Test array_push:")
+    test_array_push()
+
+    print("Test array_pop:")
+    test_array_pop()
+
+    print("Test array loop:")
+    test_array_loop()
+
+    print("Test string array:")
+    test_string_array()
+
+    return 0

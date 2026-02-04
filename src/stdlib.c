@@ -1109,6 +1109,55 @@ static Value bi_is_inf(Value *args, uint16_t argc) {
     return v_bool(isinf(args[0].as.f));
 }
 
+/* Array operations */
+static Value bi_array_len(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_ARRAY) bp_fatal("array_len expects (array)");
+    return v_int((int64_t)args[0].as.arr->len);
+}
+
+static Value bi_array_push(Value *args, uint16_t argc, Gc *gc) {
+    if (argc != 2 || args[0].type != VAL_ARRAY) bp_fatal("array_push expects (array, value)");
+    gc_array_push(gc, args[0].as.arr, args[1]);
+    return v_null();
+}
+
+static Value bi_array_pop(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_ARRAY) bp_fatal("array_pop expects (array)");
+    BpArray *arr = args[0].as.arr;
+    if (arr->len == 0) bp_fatal("array_pop on empty array");
+    Value v = arr->data[arr->len - 1];
+    arr->len--;
+    return v;
+}
+
+/* Map operations */
+static Value bi_map_len(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_MAP) bp_fatal("map_len expects (map)");
+    return v_int((int64_t)args[0].as.map->count);
+}
+
+static Value bi_map_keys(Value *args, uint16_t argc, Gc *gc) {
+    if (argc != 1 || args[0].type != VAL_MAP) bp_fatal("map_keys expects (map)");
+    BpArray *arr = gc_map_keys(gc, args[0].as.map);
+    return v_array(arr);
+}
+
+static Value bi_map_values(Value *args, uint16_t argc, Gc *gc) {
+    if (argc != 1 || args[0].type != VAL_MAP) bp_fatal("map_values expects (map)");
+    BpArray *arr = gc_map_values(gc, args[0].as.map);
+    return v_array(arr);
+}
+
+static Value bi_map_has_key(Value *args, uint16_t argc) {
+    if (argc != 2 || args[0].type != VAL_MAP) bp_fatal("map_has_key expects (map, key)");
+    return v_bool(gc_map_has_key(args[0].as.map, args[1]));
+}
+
+static Value bi_map_delete(Value *args, uint16_t argc) {
+    if (argc != 2 || args[0].type != VAL_MAP) bp_fatal("map_delete expects (map, key)");
+    return v_bool(gc_map_delete(args[0].as.map, args[1]));
+}
+
 Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_code, bool *exiting) {
     switch (id) {
         case BI_PRINT: return bi_print(args, argc, gc);
@@ -1218,6 +1267,18 @@ Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_co
         // Float utilities
         case BI_IS_NAN: return bi_is_nan(args, argc);
         case BI_IS_INF: return bi_is_inf(args, argc);
+
+        // Array operations
+        case BI_ARRAY_LEN: return bi_array_len(args, argc);
+        case BI_ARRAY_PUSH: return bi_array_push(args, argc, gc);
+        case BI_ARRAY_POP: return bi_array_pop(args, argc);
+
+        // Map operations
+        case BI_MAP_LEN: return bi_map_len(args, argc);
+        case BI_MAP_KEYS: return bi_map_keys(args, argc, gc);
+        case BI_MAP_VALUES: return bi_map_values(args, argc, gc);
+        case BI_MAP_HAS_KEY: return bi_map_has_key(args, argc);
+        case BI_MAP_DELETE: return bi_map_delete(args, argc);
 
         default: break;
     }
