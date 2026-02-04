@@ -1,0 +1,70 @@
+def get_hieroglyph(index: int) -> str:
+    let mapped: int = 33 + index
+    return chr(mapped)
+
+def encode_to_hieroglyphs(base64_str: str) -> str:
+    let result: str = ""
+    let i: int = 0
+    while i < len(base64_str):
+        let c: str = substr(base64_str, i, 1)
+        let code: int = ord(c)
+        let index: int = 0
+        if code >= 65 and code <= 90:
+            index = code - 65
+        elif code >= 97 and code <= 122:
+            index = code - 97 + 26
+        elif code >= 48 and code <= 57:
+            index = code - 48 + 52
+        elif code == 43:
+            index = 62
+        elif code == 47:
+            index = 63
+        elif code == 61:
+            index = 64
+        result = result + get_hieroglyph(index)
+        i = i + 1
+    return result
+
+def decode_from_hieroglyphs(hieroglyph_str: str) -> str:
+    let result: str = ""
+    let i: int = 0
+    while i < len(hieroglyph_str):
+        let c: str = substr(hieroglyph_str, i, 1)
+        let code: int = ord(c)
+        let index: int = code - 33
+        let base64_char: str = ""
+        if index >= 0 and index <= 25:
+            base64_char = chr(65 + index)
+        elif index >= 26 and index <= 51:
+            base64_char = chr(97 + index - 26)
+        elif index >= 52 and index <= 61:
+            base64_char = chr(48 + index - 52)
+        elif index == 62:
+            base64_char = chr(43)
+        elif index == 63:
+            base64_char = chr(47)
+        elif index == 64:
+            base64_char = chr(61)
+        result = result + base64_char
+        i = i + 1
+    return result
+
+def main() -> int:
+    print("Egyptian Hieroglyph File Encoder")
+    print("")
+    let test_str: str = "Hello, Divine Singularity!"
+    print("Original:", test_str)
+    let base64_encoded: str = base64_encode(test_str)
+    print("Base64:", base64_encoded)
+    let hieroglyphs: str = encode_to_hieroglyphs(base64_encoded)
+    print("Hieroglyphs:", hieroglyphs)
+    let decoded_base64: str = decode_from_hieroglyphs(hieroglyphs)
+    print("Decoded base64:", decoded_base64)
+    let decoded: str = base64_decode(decoded_base64)
+    print("Decoded text:", decoded)
+    print("")
+    if decoded == test_str:
+        print("Success!")
+    else:
+        print("Failed!")
+    return 0

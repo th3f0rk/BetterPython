@@ -1,0 +1,11 @@
+def main() -> int:
+    let x: int = 15
+    let mod3: int = x % 3
+    let mod5: int = x % 5
+    print("15 % 3 =", mod3)
+    print("15 % 5 =", mod5)
+    if mod3 == 0:
+        print("divisible by 3")
+    if mod5 == 0:
+        print("divisible by 5")
+    return 0

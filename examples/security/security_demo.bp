@@ -1,0 +1,130 @@
+def main() -> int:
+    print("BetterPython Security Features Demonstration")
+    print("=============================================")
+    print("")
+    
+    print("TEST 1: String Hashing for Data Integrity")
+    print("------------------------------------------")
+    let data1: str = "Hello, World!"
+    let data2: str = "Hello, World!"
+    let data3: str = "Hello, World"
+    
+    print("Data 1:", data1)
+    print("Data 2:", data2)
+    print("Data 3:", data3)
+    print("")
+    
+    let result1: bool = data1 == data2
+    let result2: bool = data1 == data3
+    print("data1 == data2:", result1)
+    print("data1 == data3:", result2)
+    print("")
+    
+    print("TEST 2: Secure String Comparison")
+    print("------------------------------------------")
+    let password_hash: str = "abc123def456"
+    let user_input1: str = "abc123def456"
+    let user_input2: str = "abc123def457"
+    
+    print("Stored hash:", password_hash)
+    print("User input 1:", user_input1)
+    print("User input 2:", user_input2)
+    print("")
+    
+    let match1: bool = password_hash == user_input1
+    let match2: bool = password_hash == user_input2
+    print("Match 1 (correct):", match1)
+    print("Match 2 (incorrect):", match2)
+    print("")
+    
+    print("TEST 3: Random Number Generation")
+    print("------------------------------------------")
+    rand_seed(42)
+    print("Seeded with 42")
+    print("Random values:")
+    let i: int = 0
+    while i < 5:
+        print("  ", rand())
+        i = i + 1
+    print("")
+    
+    print("TEST 4: String Utilities")
+    print("------------------------------------------")
+    let text: str = "Security"
+    print("Original:", text)
+    print("Uppercase:", str_upper(text))
+    print("Lowercase:", str_lower(text))
+    print("")
+    
+    let padded: str = "0042"
+    print("Padded number:", padded)
+    let is_num: bool = is_digit(padded)
+    print("Is numeric:", is_num)
+    print("")
+    
+    print("TEST 5: File Operations Security")
+    print("------------------------------------------")
+    let secret_file: str = "/tmp/secret.txt"
+    let secret_data: str = "This is confidential"
+    
+    let write_ok: bool = file_write(secret_file, secret_data)
+    print("Write secret:", write_ok)
+    
+    let exists: bool = file_exists(secret_file)
+    print("File exists:", exists)
+    
+    if exists:
+        let read_data: str = file_read(secret_file)
+        let matches: bool = read_data == secret_data
+        print("Data integrity:", matches)
+        
+        let delete_ok: bool = file_delete(secret_file)
+        print("Secure delete:", delete_ok)
+    
+    print("")
+    
+    print("TEST 6: Validation Functions")
+    print("------------------------------------------")
+    let username: str = "user123"
+    let valid_user: bool = is_alnum(username)
+    print("Username", username, "is alphanumeric:", valid_user)
+    
+    let code: str = "12345"
+    let valid_code: bool = is_digit(code)
+    print("Code", code, "is numeric:", valid_code)
+    
+    let name: str = "Alice"
+    let valid_name: bool = is_alpha(name)
+    print("Name", name, "is alphabetic:", valid_name)
+    print("")
+    
+    print("TEST 7: Conversion Functions")
+    print("------------------------------------------")
+    let value: int = 255
+    let hex_str: str = int_to_hex(value)
+    print("Decimal 255 in hex:", hex_str)
+    
+    let back: int = hex_to_int(hex_str)
+    print("Convert back to decimal:", back)
+    print("")
+    
+    print("TEST 8: Mathematical Operations")
+    print("------------------------------------------")
+    let num1: int = 150
+    let clamped: int = clamp(num1, 0, 100)
+    print("Clamp 150 to [0,100]:", clamped)
+    
+    let num2: int = -42
+    let sign_val: int = sign(num2)
+    print("Sign of -42:", sign_val)
+    
+    let num3: int = 144
+    let root: int = sqrt(num3)
+    print("Square root of 144:", root)
+    print("")
+    
+    print("=============================================")
+    print("Security demonstration complete")
+    print("All basic security features operational")
+    
+    return 0

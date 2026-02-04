@@ -1,0 +1,43 @@
+def main() -> int:
+    print("Security Functions Demonstration")
+    print("")
+    
+    print("Test 1: SHA256 Hashing")
+    let data: str = "password123"
+    let sha256_hash: str = hash_sha256(data)
+    print("Input:", data)
+    print("SHA256:", sha256_hash)
+    print("")
+    
+    print("Test 2: MD5 Hashing")
+    let md5_hash: str = hash_md5(data)
+    print("MD5:", md5_hash)
+    print("")
+    
+    print("Test 3: Secure String Comparison")
+    let password1: str = "secret123"
+    let password2: str = "secret123"
+    let password3: str = "secret456"
+    print("Comparing", password1, "and", password2)
+    print("Match:", secure_compare(password1, password2))
+    print("Comparing", password1, "and", password3)
+    print("Match:", secure_compare(password1, password3))
+    print("")
+    
+    print("Test 4: Random Bytes Generation")
+    let random_data: str = random_bytes(16)
+    print("Generated 16 random bytes")
+    print("Length:", len(random_data))
+    print("")
+    
+    print("Test 5: Hexadecimal Conversion")
+    let number: int = 255
+    let hex_str: str = int_to_hex(number)
+    let back: int = hex_to_int(hex_str)
+    print("Decimal:", number)
+    print("Hex:", hex_str)
+    print("Back to decimal:", back)
+    print("")
+    
+    print("All security tests complete")
+    return 0

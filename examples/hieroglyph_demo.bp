@@ -1,0 +1,84 @@
+def main() -> int:
+    print("=== Egyptian Hieroglyph Encoder Demo ===")
+    print("")
+    
+    let test_str: str = "Hello, Divine Singularity!"
+    print("Original text:", test_str)
+    print("")
+    
+    let base64_encoded: str = base64_encode(test_str)
+    print("Step 1 - Base64 encoding:")
+    print(base64_encoded)
+    print("")
+    
+    print("Step 2 - Converting to hieroglyphs...")
+    print("(mapping each base64 char to a symbol)")
+    let hieroglyphs: str = ""
+    let i: int = 0
+    while i < len(base64_encoded):
+        let c: str = substr(base64_encoded, i, 1)
+        let code: int = ord(c)
+        let index: int = 0
+        
+        if code >= 65 and code <= 90:
+            index = code - 65
+        elif code >= 97 and code <= 122:
+            index = code - 97 + 26
+        elif code >= 48 and code <= 57:
+            index = code - 48 + 52
+        elif code == 43:
+            index = 62
+        elif code == 47:
+            index = 63
+        elif code == 61:
+            index = 64
+        
+        let mapped: int = 33 + index
+        let hieroglyph: str = chr(mapped)
+        hieroglyphs = hieroglyphs + hieroglyph
+        i = i + 1
+    
+    print("Hieroglyphs:")
+    print(hieroglyphs)
+    print("")
+    
+    print("Step 3 - Decoding back from hieroglyphs...")
+    let decoded_base64: str = ""
+    let j: int = 0
+    while j < len(hieroglyphs):
+        let h: str = substr(hieroglyphs, j, 1)
+        let h_code: int = ord(h)
+        let idx: int = h_code - 33
+        
+        let base64_char: str = ""
+        if idx >= 0 and idx <= 25:
+            base64_char = chr(65 + idx)
+        elif idx >= 26 and idx <= 51:
+            base64_char = chr(97 + idx - 26)
+        elif idx >= 52 and idx <= 61:
+            base64_char = chr(48 + idx - 52)
+        elif idx == 62:
+            base64_char = chr(43)
+        elif idx == 63:
+            base64_char = chr(47)
+        elif idx == 64:
+            base64_char = chr(61)
+        
+        decoded_base64 = decoded_base64 + base64_char
+        j = j + 1
+    
+    print("Decoded base64:")
+    print(decoded_base64)
+    print("")
+    
+    let final_decoded: str = base64_decode(decoded_base64)
+    print("Step 4 - Base64 decoding to original:")
+    print(final_decoded)
+    print("")
+    
+    if final_decoded == test_str:
+        print("=== SUCCESS! Encoding and decoding worked! ===")
+    else:
+        print("=== FAILED! Mismatch in encoding/decoding ===")
+    
+    return 0

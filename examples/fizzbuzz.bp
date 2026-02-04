@@ -1,0 +1,18 @@
+def main() -> int:
+    let i: int = 1
+    while i <= 100:
+        let mod15: int = i % 15
+        if mod15 == 0:
+            print("FizzBuzz")
+        else:
+            let mod3: int = i % 3
+            if mod3 == 0:
+                print("Fizz")
+            else:
+                let mod5: int = i % 5
+                if mod5 == 0:
+                    print("Buzz")
+                else:
+                    print(i)
+        i = i + 1
+    return 0

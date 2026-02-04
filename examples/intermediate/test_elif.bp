@@ -1,0 +1,11 @@
+def main() -> int:
+    let x: int = 7
+    if x < 5:
+        print("less than 5")
+    elif x < 10:
+        print("between 5 and 9")
+    elif x < 15:
+        print("between 10 and 14")
+    else:
+        print("15 or more")
+    return 0

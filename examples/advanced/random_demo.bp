@@ -1,0 +1,65 @@
+def main() -> int:
+    print("=== Random Number Generator ===")
+    print("")
+    
+    print("Seeding with current time...")
+    rand_seed(clock_ms())
+    print("")
+    
+    print("10 random numbers (0-32767):")
+    let i: int = 0
+    while i < 10:
+        print("  ", rand())
+        i = i + 1
+    print("")
+    
+    print("Rolling 20 dice (1-6):")
+    let j: int = 0
+    while j < 20:
+        let roll: int = rand_range(1, 7)
+        print("  Roll", j + 1, ":", roll)
+        j = j + 1
+    print("")
+    
+    print("Simulating coin flips (100 flips):")
+    let heads: int = 0
+    let tails: int = 0
+    let k: int = 0
+    while k < 100:
+        let flip: int = rand_range(0, 2)
+        if flip == 0:
+            heads = heads + 1
+        else:
+            tails = tails + 1
+        k = k + 1
+    print("  Heads:", heads)
+    print("  Tails:", tails)
+    print("")
+    
+    print("Generating random password (8 chars):")
+    let password: str = ""
+    let m: int = 0
+    while m < 8:
+        let char_type: int = rand_range(0, 3)
+        let code: int = 0
+        if char_type == 0:
+            code = rand_range(65, 91)
+        elif char_type == 1:
+            code = rand_range(97, 123)
+        else:
+            code = rand_range(48, 58)
+        password = password + chr(code)
+        m = m + 1
+    print("  Password:", password)
+    print("")
+    
+    print("Statistics: max of 1000 random numbers")
+    let maximum: int = 0
+    let n: int = 0
+    while n < 1000:
+        let num: int = rand()
+        maximum = max(maximum, num)
+        n = n + 1
+    print("  Maximum value found:", maximum)
+    
+    return 0

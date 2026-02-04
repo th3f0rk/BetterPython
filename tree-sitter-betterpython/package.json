@@ -1,0 +1,36 @@
+{
+  "name": "tree-sitter-betterpython",
+  "version": "1.0.0",
+  "description": "TreeSitter grammar for BetterPython language",
+  "main": "bindings/node",
+  "types": "bindings/node",
+  "scripts": {
+    "test": "tree-sitter test",
+    "build": "tree-sitter generate && node-gyp build",
+    "parse": "tree-sitter parse"
+  },
+  "keywords": [
+    "tree-sitter",
+    "parser",
+    "betterpython",
+    "syntax"
+  ],
+  "author": "BetterPython Team",
+  "license": "MIT",
+  "dependencies": {
+    "nan": "^2.17.0"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.20.8"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.betterpython",
+      "file-types": ["bp"],
+      "injection-regex": "^(betterpython|bp)$",
+      "highlights": "queries/highlights.scm",
+      "locals": "queries/locals.scm",
+      "tags": "queries/tags.scm"
+    }
+  ]
+}

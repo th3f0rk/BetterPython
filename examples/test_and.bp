@@ -1,0 +1,8 @@
+def main() -> int:
+    let x: int = 1
+    let y: int = 2
+    if x == 1 and y == 2:
+        print("both true")
+    else:
+        print("not both true")
+    return 0

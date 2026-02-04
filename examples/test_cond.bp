@@ -1,0 +1,12 @@
+def main() -> int:
+    let mod3: int = 1
+    let mod5: int = 1
+    print("mod3=", mod3, "mod5=", mod5)
+    print("mod3 == 0:", mod3 == 0)
+    print("mod5 == 0:", mod5 == 0)
+    print("both:", mod3 == 0 and mod5 == 0)
+    if mod3 == 0 and mod5 == 0:
+        print("TRUE BRANCH")
+    else:
+        print("FALSE BRANCH")
+    return 0
