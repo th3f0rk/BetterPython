@@ -203,6 +203,10 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "map_has_key") == 0) return BI_MAP_HAS_KEY;
     if (strcmp(name, "map_delete") == 0) return BI_MAP_DELETE;
 
+    // System/argv
+    if (strcmp(name, "argv") == 0) return BI_ARGV;
+    if (strcmp(name, "argc") == 0) return BI_ARGC;
+
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
 }

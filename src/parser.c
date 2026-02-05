@@ -65,6 +65,49 @@ static Type parse_type(Parser *p) {
         return t;
     }
 
+    // Handle tuple types: (int, str, bool)
+    if (p->cur.kind == TOK_LPAREN) {
+        next(p);  // consume '('
+        Type **tuple_types = NULL;
+        size_t tuple_len = 0, cap = 0;
+        if (p->cur.kind != TOK_RPAREN) {
+            for (;;) {
+                Type elem = parse_type(p);
+                if (tuple_len + 1 > cap) { cap = cap ? cap * 2 : 4; tuple_types = bp_xrealloc(tuple_types, cap * sizeof(*tuple_types)); }
+                Type *elem_copy = type_new(elem.kind);
+                *elem_copy = elem;
+                tuple_types[tuple_len++] = elem_copy;
+                if (!accept(p, TOK_COMMA)) break;
+            }
+        }
+        expect(p, TOK_RPAREN, "expected ')' after tuple types");
+        return *type_tuple(tuple_types, tuple_len);
+    }
+
+    // Handle function types: fn(int, str) -> bool
+    if (p->cur.kind == TOK_FN) {
+        next(p);  // consume 'fn'
+        expect(p, TOK_LPAREN, "expected '(' after fn");
+        Type **param_types = NULL;
+        size_t param_count = 0, cap = 0;
+        if (p->cur.kind != TOK_RPAREN) {
+            for (;;) {
+                Type param = parse_type(p);
+                if (param_count + 1 > cap) { cap = cap ? cap * 2 : 4; param_types = bp_xrealloc(param_types, cap * sizeof(*param_types)); }
+                Type *param_copy = type_new(param.kind);
+                *param_copy = param;
+                param_types[param_count++] = param_copy;
+                if (!accept(p, TOK_COMMA)) break;
+            }
+        }
+        expect(p, TOK_RPAREN, "expected ')' after fn params");
+        expect(p, TOK_ARROW, "expected '->' after fn params");
+        Type ret = parse_type(p);
+        Type *ret_copy = type_new(ret.kind);
+        *ret_copy = ret;
+        return *type_func(param_types, param_count, ret_copy);
+    }
+
     if (p->cur.kind != TOK_IDENT) bp_fatal("expected type name at %zu:%zu", p->cur.line, p->cur.col);
     const char *s = p->cur.lexeme;
     size_t n = p->cur.len;
@@ -75,8 +118,18 @@ static Type parse_type(Parser *p) {
     else if (n == 4 && memcmp(s, "bool", 4) == 0) t = type_bool();
     else if (n == 3 && memcmp(s, "str", 3) == 0) t = type_str();
     else if (n == 4 && memcmp(s, "void", 4) == 0) t = type_void();
+    // Fixed-width signed integers
+    else if (n == 2 && memcmp(s, "i8", 2) == 0) t = type_i8();
+    else if (n == 3 && memcmp(s, "i16", 3) == 0) t = type_i16();
+    else if (n == 3 && memcmp(s, "i32", 3) == 0) t = type_i32();
+    else if (n == 3 && memcmp(s, "i64", 3) == 0) t = type_i64();
+    // Fixed-width unsigned integers
+    else if (n == 2 && memcmp(s, "u8", 2) == 0) t = type_u8();
+    else if (n == 3 && memcmp(s, "u16", 3) == 0) t = type_u16();
+    else if (n == 3 && memcmp(s, "u32", 3) == 0) t = type_u32();
+    else if (n == 3 && memcmp(s, "u64", 3) == 0) t = type_u64();
     else {
-        // Assume it's a struct type
+        // Assume it's a struct or enum type
         t.kind = TY_STRUCT;
         t.elem_type = NULL;
         t.key_type = NULL;
@@ -121,6 +174,46 @@ static Expr *parse_primary(Parser *p) {
     }
     if (accept(p, TOK_TRUE)) return parse_postfix(p, expr_new_bool(true, line));
     if (accept(p, TOK_FALSE)) return parse_postfix(p, expr_new_bool(false, line));
+
+    // self keyword
+    if (accept(p, TOK_SELF)) {
+        return parse_postfix(p, expr_new_var(bp_xstrdup("self"), line));
+    }
+
+    // F-string: f"Hello {name}!"
+    if (p->cur.kind == TOK_FSTRING) {
+        char *str = bp_xstrdup(p->cur.str_val);
+        free((void *)p->cur.str_val);
+        next(p);
+        return parse_postfix(p, expr_new_fstring(str, line));
+    }
+
+    // Lambda: fn(x: int) -> int: x + 1
+    if (p->cur.kind == TOK_FN) {
+        next(p);  // consume 'fn'
+        expect(p, TOK_LPAREN, "expected '(' after fn");
+
+        Param *params = NULL;
+        size_t paramc = 0, cap = 0;
+        if (p->cur.kind != TOK_RPAREN) {
+            for (;;) {
+                if (p->cur.kind != TOK_IDENT) bp_fatal("expected parameter name at %zu:%zu", p->cur.line, p->cur.col);
+                char *pname = dup_lexeme(p->cur);
+                next(p);
+                expect(p, TOK_COLON, "expected ':' in parameter");
+                Type pt = parse_type(p);
+                if (paramc + 1 > cap) { cap = cap ? cap * 2 : 4; params = bp_xrealloc(params, cap * sizeof(*params)); }
+                params[paramc++] = (Param){ .name = pname, .type = pt };
+                if (!accept(p, TOK_COMMA)) break;
+            }
+        }
+        expect(p, TOK_RPAREN, "expected ')' after lambda params");
+        expect(p, TOK_ARROW, "expected '->' for lambda return type");
+        Type ret_type = parse_type(p);
+        expect(p, TOK_COLON, "expected ':' before lambda body");
+        Expr *body = parse_expr(p);
+        return parse_postfix(p, expr_new_lambda(params, paramc, body, ret_type, line));
+    }
 
     // Array literal: [expr, expr, ...]
     if (p->cur.kind == TOK_LBRACKET) {
@@ -213,17 +306,43 @@ static Expr *parse_primary(Parser *p) {
         return parse_postfix(p, expr_new_var(dup_lexeme(id), line));
     }
 
+    // Parenthesized expression or tuple: (expr) or (expr1, expr2, ...)
     if (accept(p, TOK_LPAREN)) {
-        Expr *e = parse_expr(p);
+        if (p->cur.kind == TOK_RPAREN) {
+            // Empty tuple: ()
+            next(p);
+            return parse_postfix(p, expr_new_tuple(NULL, 0, line));
+        }
+        Expr *first = parse_expr(p);
+        if (accept(p, TOK_COMMA)) {
+            // It's a tuple
+            Expr **elements = NULL;
+            size_t len = 0, cap = 0;
+            // Add first element
+            if (len + 1 > cap) { cap = cap ? cap * 2 : 4; elements = bp_xrealloc(elements, cap * sizeof(*elements)); }
+            elements[len++] = first;
+            // Add remaining elements
+            if (p->cur.kind != TOK_RPAREN) {
+                for (;;) {
+                    Expr *e = parse_expr(p);
+                    if (len + 1 > cap) { cap = cap ? cap * 2 : 4; elements = bp_xrealloc(elements, cap * sizeof(*elements)); }
+                    elements[len++] = e;
+                    if (!accept(p, TOK_COMMA)) break;
+                }
+            }
+            expect(p, TOK_RPAREN, "expected ')' after tuple elements");
+            return parse_postfix(p, expr_new_tuple(elements, len, line));
+        }
+        // Just a parenthesized expression
         expect(p, TOK_RPAREN, "expected ')'");
-        return parse_postfix(p, e);
+        return parse_postfix(p, first);
     }
 
     bp_fatal("unexpected token %s at %zu:%zu", token_kind_name(p->cur.kind), p->cur.line, p->cur.col);
     return NULL;
 }
 
-// Handle postfix operations like array indexing: arr[i][j] and field access: obj.field
+// Handle postfix operations like array indexing: arr[i][j], field access: obj.field, and method calls: obj.method()
 static Expr *parse_postfix(Parser *p, Expr *primary) {
     for (;;) {
         size_t line = p->cur.line;
@@ -239,7 +358,24 @@ static Expr *parse_postfix(Parser *p, Expr *primary) {
             }
             char *field_name = dup_lexeme(p->cur);
             next(p);
-            primary = expr_new_field_access(primary, field_name, line);
+            // Check if it's a method call
+            if (p->cur.kind == TOK_LPAREN) {
+                next(p);  // consume '('
+                Expr **args = NULL;
+                size_t argc = 0, cap = 0;
+                if (p->cur.kind != TOK_RPAREN) {
+                    for (;;) {
+                        Expr *a = parse_expr(p);
+                        if (argc + 1 > cap) { cap = cap ? cap * 2 : 4; args = bp_xrealloc(args, cap * sizeof(*args)); }
+                        args[argc++] = a;
+                        if (!accept(p, TOK_COMMA)) break;
+                    }
+                }
+                expect(p, TOK_RPAREN, "expected ')' after method arguments");
+                primary = expr_new_method_call(primary, field_name, args, argc, line);
+            } else {
+                primary = expr_new_field_access(primary, field_name, line);
+            }
         } else {
             break;
         }
@@ -542,11 +678,12 @@ static Stmt *parse_stmt(Parser *p) {
     return stmt_new_expr(e, line);
 }
 
-static StructDef parse_struct(Parser *p) {
+static StructDef parse_struct(Parser *p, bool is_packed) {
     StructDef sd;
     memset(&sd, 0, sizeof(sd));
 
     sd.line = p->cur.line;
+    sd.is_packed = is_packed;
     expect(p, TOK_STRUCT, "expected 'struct'");
     if (p->cur.kind != TOK_IDENT) bp_fatal("expected struct name at %zu:%zu", p->cur.line, p->cur.col);
     sd.name = dup_lexeme(p->cur);
@@ -558,28 +695,90 @@ static StructDef parse_struct(Parser *p) {
 
     char **field_names = NULL;
     Type *field_types = NULL;
-    size_t field_count = 0, cap = 0;
+    size_t field_count = 0, field_cap = 0;
+
+    MethodDef *methods = NULL;
+    size_t method_count = 0, method_cap = 0;
 
     while (p->cur.kind != TOK_DEDENT && p->cur.kind != TOK_EOF) {
         skip_newlines(p);
         if (p->cur.kind == TOK_DEDENT || p->cur.kind == TOK_EOF) break;
 
-        if (p->cur.kind != TOK_IDENT) {
-            bp_fatal("expected field name in struct at %zu:%zu", p->cur.line, p->cur.col);
-        }
-        char *fname = dup_lexeme(p->cur);
-        next(p);
-        expect(p, TOK_COLON, "expected ':' after field name");
-        Type ftype = parse_type(p);
+        // Check for method definition (def inside struct)
+        if (p->cur.kind == TOK_DEF) {
+            MethodDef md;
+            memset(&md, 0, sizeof(md));
+            md.line = p->cur.line;
+            next(p);  // consume 'def'
+            if (p->cur.kind != TOK_IDENT) bp_fatal("expected method name at %zu:%zu", p->cur.line, p->cur.col);
+            md.name = dup_lexeme(p->cur);
+            next(p);
 
-        if (field_count + 1 > cap) {
-            cap = cap ? cap * 2 : 4;
-            field_names = bp_xrealloc(field_names, cap * sizeof(*field_names));
-            field_types = bp_xrealloc(field_types, cap * sizeof(*field_types));
+            expect(p, TOK_LPAREN, "expected '(' after method name");
+
+            Param *params = NULL;
+            size_t paramc = 0, param_cap = 0;
+
+            // First param should be 'self' for methods
+            if (p->cur.kind != TOK_RPAREN) {
+                for (;;) {
+                    if (p->cur.kind == TOK_SELF) {
+                        next(p);
+                        // self doesn't need a type annotation - it's implicit
+                        Type self_type;
+                        memset(&self_type, 0, sizeof(self_type));
+                        self_type.kind = TY_STRUCT;
+                        self_type.struct_name = bp_xstrdup(sd.name);
+                        if (paramc + 1 > param_cap) { param_cap = param_cap ? param_cap * 2 : 4; params = bp_xrealloc(params, param_cap * sizeof(*params)); }
+                        params[paramc++] = (Param){ .name = bp_xstrdup("self"), .type = self_type };
+                    } else {
+                        if (p->cur.kind != TOK_IDENT) bp_fatal("expected parameter name at %zu:%zu", p->cur.line, p->cur.col);
+                        char *pname = dup_lexeme(p->cur);
+                        next(p);
+                        expect(p, TOK_COLON, "expected ':' in parameter");
+                        Type pt = parse_type(p);
+                        if (paramc + 1 > param_cap) { param_cap = param_cap ? param_cap * 2 : 4; params = bp_xrealloc(params, param_cap * sizeof(*params)); }
+                        params[paramc++] = (Param){ .name = pname, .type = pt };
+                    }
+                    if (!accept(p, TOK_COMMA)) break;
+                }
+            }
+            expect(p, TOK_RPAREN, "expected ')' after method params");
+            expect(p, TOK_ARROW, "expected '->' return type");
+            md.ret_type = parse_type(p);
+            expect(p, TOK_COLON, "expected ':' after method signature");
+
+            size_t body_len = 0;
+            Stmt **body = parse_block(p, &body_len);
+
+            md.params = params;
+            md.paramc = paramc;
+            md.body = body;
+            md.body_len = body_len;
+
+            if (method_count + 1 > method_cap) {
+                method_cap = method_cap ? method_cap * 2 : 4;
+                methods = bp_xrealloc(methods, method_cap * sizeof(*methods));
+            }
+            methods[method_count++] = md;
+        } else if (p->cur.kind == TOK_IDENT) {
+            // Field definition
+            char *fname = dup_lexeme(p->cur);
+            next(p);
+            expect(p, TOK_COLON, "expected ':' after field name");
+            Type ftype = parse_type(p);
+
+            if (field_count + 1 > field_cap) {
+                field_cap = field_cap ? field_cap * 2 : 4;
+                field_names = bp_xrealloc(field_names, field_cap * sizeof(*field_names));
+                field_types = bp_xrealloc(field_types, field_cap * sizeof(*field_types));
+            }
+            field_names[field_count] = fname;
+            field_types[field_count] = ftype;
+            field_count++;
+        } else {
+            bp_fatal("expected field or method definition in struct at %zu:%zu", p->cur.line, p->cur.col);
         }
-        field_names[field_count] = fname;
-        field_types[field_count] = ftype;
-        field_count++;
 
         skip_newlines(p);
     }
@@ -589,6 +788,8 @@ static StructDef parse_struct(Parser *p) {
     sd.field_names = field_names;
     sd.field_types = field_types;
     sd.field_count = field_count;
+    sd.methods = methods;
+    sd.method_count = method_count;
     return sd;
 }
 
@@ -635,6 +836,105 @@ static Function parse_function(Parser *p) {
     return f;
 }
 
+static EnumDef parse_enum(Parser *p) {
+    EnumDef ed;
+    memset(&ed, 0, sizeof(ed));
+
+    ed.line = p->cur.line;
+    expect(p, TOK_ENUM, "expected 'enum'");
+    if (p->cur.kind != TOK_IDENT) bp_fatal("expected enum name at %zu:%zu", p->cur.line, p->cur.col);
+    ed.name = dup_lexeme(p->cur);
+    next(p);
+
+    expect(p, TOK_COLON, "expected ':' after enum name");
+    expect(p, TOK_NEWLINE, "expected newline after ':'");
+    expect(p, TOK_INDENT, "expected indent after enum header");
+
+    char **variant_names = NULL;
+    int64_t *variant_values = NULL;
+    size_t variant_count = 0, cap = 0;
+    int64_t next_value = 0;
+
+    while (p->cur.kind != TOK_DEDENT && p->cur.kind != TOK_EOF) {
+        skip_newlines(p);
+        if (p->cur.kind == TOK_DEDENT || p->cur.kind == TOK_EOF) break;
+
+        if (p->cur.kind != TOK_IDENT) {
+            bp_fatal("expected variant name in enum at %zu:%zu", p->cur.line, p->cur.col);
+        }
+        char *vname = dup_lexeme(p->cur);
+        next(p);
+
+        int64_t value = next_value;
+        if (accept(p, TOK_ASSIGN)) {
+            if (p->cur.kind != TOK_INT) {
+                bp_fatal("expected integer value for enum variant at %zu:%zu", p->cur.line, p->cur.col);
+            }
+            value = p->cur.int_val;
+            next(p);
+        }
+        next_value = value + 1;
+
+        if (variant_count + 1 > cap) {
+            cap = cap ? cap * 2 : 4;
+            variant_names = bp_xrealloc(variant_names, cap * sizeof(*variant_names));
+            variant_values = bp_xrealloc(variant_values, cap * sizeof(*variant_values));
+        }
+        variant_names[variant_count] = vname;
+        variant_values[variant_count] = value;
+        variant_count++;
+
+        skip_newlines(p);
+    }
+
+    if (p->cur.kind == TOK_DEDENT) next(p);
+
+    ed.variant_names = variant_names;
+    ed.variant_values = variant_values;
+    ed.variant_count = variant_count;
+    return ed;
+}
+
+static ImportDef parse_import(Parser *p) {
+    ImportDef id;
+    memset(&id, 0, sizeof(id));
+
+    id.line = p->cur.line;
+    expect(p, TOK_IMPORT, "expected 'import'");
+
+    if (p->cur.kind != TOK_IDENT) bp_fatal("expected module name at %zu:%zu", p->cur.line, p->cur.col);
+    id.module_name = dup_lexeme(p->cur);
+    next(p);
+
+    // Optional alias: import foo as bar
+    if (accept(p, TOK_AS)) {
+        if (p->cur.kind != TOK_IDENT) bp_fatal("expected alias name at %zu:%zu", p->cur.line, p->cur.col);
+        id.alias = dup_lexeme(p->cur);
+        next(p);
+    }
+
+    // Optional selective import: import foo (bar, baz)
+    if (accept(p, TOK_LPAREN)) {
+        char **names = NULL;
+        size_t count = 0, cap = 0;
+        if (p->cur.kind != TOK_RPAREN) {
+            for (;;) {
+                if (p->cur.kind != TOK_IDENT) bp_fatal("expected import name at %zu:%zu", p->cur.line, p->cur.col);
+                char *name = dup_lexeme(p->cur);
+                next(p);
+                if (count + 1 > cap) { cap = cap ? cap * 2 : 4; names = bp_xrealloc(names, cap * sizeof(*names)); }
+                names[count++] = name;
+                if (!accept(p, TOK_COMMA)) break;
+            }
+        }
+        expect(p, TOK_RPAREN, "expected ')' after import names");
+        id.import_names = names;
+        id.import_count = count;
+    }
+
+    return id;
+}
+
 Module parse_module(const char *src) {
     Parser p;
     memset(&p, 0, sizeof(p));
@@ -644,20 +944,53 @@ Module parse_module(const char *src) {
     Module m;
     memset(&m, 0, sizeof(m));
 
-    size_t fn_cap = 0, st_cap = 0;
+    size_t fn_cap = 0, st_cap = 0, en_cap = 0, im_cap = 0;
     skip_newlines(&p);
 
     while (p.cur.kind != TOK_EOF) {
+        // Handle @packed decorator
+        bool is_packed = false;
+        bool is_export = false;
+
+        // Check for decorators
+        while (p.cur.kind == TOK_AT) {
+            next(&p);  // consume '@'
+            if (p.cur.kind != TOK_IDENT) bp_fatal("expected decorator name at %zu:%zu", p.cur.line, p.cur.col);
+            if (p.cur.len == 6 && memcmp(p.cur.lexeme, "packed", 6) == 0) {
+                is_packed = true;
+            } else {
+                bp_fatal("unknown decorator '%.*s' at %zu:%zu", (int)p.cur.len, p.cur.lexeme, p.cur.line, p.cur.col);
+            }
+            next(&p);
+            skip_newlines(&p);
+        }
+
+        // Handle export keyword
+        if (accept(&p, TOK_EXPORT)) {
+            is_export = true;
+        }
+
         if (p.cur.kind == TOK_DEF) {
             Function f = parse_function(&p);
+            f.is_export = is_export;
             if (m.fnc + 1 > fn_cap) { fn_cap = fn_cap ? fn_cap * 2 : 8; m.fns = bp_xrealloc(m.fns, fn_cap * sizeof(*m.fns)); }
             m.fns[m.fnc++] = f;
         } else if (p.cur.kind == TOK_STRUCT) {
-            StructDef sd = parse_struct(&p);
+            StructDef sd = parse_struct(&p, is_packed);
+            sd.is_export = is_export;
             if (m.structc + 1 > st_cap) { st_cap = st_cap ? st_cap * 2 : 8; m.structs = bp_xrealloc(m.structs, st_cap * sizeof(*m.structs)); }
             m.structs[m.structc++] = sd;
+        } else if (p.cur.kind == TOK_ENUM) {
+            EnumDef ed = parse_enum(&p);
+            ed.is_export = is_export;
+            if (m.enumc + 1 > en_cap) { en_cap = en_cap ? en_cap * 2 : 8; m.enums = bp_xrealloc(m.enums, en_cap * sizeof(*m.enums)); }
+            m.enums[m.enumc++] = ed;
+        } else if (p.cur.kind == TOK_IMPORT) {
+            ImportDef id = parse_import(&p);
+            if (m.importc + 1 > im_cap) { im_cap = im_cap ? im_cap * 2 : 8; m.imports = bp_xrealloc(m.imports, im_cap * sizeof(*m.imports)); }
+            m.imports[m.importc++] = id;
         } else {
-            bp_fatal("expected 'def' or 'struct' at top level (line %zu)", p.cur.line);
+            bp_fatal("expected 'def', 'struct', 'enum', 'import', or 'export' at top level (line %zu)", p.cur.line);
         }
 
         skip_newlines(&p);

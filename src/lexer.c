@@ -151,7 +151,7 @@ static TokenKind keyword_kind(const char *s, size_t n) {
         {"and", TOK_AND}, {"or", TOK_OR}, {"not", TOK_NOT},
         {"import", TOK_IMPORT}, {"export", TOK_EXPORT}, {"as", TOK_AS},
         {"try", TOK_TRY}, {"catch", TOK_CATCH}, {"finally", TOK_FINALLY}, {"throw", TOK_THROW},
-        {"struct", TOK_STRUCT}
+        {"struct", TOK_STRUCT}, {"enum", TOK_ENUM}, {"fn", TOK_FN}, {"from", TOK_FROM}, {"self", TOK_SELF}
     };
     for (size_t i = 0; i < sizeof(m) / sizeof(m[0]); i++) {
         if (strlen(m[i].k) == n && memcmp(s, m[i].k, n) == 0) return m[i].t;
@@ -246,8 +246,18 @@ static Token lex_one(Lexer *lx) {
 
     if (c == '\n') { adv(lx); return tok_make(TOK_NEWLINE, NULL, 0, line, col); }
     if (c == '"') return lex_string(lx);
+    // f-string: f"..."
+    if (c == 'f' && nxt(lx) == '"') {
+        adv(lx);  // consume 'f'
+        Token t = lex_string(lx);
+        t.kind = TOK_FSTRING;
+        return t;
+    }
     if (isdigit((unsigned char)c)) return lex_number(lx);
     if (is_ident_start(c)) return lex_ident(lx);
+
+    // @ for decorators
+    if (c == '@') { adv(lx); return tok_make(TOK_AT, NULL, 0, line, col); }
 
     if (c == ':' ) { adv(lx); return tok_make(TOK_COLON, NULL, 0, line, col); }
     if (c == ',' ) { adv(lx); return tok_make(TOK_COMMA, NULL, 0, line, col); }
@@ -324,6 +334,12 @@ const char *token_kind_name(TokenKind k) {
         case TOK_FINALLY: return "FINALLY";
         case TOK_THROW: return "THROW";
         case TOK_STRUCT: return "STRUCT";
+        case TOK_ENUM: return "ENUM";
+        case TOK_FN: return "FN";
+        case TOK_FROM: return "FROM";
+        case TOK_SELF: return "SELF";
+        case TOK_FSTRING: return "FSTRING";
+        case TOK_AT: return "AT";
         case TOK_COLON: return "COLON";
         case TOK_COMMA: return "COMMA";
         case TOK_LPAREN: return "LPAREN";
