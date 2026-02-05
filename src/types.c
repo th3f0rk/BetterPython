@@ -410,6 +410,22 @@ static bool is_builtin(const char *name) {
     if (strcmp(name, "argv") == 0) return true;
     if (strcmp(name, "argc") == 0) return true;
 
+    // Threading
+    if (strcmp(name, "thread_spawn") == 0) return true;
+    if (strcmp(name, "thread_join") == 0) return true;
+    if (strcmp(name, "thread_detach") == 0) return true;
+    if (strcmp(name, "thread_current") == 0) return true;
+    if (strcmp(name, "thread_yield") == 0) return true;
+    if (strcmp(name, "thread_sleep") == 0) return true;
+    if (strcmp(name, "mutex_new") == 0) return true;
+    if (strcmp(name, "mutex_lock") == 0) return true;
+    if (strcmp(name, "mutex_trylock") == 0) return true;
+    if (strcmp(name, "mutex_unlock") == 0) return true;
+    if (strcmp(name, "cond_new") == 0) return true;
+    if (strcmp(name, "cond_wait") == 0) return true;
+    if (strcmp(name, "cond_signal") == 0) return true;
+    if (strcmp(name, "cond_broadcast") == 0) return true;
+
     return false;
 }
 
@@ -897,6 +913,102 @@ static Type check_builtin_call(Expr *e, Scope *s) {
     if (strcmp(name, "argc") == 0) {
         if (e->as.call.argc != 0) bp_fatal("argc expects 0 args");
         e->inferred = type_int();
+        return e->inferred;
+    }
+
+    // Threading builtins
+    if (strcmp(name, "thread_spawn") == 0) {
+        // thread_spawn(func_idx, ...args) -> ptr
+        e->inferred.kind = TY_PTR;
+        e->inferred.elem_type = NULL;
+        return e->inferred;
+    }
+    if (strcmp(name, "thread_join") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("thread_join expects 1 arg");
+        Type t = check_expr(e->as.call.args[0], s);
+        if (t.kind != TY_PTR) bp_fatal("thread_join expects ptr");
+        // Returns any value (the thread's result)
+        e->inferred = type_int();  // For now, assume int return
+        return e->inferred;
+    }
+    if (strcmp(name, "thread_detach") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("thread_detach expects 1 arg");
+        Type t = check_expr(e->as.call.args[0], s);
+        if (t.kind != TY_PTR) bp_fatal("thread_detach expects ptr");
+        e->inferred = type_bool();
+        return e->inferred;
+    }
+    if (strcmp(name, "thread_current") == 0) {
+        if (e->as.call.argc != 0) bp_fatal("thread_current expects 0 args");
+        e->inferred = type_int();
+        return e->inferred;
+    }
+    if (strcmp(name, "thread_yield") == 0) {
+        if (e->as.call.argc != 0) bp_fatal("thread_yield expects 0 args");
+        e->inferred = type_void();
+        return e->inferred;
+    }
+    if (strcmp(name, "thread_sleep") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("thread_sleep expects 1 arg");
+        Type t = check_expr(e->as.call.args[0], s);
+        if (t.kind != TY_INT) bp_fatal("thread_sleep expects int");
+        e->inferred = type_void();
+        return e->inferred;
+    }
+    if (strcmp(name, "mutex_new") == 0) {
+        if (e->as.call.argc != 0) bp_fatal("mutex_new expects 0 args");
+        e->inferred.kind = TY_PTR;
+        e->inferred.elem_type = NULL;
+        return e->inferred;
+    }
+    if (strcmp(name, "mutex_lock") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("mutex_lock expects 1 arg");
+        Type t = check_expr(e->as.call.args[0], s);
+        if (t.kind != TY_PTR) bp_fatal("mutex_lock expects ptr");
+        e->inferred = type_void();
+        return e->inferred;
+    }
+    if (strcmp(name, "mutex_trylock") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("mutex_trylock expects 1 arg");
+        Type t = check_expr(e->as.call.args[0], s);
+        if (t.kind != TY_PTR) bp_fatal("mutex_trylock expects ptr");
+        e->inferred = type_bool();
+        return e->inferred;
+    }
+    if (strcmp(name, "mutex_unlock") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("mutex_unlock expects 1 arg");
+        Type t = check_expr(e->as.call.args[0], s);
+        if (t.kind != TY_PTR) bp_fatal("mutex_unlock expects ptr");
+        e->inferred = type_void();
+        return e->inferred;
+    }
+    if (strcmp(name, "cond_new") == 0) {
+        if (e->as.call.argc != 0) bp_fatal("cond_new expects 0 args");
+        e->inferred.kind = TY_PTR;
+        e->inferred.elem_type = NULL;
+        return e->inferred;
+    }
+    if (strcmp(name, "cond_wait") == 0) {
+        if (e->as.call.argc != 2) bp_fatal("cond_wait expects 2 args");
+        Type t1 = check_expr(e->as.call.args[0], s);
+        Type t2 = check_expr(e->as.call.args[1], s);
+        if (t1.kind != TY_PTR) bp_fatal("cond_wait arg1 expects ptr");
+        if (t2.kind != TY_PTR) bp_fatal("cond_wait arg2 expects ptr");
+        e->inferred = type_void();
+        return e->inferred;
+    }
+    if (strcmp(name, "cond_signal") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("cond_signal expects 1 arg");
+        Type t = check_expr(e->as.call.args[0], s);
+        if (t.kind != TY_PTR) bp_fatal("cond_signal expects ptr");
+        e->inferred = type_void();
+        return e->inferred;
+    }
+    if (strcmp(name, "cond_broadcast") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("cond_broadcast expects 1 arg");
+        Type t = check_expr(e->as.call.args[0], s);
+        if (t.kind != TY_PTR) bp_fatal("cond_broadcast expects ptr");
+        e->inferred = type_void();
         return e->inferred;
     }
 

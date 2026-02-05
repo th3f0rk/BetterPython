@@ -311,7 +311,23 @@ typedef enum {
 
     // System/argv
     BI_ARGV,
-    BI_ARGC
+    BI_ARGC,
+
+    // Threading operations
+    BI_THREAD_SPAWN,
+    BI_THREAD_JOIN,
+    BI_THREAD_DETACH,
+    BI_THREAD_CURRENT,
+    BI_THREAD_YIELD,
+    BI_THREAD_SLEEP,
+    BI_MUTEX_NEW,
+    BI_MUTEX_LOCK,
+    BI_MUTEX_TRYLOCK,
+    BI_MUTEX_UNLOCK,
+    BI_COND_NEW,
+    BI_COND_WAIT,
+    BI_COND_SIGNAL,
+    BI_COND_BROADCAST
 } BuiltinId;
 
 typedef struct {

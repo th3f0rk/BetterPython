@@ -21,7 +21,8 @@ typedef enum {
     VAL_ARRAY,
     VAL_MAP,
     VAL_STRUCT,
-    VAL_CLASS
+    VAL_CLASS,
+    VAL_PTR      // Opaque pointer (for threads, mutexes, etc.)
 } ValueType;
 
 typedef struct {
@@ -35,6 +36,7 @@ typedef struct {
         BpMap *map;
         BpStruct *st;
         BpClass *cls;
+        void *ptr;       // Opaque pointer for threading primitives
     } as;
 } Value;
 
@@ -47,6 +49,7 @@ static inline Value v_array(BpArray *a) { Value v; v.type = VAL_ARRAY; v.as.arr 
 static inline Value v_map(BpMap *m)   { Value v; v.type = VAL_MAP; v.as.map = m; return v; }
 static inline Value v_struct(BpStruct *st) { Value v; v.type = VAL_STRUCT; v.as.st = st; return v; }
 static inline Value v_class(BpClass *c) { Value v; v.type = VAL_CLASS; v.as.cls = c; return v; }
+static inline Value v_ptr(void *p)    { Value v; v.type = VAL_PTR; v.as.ptr = p; return v; }
 
 static inline bool v_is_truthy(Value v) {
     if (v.type == VAL_BOOL) return v.as.b;

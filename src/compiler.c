@@ -207,6 +207,22 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "argv") == 0) return BI_ARGV;
     if (strcmp(name, "argc") == 0) return BI_ARGC;
 
+    // Threading
+    if (strcmp(name, "thread_spawn") == 0) return BI_THREAD_SPAWN;
+    if (strcmp(name, "thread_join") == 0) return BI_THREAD_JOIN;
+    if (strcmp(name, "thread_detach") == 0) return BI_THREAD_DETACH;
+    if (strcmp(name, "thread_current") == 0) return BI_THREAD_CURRENT;
+    if (strcmp(name, "thread_yield") == 0) return BI_THREAD_YIELD;
+    if (strcmp(name, "thread_sleep") == 0) return BI_THREAD_SLEEP;
+    if (strcmp(name, "mutex_new") == 0) return BI_MUTEX_NEW;
+    if (strcmp(name, "mutex_lock") == 0) return BI_MUTEX_LOCK;
+    if (strcmp(name, "mutex_trylock") == 0) return BI_MUTEX_TRYLOCK;
+    if (strcmp(name, "mutex_unlock") == 0) return BI_MUTEX_UNLOCK;
+    if (strcmp(name, "cond_new") == 0) return BI_COND_NEW;
+    if (strcmp(name, "cond_wait") == 0) return BI_COND_WAIT;
+    if (strcmp(name, "cond_signal") == 0) return BI_COND_SIGNAL;
+    if (strcmp(name, "cond_broadcast") == 0) return BI_COND_BROADCAST;
+
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
 }

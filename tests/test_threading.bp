@@ -1,0 +1,67 @@
+# Threading Test Suite
+# Tests basic threading primitives: mutexes, condition variables, thread control
+
+def test_thread_current() -> int:
+    let tid: int = thread_current()
+    if tid >= 0:
+        print("PASS: thread_current")
+        return 0
+    print("FAIL: thread_current")
+    return 1
+
+def test_mutex_basic() -> int:
+    let m: ptr = mutex_new()
+
+    mutex_lock(m)
+    mutex_unlock(m)
+
+    let got_lock: bool = mutex_trylock(m)
+    if not got_lock:
+        print("FAIL: mutex_trylock on unlocked mutex")
+        return 1
+
+    mutex_unlock(m)
+    print("PASS: mutex_basic")
+    return 0
+
+def test_cond_basic() -> int:
+    let c: ptr = cond_new()
+    let m: ptr = mutex_new()
+
+    cond_signal(c)
+    cond_broadcast(c)
+
+    print("PASS: cond_basic")
+    return 0
+
+def test_thread_yield() -> int:
+    thread_yield()
+    thread_yield()
+    print("PASS: thread_yield")
+    return 0
+
+def test_thread_sleep() -> int:
+    let start: int = clock_ms()
+    thread_sleep(10)
+    let elapsed: int = clock_ms() - start
+    if elapsed >= 5:
+        print("PASS: thread_sleep")
+        return 0
+    print("FAIL: thread_sleep - elapsed too small")
+    return 1
+
+def main() -> int:
+    print("Testing threading primitives...")
+
+    let failed: int = 0
+    failed = failed + test_thread_current()
+    failed = failed + test_mutex_basic()
+    failed = failed + test_cond_basic()
+    failed = failed + test_thread_yield()
+    failed = failed + test_thread_sleep()
+
+    if failed > 0:
+        print("Some tests failed")
+        return 1
+    print("All threading tests passed!")
+    return 0

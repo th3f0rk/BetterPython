@@ -19,6 +19,7 @@ SRC := \
     src/stdlib.c \
     src/security.c \
     src/util.c \
+    src/thread.c \
     src/jit/jit_profile.c \
     src/jit/jit_x64.c \
     src/jit/jit_compile.c
@@ -41,13 +42,13 @@ $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
 
 $(BPCC): $(BIN_DIR) $(OBJ)
-	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm
+	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm -lpthread
 
 $(BPVM): $(BIN_DIR) $(OBJ)
-	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm
+	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm -lpthread
 
 $(BPREPL): $(BIN_DIR) $(OBJ)
-	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm
+	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm -lpthread
 
 $(BPRUN): $(BIN_DIR) tools/betterpython.sh
 	cp tools/betterpython.sh $@

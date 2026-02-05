@@ -108,6 +108,22 @@ static Type parse_type(Parser *p) {
         return *type_func(param_types, param_count, ret_copy);
     }
 
+    // Handle ptr keyword type
+    if (p->cur.kind == TOK_PTR) {
+        Type t;
+        t.kind = TY_PTR;
+        t.elem_type = NULL;
+        t.key_type = NULL;
+        t.struct_name = NULL;
+        t.tuple_types = NULL;
+        t.tuple_len = 0;
+        t.param_types = NULL;
+        t.param_count = 0;
+        t.return_type = NULL;
+        next(p);
+        return t;
+    }
+
     if (p->cur.kind != TOK_IDENT) bp_fatal("expected type name at %zu:%zu", p->cur.line, p->cur.col);
     const char *s = p->cur.lexeme;
     size_t n = p->cur.len;
@@ -128,11 +144,6 @@ static Type parse_type(Parser *p) {
     else if (n == 3 && memcmp(s, "u16", 3) == 0) t = type_u16();
     else if (n == 3 && memcmp(s, "u32", 3) == 0) t = type_u32();
     else if (n == 3 && memcmp(s, "u64", 3) == 0) t = type_u64();
-    // Pointer type for FFI
-    else if (n == 3 && memcmp(s, "ptr", 3) == 0) {
-        t.kind = TY_PTR;
-        t.elem_type = NULL;  // void pointer
-    }
     else {
         // Assume it's a struct or enum type
         t.kind = TY_STRUCT;
