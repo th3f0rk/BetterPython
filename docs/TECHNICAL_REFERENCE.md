@@ -1,6 +1,6 @@
 BetterPython Technical Reference Manual
-Version 2.0 Production Edition
-Last Updated: February 3, 2026
+Version 1.0.0 Production Edition
+Last Updated: February 5, 2026
 
 ================================================================================
 TABLE OF CONTENTS
@@ -13,9 +13,11 @@ TABLE OF CONTENTS
 5. Virtual Machine Specification
 6. Memory Management
 7. Error Handling
-8. Performance Characteristics
-9. Security Considerations
-10. Extension Guide
+8. Module System
+9. Exception Handling
+10. Performance Characteristics
+11. Security Considerations
+12. Extension Guide
 
 ================================================================================
 1. LANGUAGE SPECIFICATION
@@ -25,42 +27,54 @@ TABLE OF CONTENTS
 --------------------
 
 Tokens:
-- Keywords: def, let, if, elif, else, while, return, and, or, not, true, false
+- Keywords: def, let, if, elif, else, while, for, in, return, and, or, not,
+            true, false, break, continue, try, catch, finally, throw, struct,
+            class, import, export, as, range
 - Identifiers: [a-zA-Z_][a-zA-Z0-9_]*
 - Integer literals: [0-9]+
-- String literals: "..." (supports escape sequences: \n, \t, \\, \")
-- Operators: + - * / % == != < <= > >= and or not
-- Delimiters: ( ) : ,
+- Float literals: [0-9]+\.[0-9]+ | [0-9]+e[+-]?[0-9]+
+- String literals: "..." (supports escape sequences: \n, \t, \\, \", \r)
+- Operators: + - * / % == != < <= > >= and or not & | ^ ~ << >>
+- Delimiters: ( ) [ ] { } : , .
+
+Comments:
+- Line comments: # comment text (everything after # to end of line)
 
 Indentation:
-- Significant whitespace
+- Significant whitespace (Python-style)
 - Each indentation level must be consistent (spaces or tabs)
 - INDENT token generated on indentation increase
 - DEDENT token(s) generated on indentation decrease
 
-Comments:
-- Not currently supported in syntax
-
 1.2 Grammar
 -----------
 
-program ::= function*
+program ::= (import_stmt | function | struct_def)*
 
-function ::= "def" identifier "(" parameters? ")" "->" type ":" NEWLINE
+import_stmt ::= "import" identifier ("as" identifier)?
+             | "import" identifier "(" identifier ("," identifier)* ")"
+
+struct_def ::= "struct" identifier ":" NEWLINE
+               INDENT (identifier ":" type NEWLINE)+ DEDENT
+
+function ::= "export"? "def" identifier "(" parameters? ")" "->" type ":" NEWLINE
              INDENT statement+ DEDENT
 
 parameters ::= parameter ("," parameter)*
 parameter ::= identifier ":" type
 
-type ::= "int" | "bool" | "str" | "void"
+type ::= "int" | "bool" | "str" | "float" | "void"
+       | "[" type "]"                    # array type
+       | "{" type ":" type "}"           # map type
+       | identifier                      # struct type
 
-statement ::= let_stmt | assign_stmt | expr_stmt | if_stmt | while_stmt | return_stmt
+statement ::= let_stmt | assign_stmt | expr_stmt | if_stmt | while_stmt
+           | for_stmt | return_stmt | try_stmt | throw_stmt | break_stmt
+           | continue_stmt
 
 let_stmt ::= "let" identifier ":" type "=" expression NEWLINE
 
-assign_stmt ::= identifier "=" expression NEWLINE
-
-expr_stmt ::= expression NEWLINE
+assign_stmt ::= (identifier | index_expr | field_expr) "=" expression NEWLINE
 
 if_stmt ::= "if" expression ":" NEWLINE INDENT statement+ DEDENT
             elif_clause* else_clause?
@@ -71,7 +85,23 @@ else_clause ::= "else" ":" NEWLINE INDENT statement+ DEDENT
 
 while_stmt ::= "while" expression ":" NEWLINE INDENT statement+ DEDENT
 
+for_stmt ::= "for" identifier "in" ("range" "(" expr "," expr ")" | expression) ":"
+             NEWLINE INDENT statement+ DEDENT
+
+try_stmt ::= "try" ":" NEWLINE INDENT statement+ DEDENT
+             catch_clause? finally_clause?
+
+catch_clause ::= "catch" identifier ":" NEWLINE INDENT statement+ DEDENT
+
+finally_clause ::= "finally" ":" NEWLINE INDENT statement+ DEDENT
+
+throw_stmt ::= "throw" expression NEWLINE
+
 return_stmt ::= "return" expression? NEWLINE
+
+break_stmt ::= "break" NEWLINE
+
+continue_stmt ::= "continue" NEWLINE
 
 expression ::= or_expr
 
@@ -79,19 +109,40 @@ or_expr ::= and_expr ("or" and_expr)*
 
 and_expr ::= not_expr ("and" not_expr)*
 
-not_expr ::= "not" not_expr | comparison
+not_expr ::= "not" not_expr | bitwise_or
 
-comparison ::= additive (("==" | "!=" | "<" | "<=" | ">" | ">=") additive)?
+bitwise_or ::= bitwise_xor ("|" bitwise_xor)*
+
+bitwise_xor ::= bitwise_and ("^" bitwise_and)*
+
+bitwise_and ::= comparison ("&" comparison)*
+
+comparison ::= shift (("==" | "!=" | "<" | "<=" | ">" | ">=") shift)?
+
+shift ::= additive (("<<" | ">>") additive)*
 
 additive ::= multiplicative (("+" | "-") multiplicative)*
 
 multiplicative ::= unary (("*" | "/" | "%") unary)*
 
-unary ::= "-" unary | primary
+unary ::= ("-" | "~" | "not") unary | postfix
 
-primary ::= INTEGER | STRING | "true" | "false" | identifier
-          | identifier "(" arguments? ")"
+postfix ::= primary (call_suffix | index_suffix | field_suffix)*
+
+call_suffix ::= "(" arguments? ")"
+index_suffix ::= "[" expression "]"
+field_suffix ::= "." identifier
+
+primary ::= INTEGER | FLOAT | STRING | "true" | "false"
+          | identifier | array_literal | map_literal | struct_literal
           | "(" expression ")"
+
+array_literal ::= "[" (expression ("," expression)*)? "]"
+
+map_literal ::= "{" (expression ":" expression ("," expression ":" expression)*)? "}"
+
+struct_literal ::= identifier "{" (identifier ":" expression
+                   ("," identifier ":" expression)*)? "}"
 
 arguments ::= expression ("," expression)*
 
@@ -100,21 +151,29 @@ arguments ::= expression ("," expression)*
 
 Primitive Types:
 - int: 64-bit signed integer
+- float: IEEE 754 double-precision floating point
 - bool: Boolean value (true or false)
 - str: UTF-8 encoded string (heap-allocated, garbage collected)
 - void: Absence of value (only valid for function returns)
+
+Compound Types:
+- [T]: Typed dynamic array (e.g., [int], [str], [[int]])
+- {K: V}: Typed hash map (e.g., {str: int}, {int: [str]})
+- struct: User-defined record types
 
 Type Rules:
 - All variables must be explicitly typed
 - Function parameters and return types must be declared
 - Assignment requires type compatibility
-- Arithmetic operations require int operands (except + for strings)
+- Arithmetic operations: int with int, float with float
+- String concatenation: str + str
 - Comparison operators require compatible types
 - Boolean operators require bool operands
+- Array/map indexing requires correct key type
 
-Type Inference:
-- Expression types are inferred during type checking phase
-- No implicit type conversions (use to_str for conversion)
+Type Coercion:
+- No implicit type conversions
+- Use conversion functions: int_to_float, float_to_int, to_str, etc.
 
 ================================================================================
 2. TYPE SYSTEM
@@ -125,12 +184,14 @@ Type Inference:
 
 The type checker performs single-pass static analysis:
 
-1. Build scope tree
-2. For each function:
+1. Build module dependency graph (for imports)
+2. For each struct definition:
+   a. Register struct type with field types
+3. For each function:
    a. Create new scope with parameters
    b. Check each statement recursively
    c. Verify return type matches declaration
-3. For each expression:
+4. For each expression:
    a. Infer type bottom-up
    b. Check operator compatibility
    c. Propagate type information
@@ -138,10 +199,23 @@ The type checker performs single-pass static analysis:
 2.2 Scope Rules
 ---------------
 
-- Global scope: Function definitions only
+- Global scope: Function definitions, struct definitions, imports
 - Function scope: Parameters and local variables
-- Block scope: No additional scoping (all variables in function scope)
-- Shadowing: Not allowed (variable names must be unique in scope)
+- Block scope: Variables declared in blocks (if, for, while, try, catch)
+- Shadowing: Not allowed within same scope level
+- Variable visibility: Variables are scoped to their enclosing block
+
+Block Scoping Example:
+```python
+def example() -> int:
+    if true:
+        let i: int = 0  # i is visible only in this block
+    else:
+        let i: int = 1  # Different i, valid because different block
+    for i in range(0, 5):  # New i for this block
+        print(i)
+    return 0
+```
 
 2.3 Type Compatibility
 ----------------------
@@ -155,283 +229,40 @@ Exact match required for:
 Special cases:
 - String concatenation: str + str -> str
 - Integer arithmetic: int [+|-|*|/|%] int -> int
+- Float arithmetic: float [+|-|*|/] float -> float
 - Comparison: T [==|!=] T -> bool (for any type T)
-- Ordering: int [<|<=|>|>=] int -> bool
+- Ordering: int/float [<|<=|>|>=] int/float -> bool
 
 ================================================================================
 3. STANDARD LIBRARY REFERENCE
 ================================================================================
 
-3.1 Input/Output Functions
----------------------------
+BetterPython includes 115 built-in functions across 17 categories:
 
-print(...) -> void
-    Print any number of values to stdout, separated by spaces.
-    Arguments: Accepts any combination of int, bool, str
-    Side effects: Writes to stdout with newline
-    Example:
-        print("Count:", 42, "Done:", true)
+3.1 Function Categories Overview
+--------------------------------
 
-read_line() -> str
-    Read a line from stdin.
-    Returns: String without trailing newline
-    Blocks until newline received
-    Example:
-        let input: str = read_line()
+| Category | Count | Key Functions |
+|----------|-------|---------------|
+| I/O | 2 | print, read_line |
+| String | 25 | len, substr, str_upper, str_split, str_join |
+| Integer Math | 10 | abs, min, max, pow, sqrt, clamp |
+| Float Math | 17 | sin, cos, tan, log, exp, fsqrt, fpow |
+| Conversion | 6 | int_to_float, float_to_int, int_to_hex |
+| Float Utils | 2 | is_nan, is_inf |
+| Encoding | 4 | base64_encode, base64_decode |
+| Random | 3 | rand, rand_range, rand_seed |
+| Security | 4 | hash_sha256, hash_md5, secure_compare |
+| File | 7 | file_read, file_write, file_exists |
+| Time | 2 | clock_ms, sleep |
+| System | 4 | exit, getenv, argv, argc |
+| Validation | 4 | is_digit, is_alpha, is_alnum, is_space |
+| Array | 3 | array_len, array_push, array_pop |
+| Map | 5 | map_len, map_keys, map_values, map_has_key |
+| Threading | 14 | thread_spawn, mutex_lock, cond_wait |
+| Regex | 5 | regex_match, regex_search, regex_replace |
 
-3.2 String Functions
---------------------
-
-len(s: str) -> int
-    Return the length of string in bytes.
-    Time complexity: O(1)
-    Example:
-        let length: int = len("hello")  // 5
-
-substr(s: str, start: int, length: int) -> str
-    Extract substring from string.
-    Parameters:
-        s: Source string
-        start: Zero-based start index
-        length: Number of characters to extract
-    Returns: New substring
-    Bounds checking: Returns empty string if out of bounds
-    Example:
-        let sub: str = substr("hello world", 0, 5)  // "hello"
-
-to_str(value: int|bool|str) -> str
-    Convert value to string representation.
-    Conversion rules:
-        int: Decimal representation
-        bool: "true" or "false"
-        str: Identity function
-    Example:
-        let s: str = to_str(42)  // "42"
-
-chr(code: int) -> str
-    Convert ASCII code to single-character string.
-    Parameters:
-        code: Integer in range [0, 127]
-    Returns: Single-character string
-    Error: Fatal if code < 0 or code > 127
-    Example:
-        let c: str = chr(65)  // "A"
-
-ord(c: str) -> int
-    Convert first character of string to ASCII code.
-    Parameters:
-        c: Non-empty string
-    Returns: ASCII code of first character
-    Error: Fatal if string is empty
-    Example:
-        let code: int = ord("A")  // 65
-
-str_upper(s: str) -> str
-    Convert string to uppercase.
-    Transformation: a-z -> A-Z, others unchanged
-    Example:
-        let upper: str = str_upper("Hello")  // "HELLO"
-
-str_lower(s: str) -> str
-    Convert string to lowercase.
-    Transformation: A-Z -> a-z, others unchanged
-    Example:
-        let lower: str = str_lower("Hello")  // "hello"
-
-str_trim(s: str) -> str
-    Remove leading and trailing whitespace.
-    Whitespace: space, tab, newline, carriage return
-    Example:
-        let trimmed: str = str_trim("  hello  ")  // "hello"
-
-starts_with(s: str, prefix: str) -> bool
-    Check if string starts with prefix.
-    Returns: true if s begins with prefix, false otherwise
-    Empty prefix: Always returns true
-    Example:
-        let result: bool = starts_with("hello", "hel")  // true
-
-ends_with(s: str, suffix: str) -> bool
-    Check if string ends with suffix.
-    Returns: true if s ends with suffix, false otherwise
-    Empty suffix: Always returns true
-    Example:
-        let result: bool = ends_with("hello", "lo")  // true
-
-str_find(s: str, needle: str) -> int
-    Find first occurrence of substring.
-    Returns: Zero-based index of first occurrence, or -1 if not found
-    Empty needle: Returns 0
-    Time complexity: O(n*m) where n = len(s), m = len(needle)
-    Example:
-        let pos: int = str_find("hello world", "world")  // 6
-
-str_replace(s: str, old: str, new: str) -> str
-    Replace first occurrence of substring.
-    Returns: New string with first occurrence replaced
-    If old not found: Returns original string
-    Empty old: Returns original string
-    Example:
-        let result: str = str_replace("hello", "l", "L")  // "heLlo"
-
-3.3 Mathematical Functions
----------------------------
-
-abs(n: int) -> int
-    Return absolute value of integer.
-    Example:
-        let result: int = abs(-42)  // 42
-
-min(a: int, b: int) -> int
-    Return minimum of two integers.
-    Example:
-        let result: int = min(10, 20)  // 10
-
-max(a: int, b: int) -> int
-    Return maximum of two integers.
-    Example:
-        let result: int = max(10, 20)  // 20
-
-pow(base: int, exp: int) -> int
-    Compute base raised to power of exp.
-    Implementation: Uses floating-point pow(), truncates result
-    Overflow: May overflow for large values
-    Example:
-        let result: int = pow(2, 10)  // 1024
-
-sqrt(n: int) -> int
-    Compute integer square root.
-    Returns: Floor of square root
-    Example:
-        let result: int = sqrt(144)  // 12
-
-floor(n: int) -> int
-    Floor function (identity for integers).
-    Provided for API completeness.
-    Example:
-        let result: int = floor(42)  // 42
-
-ceil(n: int) -> int
-    Ceiling function (identity for integers).
-    Provided for API completeness.
-    Example:
-        let result: int = ceil(42)  // 42
-
-round(n: int) -> int
-    Rounding function (identity for integers).
-    Provided for API completeness.
-    Example:
-        let result: int = round(42)  // 42
-
-3.4 Random Number Functions
-----------------------------
-
-rand() -> int
-    Generate pseudo-random integer.
-    Range: [0, 32767]
-    Algorithm: Linear congruential generator
-    Not cryptographically secure
-    Example:
-        let r: int = rand()
-
-rand_range(min: int, max: int) -> int
-    Generate random integer in range [min, max).
-    Parameters:
-        min: Inclusive lower bound
-        max: Exclusive upper bound
-    Returns: Random value in [min, max)
-    If min >= max: Returns min
-    Example:
-        let dice: int = rand_range(1, 7)  // 1-6
-
-rand_seed(seed: int) -> void
-    Seed the random number generator.
-    Use for reproducible random sequences.
-    Example:
-        rand_seed(42)
-
-3.5 Encoding Functions
-----------------------
-
-base64_encode(data: str) -> str
-    Encode string to base64.
-    Standard base64 alphabet: A-Za-z0-9+/
-    Padding: Uses = character
-    Example:
-        let encoded: str = base64_encode("Hello")  // "SGVsbG8="
-
-base64_decode(data: str) -> str
-    Decode base64 string.
-    Ignores invalid characters
-    Example:
-        let decoded: str = base64_decode("SGVsbG8=")  // "Hello"
-
-3.6 File Operations
--------------------
-
-file_read(path: str) -> str
-    Read entire file as string.
-    Returns: File contents
-    Error: Fatal if file cannot be opened or read
-    Example:
-        let content: str = file_read("/tmp/file.txt")
-
-file_write(path: str, data: str) -> bool
-    Write string to file, overwriting if exists.
-    Returns: true on success, false on failure
-    Creates file if it doesn't exist
-    Example:
-        let ok: bool = file_write("/tmp/file.txt", "data")
-
-file_append(path: str, data: str) -> bool
-    Append string to end of file.
-    Returns: true on success, false on failure
-    Creates file if it doesn't exist
-    Example:
-        let ok: bool = file_append("/tmp/log.txt", "entry\n")
-
-file_exists(path: str) -> bool
-    Check if file exists.
-    Returns: true if file exists and is accessible
-    Example:
-        let exists: bool = file_exists("/tmp/file.txt")
-
-file_delete(path: str) -> bool
-    Delete file.
-    Returns: true on success, false on failure
-    Example:
-        let ok: bool = file_delete("/tmp/file.txt")
-
-3.7 Time Functions
-------------------
-
-clock_ms() -> int
-    Get current time in milliseconds since Unix epoch.
-    Precision: Platform-dependent (typically millisecond)
-    Example:
-        let start: int = clock_ms()
-
-sleep(ms: int) -> void
-    Sleep for specified milliseconds.
-    Blocks execution for approximately ms milliseconds
-    Negative or zero values: No-op
-    Example:
-        sleep(1000)  // Sleep 1 second
-
-3.8 System Functions
---------------------
-
-getenv(name: str) -> str
-    Get environment variable value.
-    Returns: Variable value, or empty string if not set
-    Example:
-        let user: str = getenv("USER")
-
-exit(code: int) -> void
-    Exit program with specified status code.
-    Does not return
-    Example:
-        exit(0)  // Success
+See FUNCTION_REFERENCE.md for complete documentation of all functions.
 
 ================================================================================
 4. COMPILER ARCHITECTURE
@@ -444,9 +275,11 @@ Phase 1: Lexical Analysis (lexer.c)
     Input: Source code string
     Output: Token stream
     Features:
-        - Indentation-based INDENT/DEDENT tokens
-        - Line and column tracking
-        - Keyword recognition
+        - Python-style indentation tracking
+        - INDENT/DEDENT token generation
+        - Float and integer literal parsing
+        - String escape sequence handling
+        - Comment stripping (#)
 
 Phase 2: Parsing (parser.c)
     Input: Token stream
@@ -454,75 +287,152 @@ Phase 2: Parsing (parser.c)
     Method: Recursive descent parser
     Features:
         - Operator precedence climbing
-        - Error recovery
         - ELIF desugaring to if-else chains
+        - Array/map literal parsing
+        - Struct literal parsing
+        - Exception handling syntax
 
 Phase 3: Type Checking (types.c)
     Input: AST
     Output: Type-annotated AST
     Method: Single-pass recursive type inference
     Features:
-        - Scope management
+        - Block-level scope management
         - Type compatibility checking
         - Builtin function type signatures
+        - Struct type validation
+        - Module import resolution
 
 Phase 4: Code Generation (compiler.c)
     Input: Type-checked AST
-    Output: Bytecode
+    Output: Bytecode (stack-based or register-based)
     Features:
-        - Stack-based code generation
+        - Stack-based code generation (default)
+        - Register-based code generation (--register flag)
         - Jump patching for control flow
-        - Constant pooling for strings
+        - Exception handler registration
+        - Module linking
 
 4.2 Bytecode Format
 -------------------
 
 File Header:
-    Magic: "BPC\0" (4 bytes)
+    Magic: "BPC1" (stack-based) or "BPR1" (register-based)
     Version: uint32_t
     Entry point offset: uint32_t
 
-Constant Pool:
+String Pool:
     Count: uint32_t
-    For each constant:
-        Type: uint8_t (1=int, 2=str, 3=bool)
-        Value: Type-dependent encoding
+    For each string: null-terminated UTF-8
 
-Code Section:
-    Length: uint32_t
-    Instructions: uint8_t array
+Function Table:
+    Count: uint32_t
+    For each function:
+        Name: string index
+        Arity: uint16_t
+        Locals: uint16_t
+        Code: length + bytes
+        Format: uint8_t (0=stack, 1=register)
 
-Instruction Format:
-    Opcode: 1 byte
-    Operands: 0-4 bytes (opcode-dependent)
+Struct Types:
+    Count: uint32_t
+    For each struct:
+        Name: string index
+        Field count: uint16_t
+        Field names: string indices
 
-4.3 Instruction Set
--------------------
+4.3 Instruction Set (Stack-Based)
+---------------------------------
+
+Constants:
+    OP_CONST_I64 <i64>: Push 64-bit integer
+    OP_CONST_F64 <f64>: Push 64-bit float
+    OP_CONST_BOOL <u8>: Push boolean
+    OP_CONST_STR <idx>: Push string from pool
 
 Stack Operations:
-    OP_CONST <index>: Push constant from pool
-    OP_POP: Pop and discard top value
-    OP_DUP: Duplicate top value
-
-Variable Operations:
-    OP_LOAD_VAR <index>: Load local variable
-    OP_STORE_VAR <index>: Store to local variable
+    OP_POP: Pop and discard
+    OP_LOAD_LOCAL <idx>: Load local variable
+    OP_STORE_LOCAL <idx>: Store to local variable
 
 Arithmetic:
-    OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_MOD
-    OP_NEG: Unary negation
+    OP_ADD_I64, OP_SUB_I64, OP_MUL_I64, OP_DIV_I64, OP_MOD_I64
+    OP_ADD_F64, OP_SUB_F64, OP_MUL_F64, OP_DIV_F64, OP_NEG_F64
+    OP_ADD_STR (string concatenation)
+    OP_NEG (integer negation)
 
 Comparison:
     OP_EQ, OP_NEQ, OP_LT, OP_LTE, OP_GT, OP_GTE
+    OP_LT_F64, OP_LTE_F64, OP_GT_F64, OP_GTE_F64
 
 Boolean:
     OP_AND, OP_OR, OP_NOT
 
 Control Flow:
-    OP_JUMP <offset>: Unconditional jump
-    OP_JUMP_IF_FALSE <offset>: Conditional jump
+    OP_JMP <offset>: Unconditional jump
+    OP_JMP_IF_FALSE <offset>: Conditional jump
+    OP_BREAK: Break from loop
+    OP_CONTINUE: Continue loop
+
+Arrays:
+    OP_ARRAY_NEW <count>: Create array from stack values
+    OP_ARRAY_GET: arr[idx]
+    OP_ARRAY_SET: arr[idx] = val
+
+Maps:
+    OP_MAP_NEW <count>: Create map from key-value pairs
+    OP_MAP_GET: map[key]
+    OP_MAP_SET: map[key] = val
+
+Structs:
+    OP_STRUCT_NEW <type_id>: Create struct instance
+    OP_STRUCT_GET <field_idx>: Get struct field
+    OP_STRUCT_SET <field_idx>: Set struct field
+
+Exceptions:
+    OP_TRY_BEGIN <catch_addr> <finally_addr> <catch_var>
+    OP_TRY_END
+    OP_THROW
+
+Functions:
     OP_CALL_BUILTIN <id> <argc>: Call builtin function
-    OP_RETURN: Return from function
+    OP_CALL <fn_idx> <argc>: Call user function
+    OP_RET: Return from function
+
+4.4 Register-Based Instruction Set (v2.0)
+-----------------------------------------
+
+Three-address code format: OP dst, src1, src2
+
+Constants:
+    R_CONST_I64 dst, imm64
+    R_CONST_F64 dst, imm64
+    R_CONST_BOOL dst, imm8
+    R_CONST_STR dst, str_idx
+    R_MOV dst, src
+
+Arithmetic:
+    R_ADD_I64 dst, src1, src2
+    R_SUB_I64 dst, src1, src2
+    R_MUL_I64 dst, src1, src2
+    R_DIV_I64 dst, src1, src2
+    R_MOD_I64 dst, src1, src2
+    (Same for F64 variants)
+
+Comparisons:
+    R_EQ dst, src1, src2
+    R_LT dst, src1, src2
+    (etc.)
+
+Control Flow:
+    R_JMP offset
+    R_JMP_IF_FALSE cond, offset
+    R_JMP_IF_TRUE cond, offset
+
+Function Calls:
+    R_CALL dst, fn_idx, arg_base, argc
+    R_CALL_BUILTIN dst, builtin_id, arg_base, argc
+    R_RET src
 
 ================================================================================
 5. VIRTUAL MACHINE SPECIFICATION
@@ -531,45 +441,43 @@ Control Flow:
 5.1 Execution Model
 -------------------
 
-Architecture: Stack-based virtual machine
+Architecture: Stack-based or register-based virtual machine
 Stack: Fixed-size value stack (1024 slots)
-Locals: Fixed-size local variable array (256 slots)
-PC: Program counter (instruction pointer)
-
-Execution Loop:
-    while (PC < code_length):
-        opcode = code[PC++]
-        execute(opcode)
+Registers: 256 virtual registers per function (register VM)
+Call Stack: 256 frame depth maximum
+Locals: 256 local variables per function
 
 Value Representation:
     Tagged union with type discriminator
-    Types: VAL_INT, VAL_BOOL, VAL_STR, VAL_NULL
-    Sizes: 16 bytes per value (8 byte payload + 8 byte type/metadata)
+    Types: VAL_INT, VAL_FLOAT, VAL_BOOL, VAL_STR, VAL_ARRAY, VAL_MAP,
+           VAL_STRUCT, VAL_NULL, VAL_EXCEPTION
+    Size: 16 bytes per value
 
-5.2 Memory Layout
------------------
+5.2 Call Stack
+--------------
 
-Stack Frame:
-    [Return address]
-    [Local variables...]
-    [Temporary values...]
+Each call frame contains:
+- Return address (bytecode offset)
+- Base pointer (for local variables)
+- Function reference
+- Exception handler stack
 
-Heap:
-    Garbage-collected heap for strings
-    Allocation: Linear allocation with GC sweep
-    Collection: Mark-and-sweep when threshold exceeded
+Maximum recursion depth: 256 frames
+Stack overflow: Fatal error with message
 
-5.3 Performance Characteristics
---------------------------------
+5.3 JIT Compilation (Optional)
+------------------------------
 
-Instruction Dispatch: Direct threading (switch statement)
-Typical Performance: 10-50x slower than native C
-Memory Usage: ~100 bytes overhead per string + value stack
+Enabled with --jit flag for register-based bytecode:
+- Profiling: Tracks function call counts
+- Hot threshold: 100 invocations
+- Compilation: x86-64 native code generation
+- Fallback: Interpreter for unsupported operations
 
-Benchmarks (relative to Python 3):
-    Arithmetic: 2-3x faster
-    String operations: Similar speed
-    Function calls: Not supported (builtin only)
+JIT Statistics:
+- Total compilations
+- Native executions vs interpreted executions
+- Compiled code cache size
 
 ================================================================================
 6. MEMORY MANAGEMENT
@@ -578,34 +486,34 @@ Benchmarks (relative to Python 3):
 6.1 Garbage Collection
 -----------------------
 
-Algorithm: Mark-and-sweep
-Trigger: When heap exceeds threshold (default 1MB)
-Roots: Value stack + local variables
+Algorithm: Mark-and-sweep with automatic triggering
+
+Data Structures:
+    - Strings: Immutable, reference counted internally
+    - Arrays: Dynamic, GC-managed
+    - Maps: Hash tables, GC-managed
+    - Structs: Fixed layout, GC-managed
+
+Collection Trigger: When heap exceeds threshold (default 1MB)
 
 Mark Phase:
     1. Mark all values on stack
-    2. Mark all local variables
-    3. Recursively mark referenced strings
+    2. Mark all local variables in call frames
+    3. Recursively mark referenced objects
 
 Sweep Phase:
-    1. Iterate all allocated strings
-    2. Free unmarked strings
+    1. Iterate all allocated objects
+    2. Free unmarked objects
     3. Reset marks for next cycle
 
-6.2 String Interning
---------------------
-
-Not implemented: Each string is separate allocation
-Consequence: String comparison is O(n)
-Future: Could implement string interning for common strings
-
-6.3 Memory Safety
+6.2 Memory Safety
 -----------------
 
 Stack overflow: Checked (fatal error on overflow)
 Heap exhaustion: Triggers GC, then fatal if still insufficient
 Use-after-free: Not possible (GC handles lifetimes)
-Buffer overflows: Bounds checking on string operations
+Buffer overflows: Bounds checking on all array/string operations
+Null safety: Explicit null type, checked at runtime
 
 ================================================================================
 7. ERROR HANDLING
@@ -619,12 +527,13 @@ Categories:
     - Type errors (type checker)
     - Undefined variables (type checker)
     - Undefined functions (type checker)
+    - Import errors (module resolution)
 
 Error Format:
-    "error message at line:column"
+    "line N: error message"
 
 Error Recovery:
-    None: Compilation stops at first error
+    Compilation stops at first error
 
 7.2 Runtime Errors
 ------------------
@@ -635,25 +544,109 @@ Categories:
     - Out of memory
     - File I/O errors
     - Invalid arguments to builtins
+    - Array index out of bounds
+    - Map key not found
+    - Unhandled exception
 
 Handling:
-    All runtime errors are fatal
-    Program terminates with error message
-    No exception handling mechanism
+    - Exceptions can be caught with try/catch
+    - Uncaught exceptions are fatal
+    - Fatal errors terminate with message
 
 ================================================================================
-8. PERFORMANCE CHARACTERISTICS
+8. MODULE SYSTEM
 ================================================================================
 
-8.1 Complexity Analysis
------------------------
+8.1 Import/Export Syntax
+------------------------
+
+Exporting:
+```python
+# math_utils.bp
+export def square(x: int) -> int:
+    return x * x
+
+def private_helper() -> int:  # Not exported
+    return 42
+```
+
+Importing:
+```python
+# main.bp
+import math_utils              # Full module
+import math_utils as math      # With alias
+import math_utils (square)     # Selective import
+```
+
+8.2 Module Resolution
+---------------------
+
+Search order:
+1. Current directory
+2. BETTERPYTHON_PATH environment variable
+3. Standard library path
+
+File extensions:
+- .bp for source files
+- .bpc for compiled bytecode
+
+8.3 Cross-Module Compilation
+----------------------------
+
+1. Build dependency graph from imports
+2. Topologically sort modules
+3. Compile each module in order
+4. Link symbols across modules
+5. Generate combined bytecode or separate files
+
+================================================================================
+9. EXCEPTION HANDLING
+================================================================================
+
+9.1 Syntax
+----------
+
+```python
+try:
+    let result: int = risky_operation()
+catch e:
+    print("Error:", e)
+finally:
+    cleanup()
+```
+
+9.2 Throw Statement
+-------------------
+
+```python
+def validate(x: int) -> void:
+    if x < 0:
+        throw "Value must be non-negative"
+```
+
+9.3 Exception Propagation
+-------------------------
+
+1. When exception thrown, search call stack for handler
+2. Unwind stack frames, executing finally blocks
+3. If handler found, transfer control to catch block
+4. If no handler, terminate with unhandled exception error
+
+================================================================================
+10. PERFORMANCE CHARACTERISTICS
+================================================================================
+
+10.1 Complexity Analysis
+------------------------
 
 Operations:
     Variable access: O(1)
     Arithmetic: O(1)
     String concatenation: O(n+m)
     String search: O(n*m)
-    Array access: Not supported
+    Array access: O(1)
+    Map access: O(1) average, O(n) worst
+    Function call: O(1) + function body
 
 Compilation:
     Lexing: O(n) where n = source length
@@ -662,62 +655,59 @@ Compilation:
     Code generation: O(n)
     Total: O(n) linear in source size
 
-8.2 Optimization Opportunities
--------------------------------
+10.2 Benchmarks
+---------------
 
-Current: No optimizations
-Possible:
-    - Constant folding
-    - Dead code elimination
-    - Common subexpression elimination
-    - Inline small functions (once supported)
+Typical Performance (vs Python 3.11):
+    Integer arithmetic: 0.8-1.2x (comparable)
+    Float arithmetic: 0.9-1.1x (comparable)
+    String operations: 0.5-0.8x (immutable strings)
+    Array operations: 0.8-1.0x (comparable)
+    Function calls: 1.0-1.5x (faster)
+    Startup time: 5-10x faster
 
-8.3 Profiling
--------------
-
-Not built-in
-Can instrument with clock_ms() calls
-Future: Add --profile flag for execution statistics
+With JIT (register-based bytecode):
+    Hot loops: 2-5x faster than interpreted
+    Recursive functions: 3-8x faster
 
 ================================================================================
-9. SECURITY CONSIDERATIONS
+11. SECURITY CONSIDERATIONS
 ================================================================================
 
-9.1 Input Validation
---------------------
-
-User input: No built-in sanitization
-File paths: No path traversal protection
-Integer overflow: Silent wraparound (signed 64-bit)
-String length: Limited by available memory
-
-Recommendations:
-    - Validate all external input
-    - Use file_exists() before file operations
-    - Check bounds before array-like operations
-    - Limit string sizes for user input
-
-9.2 Sandboxing
---------------
-
-File system: Full access (no restrictions)
-Network: No built-in networking (future)
-Process: Can exec via external calls (future)
-
-Not suitable for untrusted code execution without external sandboxing.
-
-9.3 Cryptography
+11.1 Type Safety
 ----------------
 
-Not implemented: No cryptographic functions
-Use case: Not suitable for security-critical applications
-Future: Add secure random, hashing, encryption functions
+- Static type checking prevents type confusion
+- No implicit conversions reduce attack surface
+- Explicit types make code intent clear
+
+11.2 Memory Safety
+------------------
+
+- Garbage collection prevents use-after-free
+- Bounds checking on all array accesses
+- No manual memory management in user code
+
+11.3 Cryptographic Functions
+----------------------------
+
+- hash_sha256: For checksums and integrity
+- hash_md5: For legacy compatibility only (NOT secure)
+- secure_compare: Timing-attack resistant comparison
+- random_bytes: Cryptographically secure random data
+
+11.4 Limitations
+----------------
+
+1. No Sandboxing: Full filesystem access
+2. No Resource Limits: Can exhaust memory
+3. No Network Isolation: HTTP client unrestricted
 
 ================================================================================
-10. EXTENSION GUIDE
+12. EXTENSION GUIDE
 ================================================================================
 
-10.1 Adding Builtin Functions
+12.1 Adding Builtin Functions
 ------------------------------
 
 Steps:
@@ -725,65 +715,35 @@ Steps:
 2. Implement bi_function_name() in stdlib.c
 3. Add case to stdlib_call() dispatcher
 4. Add name mapping in compiler.c builtin_id()
-5. Add type signature in types.c check_call()
+5. Add type signature in types.c check_builtin_call()
 
-Example (adding "square" function):
+Example (adding "double" function):
 
 In bytecode.h:
-    typedef enum {
-        ...
-        BI_SQUARE
-    } BuiltinId;
+    BI_DOUBLE,
 
 In stdlib.c:
-    static Value bi_square(Value *args, uint16_t argc) {
+    static Value bi_double(Value *args, uint16_t argc, Gc *gc) {
         if (argc != 1 || args[0].type != VAL_INT)
-            bp_fatal("square expects (int)");
-        int64_t n = args[0].as.i;
-        return v_int(n * n);
+            bp_fatal("double expects (int)");
+        return v_int(args[0].as.i * 2);
     }
-    
-    // In stdlib_call():
-    case BI_SQUARE: return bi_square(args, argc);
 
 In compiler.c:
-    if (strcmp(name, "square") == 0) return BI_SQUARE;
+    if (strcmp(name, "double") == 0) return BI_DOUBLE;
 
 In types.c:
-    if (strcmp(name, "square") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("square expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_INT)
-            bp_fatal("square expects int");
-        e->inferred = type_int();
-        return e->inferred;
+    if (strcmp(name, "double") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("double expects 1 arg");
+        check_type(arg_type, TY_INT);
+        return type_int();
     }
-
-10.2 Adding New Types
----------------------
-
-Not straightforward: Requires changes throughout system
-Required modifications:
-    - ast.h: Add type kind
-    - types.c: Add type checking rules
-    - vm.c: Add value representation
-    - compiler.c: Add code generation
-    - gc.c: Add garbage collection support (if needed)
-
-Example for float type would require ~500 lines of changes.
-
-10.3 Language Extensions
--------------------------
-
-Adding keywords: Modify lexer.c keyword table
-Adding operators: Add to lexer, parser, type checker, compiler, VM
-Adding statements: Full compiler pipeline modification required
-
-Difficulty levels:
-    Easy: Builtin functions
-    Medium: Operators, expression forms
-    Hard: New statements, control flow
-    Very hard: New types, closures, classes
 
 ================================================================================
 END OF TECHNICAL REFERENCE MANUAL
 ================================================================================
+
+Document Version: 1.0.0
+Last Updated: February 2026
+Total Builtin Functions: 115
+Maintained by: Claude (Anthropic)
