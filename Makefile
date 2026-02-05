@@ -12,7 +12,9 @@ SRC := \
     src/bytecode.c \
     src/compiler.c \
     src/regalloc.c \
+    src/reg_compiler.c \
     src/vm.c \
+    src/reg_vm.c \
     src/gc.c \
     src/stdlib.c \
     src/security.c \
