@@ -3,6 +3,7 @@
 #include "stdlib.h"
 #include "security.h"
 #include "util.h"
+#include "thread.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -1184,6 +1185,101 @@ static Value bi_argc(void) {
     return v_int((int64_t)g_argc);
 }
 
+// ============================================================================
+// Threading Built-in Functions
+// ============================================================================
+
+static Value bi_thread_current(void) {
+    return v_int((int64_t)bp_thread_current_id());
+}
+
+static Value bi_thread_yield(void) {
+    bp_thread_yield();
+    return v_null();
+}
+
+static Value bi_thread_sleep(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_INT) bp_fatal("thread_sleep expects (int)");
+    bp_thread_sleep((uint64_t)args[0].as.i);
+    return v_null();
+}
+
+static Value bi_mutex_new(void) {
+    BpMutex *mutex = bp_mutex_new();
+    if (!mutex) return v_null();
+    return v_ptr(mutex);
+}
+
+static Value bi_mutex_lock(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_PTR) bp_fatal("mutex_lock expects (mutex)");
+    BpMutex *mutex = (BpMutex *)args[0].as.ptr;
+    bp_mutex_lock(mutex);
+    return v_null();
+}
+
+static Value bi_mutex_trylock(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_PTR) bp_fatal("mutex_trylock expects (mutex)");
+    BpMutex *mutex = (BpMutex *)args[0].as.ptr;
+    return v_bool(bp_mutex_trylock(mutex));
+}
+
+static Value bi_mutex_unlock(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_PTR) bp_fatal("mutex_unlock expects (mutex)");
+    BpMutex *mutex = (BpMutex *)args[0].as.ptr;
+    bp_mutex_unlock(mutex);
+    return v_null();
+}
+
+static Value bi_cond_new(void) {
+    BpCondition *cond = bp_cond_new();
+    if (!cond) return v_null();
+    return v_ptr(cond);
+}
+
+static Value bi_cond_wait(Value *args, uint16_t argc) {
+    if (argc != 2 || args[0].type != VAL_PTR || args[1].type != VAL_PTR)
+        bp_fatal("cond_wait expects (cond, mutex)");
+    BpCondition *cond = (BpCondition *)args[0].as.ptr;
+    BpMutex *mutex = (BpMutex *)args[1].as.ptr;
+    bp_cond_wait(cond, mutex);
+    return v_null();
+}
+
+static Value bi_cond_signal(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_PTR) bp_fatal("cond_signal expects (cond)");
+    BpCondition *cond = (BpCondition *)args[0].as.ptr;
+    bp_cond_signal(cond);
+    return v_null();
+}
+
+static Value bi_cond_broadcast(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_PTR) bp_fatal("cond_broadcast expects (cond)");
+    BpCondition *cond = (BpCondition *)args[0].as.ptr;
+    bp_cond_broadcast(cond);
+    return v_null();
+}
+
+// Thread spawn and join need VM context - handled by special opcodes
+// These placeholders return errors if called without proper VM integration
+static Value bi_thread_spawn(Value *args, uint16_t argc) {
+    BP_UNUSED(args);
+    BP_UNUSED(argc);
+    bp_fatal("thread_spawn requires VM context - use OP_THREAD_SPAWN opcode");
+    return v_null();
+}
+
+static Value bi_thread_join(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_PTR) bp_fatal("thread_join expects (thread)");
+    BpThread *thread = (BpThread *)args[0].as.ptr;
+    return bp_thread_join(thread);
+}
+
+static Value bi_thread_detach(Value *args, uint16_t argc) {
+    if (argc != 1 || args[0].type != VAL_PTR) bp_fatal("thread_detach expects (thread)");
+    BpThread *thread = (BpThread *)args[0].as.ptr;
+    return v_bool(bp_thread_detach(thread));
+}
+
 Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_code, bool *exiting) {
     switch (id) {
         case BI_PRINT: return bi_print(args, argc, gc);
@@ -1309,6 +1405,22 @@ Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_co
         // System/argv
         case BI_ARGV: return bi_argv(gc);
         case BI_ARGC: return bi_argc();
+
+        // Threading operations
+        case BI_THREAD_SPAWN: return bi_thread_spawn(args, argc);
+        case BI_THREAD_JOIN: return bi_thread_join(args, argc);
+        case BI_THREAD_DETACH: return bi_thread_detach(args, argc);
+        case BI_THREAD_CURRENT: return bi_thread_current();
+        case BI_THREAD_YIELD: return bi_thread_yield();
+        case BI_THREAD_SLEEP: return bi_thread_sleep(args, argc);
+        case BI_MUTEX_NEW: return bi_mutex_new();
+        case BI_MUTEX_LOCK: return bi_mutex_lock(args, argc);
+        case BI_MUTEX_TRYLOCK: return bi_mutex_trylock(args, argc);
+        case BI_MUTEX_UNLOCK: return bi_mutex_unlock(args, argc);
+        case BI_COND_NEW: return bi_cond_new();
+        case BI_COND_WAIT: return bi_cond_wait(args, argc);
+        case BI_COND_SIGNAL: return bi_cond_signal(args, argc);
+        case BI_COND_BROADCAST: return bi_cond_broadcast(args, argc);
 
         default: break;
     }
