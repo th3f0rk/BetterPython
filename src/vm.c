@@ -571,6 +571,74 @@ int vm_run(Vm *vm) {
                 gc_struct_set(st_val.as.st, field_idx, val);
                 break;
             }
+            case OP_CLASS_NEW: {
+                uint16_t class_id = rd_u16(code, &ip);
+                uint8_t argc = code[ip++];
+                // Get field count from class type info
+                size_t field_count = 0;
+                if (class_id < vm->mod.class_type_len) {
+                    field_count = vm->mod.class_types[class_id].field_count;
+                }
+                BpClass *cls = gc_new_class(&vm->gc, class_id, field_count);
+                // For now, consume the constructor arguments (TODO: call __init__)
+                if (argc > vm->sp) bp_fatal("stack underflow in class creation");
+                vm->sp -= argc;
+                push(vm, v_class(cls));
+                break;
+            }
+            case OP_CLASS_GET: {
+                uint16_t field_idx = rd_u16(code, &ip);
+                Value cls_val = pop(vm);
+                if (cls_val.type != VAL_CLASS) bp_fatal("cannot access field on non-class");
+                if (field_idx >= cls_val.as.cls->field_count) {
+                    bp_fatal("class field index out of bounds: %u >= %zu", field_idx, cls_val.as.cls->field_count);
+                }
+                push(vm, gc_class_get(cls_val.as.cls, field_idx));
+                break;
+            }
+            case OP_CLASS_SET: {
+                uint16_t field_idx = rd_u16(code, &ip);
+                Value val = pop(vm);
+                Value cls_val = pop(vm);
+                if (cls_val.type != VAL_CLASS) bp_fatal("cannot access field on non-class");
+                if (field_idx >= cls_val.as.cls->field_count) {
+                    bp_fatal("class field index out of bounds: %u >= %zu", field_idx, cls_val.as.cls->field_count);
+                }
+                gc_class_set(cls_val.as.cls, field_idx, val);
+                break;
+            }
+            case OP_METHOD_CALL: {
+                uint16_t method_id = rd_u16(code, &ip);
+                uint8_t argc = code[ip++];
+                BP_UNUSED(method_id);
+                // TODO: Implement method lookup and call
+                if (argc > vm->sp) bp_fatal("stack underflow in method call");
+                vm->sp -= argc;
+                // Pop the object (self)
+                (void)pop(vm);
+                push(vm, v_null());  // Placeholder return
+                break;
+            }
+            case OP_SUPER_CALL: {
+                uint16_t method_id = rd_u16(code, &ip);
+                uint8_t argc = code[ip++];
+                BP_UNUSED(method_id);
+                // TODO: Implement super call
+                if (argc > vm->sp) bp_fatal("stack underflow in super call");
+                vm->sp -= argc;
+                push(vm, v_null());  // Placeholder return
+                break;
+            }
+            case OP_FFI_CALL: {
+                uint16_t extern_id = rd_u16(code, &ip);
+                uint8_t argc = code[ip++];
+                BP_UNUSED(extern_id);
+                // TODO: Implement FFI call with dlopen/dlsym
+                if (argc > vm->sp) bp_fatal("stack underflow in FFI call");
+                vm->sp -= argc;
+                push(vm, v_null());  // Placeholder return
+                break;
+            }
             default:
                 bp_fatal("unknown opcode %u", op);
         }

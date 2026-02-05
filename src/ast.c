@@ -62,6 +62,22 @@ Type *type_enum(char *name) {
     return t;
 }
 
+Type *type_class(char *name) {
+    Type *t = bp_xmalloc(sizeof(*t));
+    memset(t, 0, sizeof(*t));
+    t->kind = TY_CLASS;
+    t->struct_name = name;  // Reuse struct_name for class name
+    return t;
+}
+
+Type *type_ptr(Type *elem) {
+    Type *t = bp_xmalloc(sizeof(*t));
+    memset(t, 0, sizeof(*t));
+    t->kind = TY_PTR;
+    t->elem_type = elem;
+    return t;
+}
+
 // Forward declarations
 static void stmt_free(Stmt *s);
 
@@ -205,6 +221,23 @@ Expr *expr_new_method_call(Expr *object, char *method_name, Expr **args, size_t 
     e->as.method_call.args = args;
     e->as.method_call.argc = argc;
     e->as.method_call.method_index = -1;  // Set by type checker
+    return e;
+}
+
+Expr *expr_new_new(char *class_name, Expr **args, size_t argc, size_t line) {
+    Expr *e = expr_alloc(EX_NEW, line);
+    e->as.new_expr.class_name = class_name;
+    e->as.new_expr.args = args;
+    e->as.new_expr.argc = argc;
+    e->as.new_expr.class_index = -1;  // Set by type checker
+    return e;
+}
+
+Expr *expr_new_super_call(char *method_name, Expr **args, size_t argc, size_t line) {
+    Expr *e = expr_alloc(EX_SUPER_CALL, line);
+    e->as.super_call.method_name = method_name;
+    e->as.super_call.args = args;
+    e->as.super_call.argc = argc;
     return e;
 }
 
@@ -372,6 +405,16 @@ static void expr_free(Expr *e) {
             for (size_t i = 0; i < e->as.method_call.argc; i++) expr_free(e->as.method_call.args[i]);
             free(e->as.method_call.args);
             break;
+        case EX_NEW:
+            free(e->as.new_expr.class_name);
+            for (size_t i = 0; i < e->as.new_expr.argc; i++) expr_free(e->as.new_expr.args[i]);
+            free(e->as.new_expr.args);
+            break;
+        case EX_SUPER_CALL:
+            free(e->as.super_call.method_name);
+            for (size_t i = 0; i < e->as.super_call.argc; i++) expr_free(e->as.super_call.args[i]);
+            free(e->as.super_call.args);
+            break;
         default: break;
     }
     free(e);
@@ -495,4 +538,39 @@ void module_free(Module *m) {
     free(m->imports);
     m->imports = NULL;
     m->importc = 0;
+
+    // Free classes
+    for (size_t i = 0; i < m->classc; i++) {
+        ClassDef *cd = &m->classes[i];
+        free(cd->name);
+        free(cd->parent_name);
+        for (size_t j = 0; j < cd->field_count; j++) free(cd->field_names[j]);
+        free(cd->field_names);
+        free(cd->field_types);
+        for (size_t j = 0; j < cd->method_count; j++) {
+            MethodDef *md = &cd->methods[j];
+            free(md->name);
+            for (size_t p = 0; p < md->paramc; p++) free(md->params[p].name);
+            free(md->params);
+            for (size_t s = 0; s < md->body_len; s++) stmt_free(md->body[s]);
+            free(md->body);
+        }
+        free(cd->methods);
+    }
+    free(m->classes);
+    m->classes = NULL;
+    m->classc = 0;
+
+    // Free extern declarations
+    for (size_t i = 0; i < m->externc; i++) {
+        ExternDef *ed = &m->externs[i];
+        free(ed->name);
+        free(ed->c_name);
+        free(ed->library);
+        for (size_t j = 0; j < ed->paramc; j++) free(ed->params[j].name);
+        free(ed->params);
+    }
+    free(m->externs);
+    m->externs = NULL;
+    m->externc = 0;
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef enum {
     OP_CONST_I64 = 1,
@@ -63,6 +64,16 @@ typedef enum {
     OP_STRUCT_NEW,      // Create new struct: u16 type_id, then N field values from stack
     OP_STRUCT_GET,      // Get struct field: u16 field_index
     OP_STRUCT_SET,      // Set struct field: u16 field_index
+
+    // Class operations
+    OP_CLASS_NEW,       // Create new class instance: u16 class_id, u8 argc
+    OP_METHOD_CALL,     // Call method on instance: u16 method_id, u8 argc
+    OP_SUPER_CALL,      // Call parent method: u16 method_id, u8 argc
+    OP_CLASS_GET,       // Get class field: u16 field_index
+    OP_CLASS_SET,       // Set class field: u16 field_index
+
+    // FFI operations
+    OP_FFI_CALL,        // Call external C function: u16 extern_id, u8 argc
 
     OP_CALL_BUILTIN,
     OP_CALL,
@@ -219,6 +230,26 @@ typedef struct {
 } BpStructType;
 
 typedef struct {
+    char *name;
+    char *parent_name;          // NULL if no inheritance
+    char **field_names;
+    size_t field_count;
+    uint16_t *method_ids;       // Function IDs for methods
+    char **method_names;
+    size_t method_count;
+} BpClassType;
+
+typedef struct {
+    char *name;                 // Function name in BetterPython
+    char *c_name;               // Actual C function name
+    char *library;              // Library path (e.g., "libc.so.6")
+    uint16_t param_count;
+    bool is_variadic;
+    void *handle;               // dlopen handle (set at runtime)
+    void *fn_ptr;               // dlsym function pointer (set at runtime)
+} BpExternFunc;
+
+typedef struct {
     char **strings;
     size_t str_len;
 
@@ -227,6 +258,12 @@ typedef struct {
 
     BpStructType *struct_types;
     size_t struct_type_len;
+
+    BpClassType *class_types;
+    size_t class_type_len;
+
+    BpExternFunc *extern_funcs;
+    size_t extern_func_len;
 
     uint32_t entry;
 } BpModule;

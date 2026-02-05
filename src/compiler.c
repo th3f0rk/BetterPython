@@ -689,8 +689,34 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
         }
         case EX_FIELD_ACCESS: {
             emit_expr(fe, e->as.field_access.object);
-            buf_u8(&fe->code, OP_STRUCT_GET);
+            // Use CLASS_GET for classes, STRUCT_GET for structs
+            if (e->as.field_access.object->inferred.kind == TY_CLASS) {
+                buf_u8(&fe->code, OP_CLASS_GET);
+            } else {
+                buf_u8(&fe->code, OP_STRUCT_GET);
+            }
             buf_u16(&fe->code, (uint16_t)e->as.field_access.field_index);
+            return;
+        }
+        case EX_NEW: {
+            // Push constructor arguments onto stack
+            for (size_t i = 0; i < e->as.new_expr.argc; i++) {
+                emit_expr(fe, e->as.new_expr.args[i]);
+            }
+            buf_u8(&fe->code, OP_CLASS_NEW);
+            buf_u16(&fe->code, (uint16_t)e->as.new_expr.class_index);
+            buf_u8(&fe->code, (uint8_t)e->as.new_expr.argc);
+            return;
+        }
+        case EX_SUPER_CALL: {
+            // For super(), push arguments and call parent constructor
+            // For super.method(), push object (self) and arguments
+            for (size_t i = 0; i < e->as.super_call.argc; i++) {
+                emit_expr(fe, e->as.super_call.args[i]);
+            }
+            buf_u8(&fe->code, OP_SUPER_CALL);
+            buf_u16(&fe->code, 0);  // Method ID (0 = constructor)
+            buf_u8(&fe->code, (uint8_t)e->as.super_call.argc);
             return;
         }
         default: break;
@@ -739,6 +765,53 @@ BpModule compile_module(const Module *m) {
         out.funcs[i].str_const_len = fe.str_len;
 
         locals_free(&fe.locals);
+    }
+
+    // Compile class definitions
+    out.class_type_len = m->classc;
+    if (m->classc > 0) {
+        out.class_types = bp_xmalloc(m->classc * sizeof(*out.class_types));
+        memset(out.class_types, 0, m->classc * sizeof(*out.class_types));
+        for (size_t i = 0; i < m->classc; i++) {
+            const ClassDef *cd = &m->classes[i];
+            out.class_types[i].name = bp_xstrdup(cd->name);
+            out.class_types[i].parent_name = cd->parent_name ? bp_xstrdup(cd->parent_name) : NULL;
+            out.class_types[i].field_count = cd->field_count;
+            if (cd->field_count > 0) {
+                out.class_types[i].field_names = bp_xmalloc(cd->field_count * sizeof(char *));
+                for (size_t j = 0; j < cd->field_count; j++) {
+                    out.class_types[i].field_names[j] = bp_xstrdup(cd->field_names[j]);
+                }
+            }
+            // Methods will be compiled later
+            out.class_types[i].method_count = cd->method_count;
+            if (cd->method_count > 0) {
+                out.class_types[i].method_ids = bp_xmalloc(cd->method_count * sizeof(uint16_t));
+                out.class_types[i].method_names = bp_xmalloc(cd->method_count * sizeof(char *));
+                for (size_t j = 0; j < cd->method_count; j++) {
+                    out.class_types[i].method_names[j] = bp_xstrdup(cd->methods[j].name);
+                    // Method function IDs will be resolved later
+                    out.class_types[i].method_ids[j] = 0;
+                }
+            }
+        }
+    }
+
+    // Compile extern function declarations
+    out.extern_func_len = m->externc;
+    if (m->externc > 0) {
+        out.extern_funcs = bp_xmalloc(m->externc * sizeof(*out.extern_funcs));
+        memset(out.extern_funcs, 0, m->externc * sizeof(*out.extern_funcs));
+        for (size_t i = 0; i < m->externc; i++) {
+            const ExternDef *ed = &m->externs[i];
+            out.extern_funcs[i].name = bp_xstrdup(ed->name);
+            out.extern_funcs[i].c_name = ed->c_name ? bp_xstrdup(ed->c_name) : bp_xstrdup(ed->name);
+            out.extern_funcs[i].library = bp_xstrdup(ed->library);
+            out.extern_funcs[i].param_count = (uint16_t)ed->paramc;
+            out.extern_funcs[i].is_variadic = ed->is_variadic;
+            out.extern_funcs[i].handle = NULL;
+            out.extern_funcs[i].fn_ptr = NULL;
+        }
     }
 
     out.str_len = pool.len;
