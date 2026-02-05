@@ -74,6 +74,24 @@ void reg_free_temp(RegAlloc *ra, uint8_t reg) {
     }
 }
 
+// Allocate a parameter to its pre-reserved register slot
+// Must be called in order: param 0 -> r0, param 1 -> r1, etc.
+uint8_t reg_alloc_param(RegAlloc *ra, const char *name, uint8_t param_idx) {
+    if (param_idx >= ra->param_count) {
+        bp_fatal("parameter index %u out of range", param_idx);
+    }
+
+    // Add to variable map pointing to the pre-allocated parameter register
+    if (ra->var_count >= MAX_REGS) {
+        bp_fatal("too many variables");
+    }
+    ra->var_map[ra->var_count].name = bp_xstrdup(name);
+    ra->var_map[ra->var_count].reg = param_idx;  // Parameters are r0, r1, r2...
+    ra->var_count++;
+
+    return param_idx;
+}
+
 uint8_t reg_alloc_var(RegAlloc *ra, const char *name) {
     // Check if already allocated
     for (size_t i = 0; i < ra->var_count; i++) {

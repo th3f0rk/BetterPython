@@ -1036,7 +1036,7 @@ BpModule reg_compile_module(const Module *m) {
 
         // Parameters are pre-allocated in registers r0..r(paramc-1)
         for (size_t p = 0; p < f->paramc; p++) {
-            reg_alloc_var(&fe.ra, f->params[p].name);
+            reg_alloc_param(&fe.ra, f->params[p].name, (uint8_t)p);
         }
 
         // Compile function body

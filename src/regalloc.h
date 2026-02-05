@@ -47,6 +47,9 @@ uint8_t reg_alloc_temp(RegAlloc *ra);
 // Free a temporary register
 void reg_free_temp(RegAlloc *ra, uint8_t reg);
 
+// Allocate a parameter to its pre-reserved register slot (r0, r1, r2...)
+uint8_t reg_alloc_param(RegAlloc *ra, const char *name, uint8_t param_idx);
+
 // Allocate a register for a named variable
 uint8_t reg_alloc_var(RegAlloc *ra, const char *name);
 
