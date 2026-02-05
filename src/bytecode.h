@@ -3,6 +3,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// Register VM Configuration
+#define REG_VM_MAX_REGS 256     // Maximum virtual registers per function
+#define REG_VM_MAGIC "BPR1"    // Magic for register-based bytecode
+#define STACK_VM_MAGIC "BPC1"  // Magic for stack-based bytecode (current)
+
+// Bytecode format type
+typedef enum {
+    BC_FORMAT_STACK = 0,       // Original stack-based bytecode
+    BC_FORMAT_REGISTER = 1     // New register-based bytecode
+} BcFormat;
+
 typedef enum {
     OP_CONST_I64 = 1,
     OP_CONST_F64,
@@ -77,7 +88,98 @@ typedef enum {
 
     OP_CALL_BUILTIN,
     OP_CALL,
-    OP_RET
+    OP_RET,
+
+    // =========================================================================
+    // Register-Based Opcodes (v2.0) - Start at 128 to avoid conflicts
+    // Format: R_OP dst, src1, src2 (3-address code)
+    // =========================================================================
+
+    // Constants and Movement
+    R_CONST_I64 = 128,  // dst, imm64: r[dst] = imm64
+    R_CONST_F64,        // dst, imm64: r[dst] = *(double*)&imm64
+    R_CONST_BOOL,       // dst, imm8: r[dst] = bool(imm8)
+    R_CONST_STR,        // dst, str_idx: r[dst] = strings[str_idx]
+    R_CONST_NULL,       // dst: r[dst] = null
+    R_MOV,              // dst, src: r[dst] = r[src]
+
+    // Integer Arithmetic (3-address)
+    R_ADD_I64,          // dst, src1, src2: r[dst] = r[src1] + r[src2]
+    R_SUB_I64,          // dst, src1, src2: r[dst] = r[src1] - r[src2]
+    R_MUL_I64,          // dst, src1, src2: r[dst] = r[src1] * r[src2]
+    R_DIV_I64,          // dst, src1, src2: r[dst] = r[src1] / r[src2]
+    R_MOD_I64,          // dst, src1, src2: r[dst] = r[src1] % r[src2]
+    R_NEG_I64,          // dst, src: r[dst] = -r[src]
+
+    // Float Arithmetic (3-address)
+    R_ADD_F64,          // dst, src1, src2: r[dst] = r[src1] + r[src2]
+    R_SUB_F64,          // dst, src1, src2: r[dst] = r[src1] - r[src2]
+    R_MUL_F64,          // dst, src1, src2: r[dst] = r[src1] * r[src2]
+    R_DIV_F64,          // dst, src1, src2: r[dst] = r[src1] / r[src2]
+    R_NEG_F64,          // dst, src: r[dst] = -r[src]
+
+    // String Operations
+    R_ADD_STR,          // dst, src1, src2: r[dst] = r[src1] + r[src2]
+
+    // Integer Comparisons (result is bool)
+    R_EQ,               // dst, src1, src2: r[dst] = (r[src1] == r[src2])
+    R_NEQ,              // dst, src1, src2: r[dst] = (r[src1] != r[src2])
+    R_LT,               // dst, src1, src2: r[dst] = (r[src1] < r[src2])
+    R_LTE,              // dst, src1, src2: r[dst] = (r[src1] <= r[src2])
+    R_GT,               // dst, src1, src2: r[dst] = (r[src1] > r[src2])
+    R_GTE,              // dst, src1, src2: r[dst] = (r[src1] >= r[src2])
+
+    // Float Comparisons
+    R_LT_F64,           // dst, src1, src2
+    R_LTE_F64,
+    R_GT_F64,
+    R_GTE_F64,
+
+    // Logical Operations
+    R_NOT,              // dst, src: r[dst] = !r[src]
+    R_AND,              // dst, src1, src2: r[dst] = r[src1] && r[src2]
+    R_OR,               // dst, src1, src2: r[dst] = r[src1] || r[src2]
+
+    // Control Flow
+    R_JMP,              // offset: jump to offset
+    R_JMP_IF_FALSE,     // cond, offset: if (!r[cond]) jump
+    R_JMP_IF_TRUE,      // cond, offset: if (r[cond]) jump
+
+    // Function Calls
+    // Args are in r[arg_base..arg_base+argc-1]
+    R_CALL,             // dst, fn_idx, arg_base, argc: r[dst] = fn(r[arg_base..])
+    R_CALL_BUILTIN,     // dst, builtin_id, arg_base, argc
+    R_RET,              // src: return r[src]
+
+    // Arrays
+    R_ARRAY_NEW,        // dst, src_base, count: r[dst] = [r[src_base]..r[src_base+count-1]]
+    R_ARRAY_GET,        // dst, arr, idx: r[dst] = r[arr][r[idx]]
+    R_ARRAY_SET,        // arr, idx, val: r[arr][r[idx]] = r[val]
+
+    // Maps
+    R_MAP_NEW,          // dst, src_base, count: r[dst] = {r[src]..} (key-value pairs)
+    R_MAP_GET,          // dst, map, key: r[dst] = r[map][r[key]]
+    R_MAP_SET,          // map, key, val: r[map][r[key]] = r[val]
+
+    // Exception Handling
+    R_TRY_BEGIN,        // catch_offset, finally_offset, exc_reg
+    R_TRY_END,          // (no args)
+    R_THROW,            // src: throw r[src]
+
+    // Structs
+    R_STRUCT_NEW,       // dst, type_id, src_base, field_count
+    R_STRUCT_GET,       // dst, struct_reg, field_idx
+    R_STRUCT_SET,       // struct_reg, field_idx, val_reg
+
+    // Classes
+    R_CLASS_NEW,        // dst, class_id, arg_base, argc
+    R_CLASS_GET,        // dst, obj, field_idx
+    R_CLASS_SET,        // obj, field_idx, val
+    R_METHOD_CALL,      // dst, obj, method_id, arg_base, argc
+    R_SUPER_CALL,       // dst, method_id, arg_base, argc
+
+    // FFI
+    R_FFI_CALL          // dst, extern_id, arg_base, argc
 } OpCode;
 
 typedef enum {
@@ -215,12 +317,16 @@ typedef enum {
 typedef struct {
     char *name;
     uint16_t arity;
-    uint16_t locals;
+    uint16_t locals;           // For stack VM: number of local slots
     uint8_t *code;
     size_t code_len;
 
     uint32_t *str_const_ids;
     size_t str_const_len;
+
+    // Register VM fields (v2.0)
+    BcFormat format;           // BC_FORMAT_STACK or BC_FORMAT_REGISTER
+    uint8_t reg_count;         // Number of registers used (for register VM)
 } BpFunc;
 
 typedef struct {

@@ -5,9 +5,11 @@
 
 static void w_u32(FILE *f, uint32_t x) { fwrite(&x, 4, 1, f); }
 static void w_u16(FILE *f, uint16_t x) { fwrite(&x, 2, 1, f); }
+static void w_u8(FILE *f, uint8_t x) { fwrite(&x, 1, 1, f); }
 
 static uint32_t r_u32(FILE *f) { uint32_t x; if (fread(&x, 4, 1, f) != 1) bp_fatal("read"); return x; }
 static uint16_t r_u16(FILE *f) { uint16_t x; if (fread(&x, 2, 1, f) != 1) bp_fatal("read"); return x; }
+static uint8_t r_u8(FILE *f) { uint8_t x; if (fread(&x, 1, 1, f) != 1) bp_fatal("read"); return x; }
 
 static void w_bytes(FILE *f, const void *p, size_t n) {
     if (n && fwrite(p, 1, n, f) != n) bp_fatal("write");
@@ -33,9 +35,9 @@ int bc_write_file(const char *path, const BpModule *m) {
     FILE *f = fopen(path, "wb");
     if (!f) return 0;
 
-    // magic "BPC0" + version 1
+    // magic "BPC0" + version 2 (includes format and reg_count)
     w_bytes(f, "BPC0", 4);
-    w_u32(f, 1);
+    w_u32(f, 2);
 
     w_u32(f, (uint32_t)m->entry);
 
@@ -55,6 +57,8 @@ int bc_write_file(const char *path, const BpModule *m) {
 
         w_u16(f, fn->arity);
         w_u16(f, fn->locals);
+        w_u8(f, (uint8_t)fn->format);   // BC_FORMAT_STACK or BC_FORMAT_REGISTER
+        w_u8(f, fn->reg_count);          // Number of registers (for register VM)
 
         w_u32(f, (uint32_t)fn->str_const_len);
         for (size_t k = 0; k < fn->str_const_len; k++) w_u32(f, fn->str_const_ids[k]);
@@ -76,7 +80,7 @@ BpModule bc_read_file(const char *path) {
     if (memcmp(magic, "BPC0", 4) != 0) bp_fatal("bad .bpc file");
 
     uint32_t ver = r_u32(f);
-    if (ver != 1) bp_fatal("unsupported .bpc version");
+    if (ver != 1 && ver != 2) bp_fatal("unsupported .bpc version %u", ver);
 
     BpModule m;
     memset(&m, 0, sizeof(m));
@@ -105,6 +109,15 @@ BpModule bc_read_file(const char *path) {
         m.funcs[i].name = name;
         m.funcs[i].arity = r_u16(f);
         m.funcs[i].locals = r_u16(f);
+
+        // Version 2 includes format and reg_count
+        if (ver >= 2) {
+            m.funcs[i].format = (BcFormat)r_u8(f);
+            m.funcs[i].reg_count = r_u8(f);
+        } else {
+            m.funcs[i].format = BC_FORMAT_STACK;
+            m.funcs[i].reg_count = 0;
+        }
 
         m.funcs[i].str_const_len = r_u32(f);
         if (m.funcs[i].str_const_len) {

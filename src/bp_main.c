@@ -1,8 +1,10 @@
 #include "parser.h"
 #include "types.h"
 #include "compiler.h"
+#include "reg_compiler.h"
 #include "bytecode.h"
 #include "vm.h"
+#include "reg_vm.h"
 #include "stdlib.h"
 #include "util.h"
 #include <string.h>
@@ -24,18 +26,30 @@ static char *read_file_text(const char *path) {
 }
 
 static int cmd_bpcc(int argc, char **argv) {
-    if (argc < 3) bp_fatal("usage: bpcc <input.bp> -o <output.bpc>");
+    if (argc < 3) bp_fatal("usage: bpcc <input.bp> -o <output.bpc> [--register]");
     const char *in = argv[1];
     const char *out = NULL;
+    bool use_register_vm = false;
+
     for (int i = 2; i < argc; i++) {
-        if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) out = argv[i + 1];
+        if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+            out = argv[i + 1];
+        } else if (strcmp(argv[i], "--register") == 0 || strcmp(argv[i], "-r") == 0) {
+            use_register_vm = true;
+        }
     }
     if (!out) bp_fatal("missing -o <output.bpc>");
 
     char *src = read_file_text(in);
     Module m = parse_module(src);
     typecheck_module(&m);
-    BpModule bc = compile_module(&m);
+
+    BpModule bc;
+    if (use_register_vm) {
+        bc = reg_compile_module(&m);
+    } else {
+        bc = compile_module(&m);
+    }
 
     if (!bc_write_file(out, &bc)) bp_fatal("failed to write %s", out);
 
@@ -55,7 +69,15 @@ static int cmd_bpvm(int argc, char **argv) {
     BpModule m = bc_read_file(path);
     Vm vm;
     vm_init(&vm, m);
-    int code = vm_run(&vm);
+
+    // Auto-detect bytecode format and use appropriate VM
+    int code;
+    if (m.fn_len > 0 && m.funcs[m.entry].format == BC_FORMAT_REGISTER) {
+        code = reg_vm_run(&vm);
+    } else {
+        code = vm_run(&vm);
+    }
+
     vm_free(&vm);
     return code;
 }
