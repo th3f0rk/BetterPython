@@ -29,16 +29,13 @@ static char *read_file_text(const char *path) {
 }
 
 static int cmd_bpcc(int argc, char **argv) {
-    if (argc < 3) bp_fatal("usage: bpcc <input.bp> -o <output.bpc> [--register]");
+    if (argc < 3) bp_fatal("usage: bpcc <input.bp> -o <output.bpc>");
     const char *in = argv[1];
     const char *out = NULL;
-    bool use_register_vm = false;
 
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
             out = argv[i + 1];
-        } else if (strcmp(argv[i], "--register") == 0 || strcmp(argv[i], "-r") == 0) {
-            use_register_vm = true;
         }
     }
     if (!out) bp_fatal("missing -o <output.bpc>");
@@ -72,15 +69,9 @@ static int cmd_bpcc(int argc, char **argv) {
 
         module_graph_free(&graph);
     } else {
-        // Single-file compilation (original path)
+        // Single-file compilation - always use register-based compiler
         typecheck_module(&m);
-
-        if (use_register_vm) {
-            bc = reg_compile_module(&m);
-        } else {
-            bc = compile_module(&m);
-        }
-
+        bc = reg_compile_module(&m);
         module_free(&m);
         free(src);
     }
@@ -104,29 +95,19 @@ static int cmd_bpvm(int argc, char **argv) {
 
     // Initialize JIT for register-based bytecode
     JitContext jit;
-    bool use_jit = (m.fn_len > 0 && m.funcs[m.entry].format == BC_FORMAT_REGISTER);
-    if (use_jit) {
-        jit_init(&jit, m.fn_len);
-        vm.jit = &jit;
-    }
+    jit_init(&jit, m.fn_len);
+    vm.jit = &jit;
 
-    // Auto-detect bytecode format and use appropriate VM
-    int code;
-    if (use_jit) {
-        code = reg_vm_run(&vm);
-    } else {
-        code = vm_run(&vm);
-    }
+    // Always use register-based VM
+    int code = reg_vm_run(&vm);
 
     // Print JIT stats if any compilations happened
-    if (use_jit && jit.total_compilations > 0) {
+    if (jit.total_compilations > 0) {
         jit_print_stats(&jit);
     }
 
     // Cleanup
-    if (use_jit) {
-        jit_shutdown(&jit);
-    }
+    jit_shutdown(&jit);
     vm_free(&vm);
     return code;
 }
@@ -162,14 +143,21 @@ static int cmd_repl(void) {
             "    return 0\n",
             line);
 
-        // Try to compile and run
+        // Try to compile and run with register-based VM
         Module m = parse_module(src);
         typecheck_module(&m);
-        BpModule bc = compile_module(&m);
+        BpModule bc = reg_compile_module(&m);
 
         Vm vm;
         vm_init(&vm, bc);
-        vm_run(&vm);
+
+        JitContext jit;
+        jit_init(&jit, bc.fn_len);
+        vm.jit = &jit;
+
+        reg_vm_run(&vm);
+
+        jit_shutdown(&jit);
         vm_free(&vm);
 
         bc_module_free(&bc);

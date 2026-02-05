@@ -1,0 +1,40 @@
+# Benchmark: Array Operations
+# Tests array creation, access, and manipulation
+
+def main() -> int:
+    let size: int = 50000
+
+    print("=== Array Operations Benchmark ===")
+    print("Array size:", size)
+
+    # Array creation and push
+    let start: int = clock_ms()
+    let arr: [int] = []
+    for i in range(0, size):
+        array_push(arr, i)
+    let mid1: int = clock_ms()
+    print("Array push time (ms):", mid1 - start)
+
+    # Array access (read)
+    let sum: int = 0
+    for i in range(0, size):
+        sum = sum + arr[i]
+    let mid2: int = clock_ms()
+    print("Array read time (ms):", mid2 - mid1)
+
+    # Array modification (write)
+    for i in range(0, size):
+        arr[i] = arr[i] * 2
+    let mid3: int = clock_ms()
+    print("Array write time (ms):", mid3 - mid2)
+
+    # Array pop
+    for i in range(0, size / 2):
+        let x: int = array_pop(arr)
+    let end: int = clock_ms()
+    print("Array pop time (ms):", end - mid3)
+
+    print("Final array length:", array_len(arr))
+    print("Total time (ms):", end - start)
+
+    return 0

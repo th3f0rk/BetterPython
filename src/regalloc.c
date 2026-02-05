@@ -136,3 +136,38 @@ bool reg_has_var(RegAlloc *ra, const char *name) {
 uint8_t reg_max_used(RegAlloc *ra) {
     return ra->max_used + 1;  // Return count (max index + 1)
 }
+
+uint8_t reg_alloc_block(RegAlloc *ra, size_t count) {
+    if (count == 0) return 0;
+    if (count > MAX_REGS) bp_fatal("block too large");
+
+    // Find a contiguous block of 'count' free registers
+    // Start searching from after parameters
+    for (int start = ra->param_count; start + (int)count <= MAX_REGS; start++) {
+        bool found = true;
+        for (size_t i = 0; i < count; i++) {
+            if (ra->regs[start + i] != REG_FREE) {
+                found = false;
+                // Skip ahead past the occupied register
+                start = start + (int)i;
+                break;
+            }
+        }
+        if (found) {
+            // Mark all registers in the block as allocated
+            for (size_t i = 0; i < count; i++) {
+                ra->regs[start + i] = REG_ALLOCATED;
+                if ((uint8_t)(start + i) > ra->max_used) {
+                    ra->max_used = (uint8_t)(start + i);
+                }
+            }
+            // Update next_free hint
+            if (start + count < MAX_REGS) {
+                ra->next_free = (uint8_t)(start + count);
+            }
+            return (uint8_t)start;
+        }
+    }
+    bp_fatal("out of registers for block allocation");
+    return 0;
+}
