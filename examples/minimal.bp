@@ -1,4 +1,5 @@
-def foo() -> int:
-    if true:
-        return 1
-    return 2
+# Minimal BetterPython Program
+# The Singularity - v1.0.0
+
+def main() -> int:
+    return 0

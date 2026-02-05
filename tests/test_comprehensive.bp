@@ -1,0 +1,484 @@
+# BetterPython Comprehensive Test Suite
+# The Singularity - Release v1.0.0
+# Tests all core language features
+
+def test_integers() -> int:
+    print("Testing integers...")
+    let a: int = 42
+    let b: int = -17
+    let c: int = 0
+
+    # Arithmetic
+    if a + b != 25:
+        print("FAIL: integer addition")
+        return 1
+    if a - b != 59:
+        print("FAIL: integer subtraction")
+        return 1
+    if a * 2 != 84:
+        print("FAIL: integer multiplication")
+        return 1
+    if a / 2 != 21:
+        print("FAIL: integer division")
+        return 1
+    if a % 5 != 2:
+        print("FAIL: integer modulo")
+        return 1
+
+    # Comparisons
+    if not (a > b):
+        print("FAIL: greater than")
+        return 1
+    if not (b < a):
+        print("FAIL: less than")
+        return 1
+    if not (a >= 42):
+        print("FAIL: greater or equal")
+        return 1
+    if not (b <= -17):
+        print("FAIL: less or equal")
+        return 1
+    if not (c == 0):
+        print("FAIL: equality")
+        return 1
+    if not (a != b):
+        print("FAIL: inequality")
+        return 1
+
+    print("  Integers: PASS")
+    return 0
+
+def test_floats() -> int:
+    print("Testing floats...")
+    let a: float = 3.14159
+    let b: float = 2.5
+    let c: float = -1.5
+
+    # Arithmetic
+    let sum: float = a + b
+    let diff: float = a - b
+    let prod: float = b * 2.0
+    let quot: float = 10.0 / 4.0
+
+    # Comparisons
+    if not (a > b):
+        print("FAIL: float comparison")
+        return 1
+
+    # Special values
+    let inf: float = 1.0 / 0.0
+    let nan_val: float = 0.0 / 0.0
+    if not is_inf(inf):
+        print("FAIL: infinity detection")
+        return 1
+    if not is_nan(nan_val):
+        print("FAIL: NaN detection")
+        return 1
+
+    # Math functions
+    let sq: float = fsqrt(16.0)
+    if sq < 3.9 or sq > 4.1:
+        print("FAIL: sqrt")
+        return 1
+
+    print("  Floats: PASS")
+    return 0
+
+def test_strings() -> int:
+    print("Testing strings...")
+    let s1: str = "Hello"
+    let s2: str = "World"
+    let s3: str = s1 + ", " + s2 + "!"
+
+    if len(s3) != 13:
+        print("FAIL: string length")
+        return 1
+
+    if str_upper("hello") != "HELLO":
+        print("FAIL: str_upper")
+        return 1
+
+    if str_lower("HELLO") != "hello":
+        print("FAIL: str_lower")
+        return 1
+
+    if str_trim("  hello  ") != "hello":
+        print("FAIL: str_trim")
+        return 1
+
+    if str_reverse("abc") != "cba":
+        print("FAIL: str_reverse")
+        return 1
+
+    if str_repeat("ab", 3) != "ababab":
+        print("FAIL: str_repeat")
+        return 1
+
+    if not str_contains("hello world", "world"):
+        print("FAIL: str_contains")
+        return 1
+
+    if not starts_with("hello", "hel"):
+        print("FAIL: starts_with")
+        return 1
+
+    if not ends_with("hello", "llo"):
+        print("FAIL: ends_with")
+        return 1
+
+    print("  Strings: PASS")
+    return 0
+
+def test_arrays() -> int:
+    print("Testing arrays...")
+    let arr: [int] = [1, 2, 3, 4, 5]
+
+    if array_len(arr) != 5:
+        print("FAIL: array_len")
+        return 1
+
+    if arr[0] != 1:
+        print("FAIL: array index 0")
+        return 1
+
+    if arr[4] != 5:
+        print("FAIL: array index 4")
+        return 1
+
+    # Modify
+    arr[2] = 99
+    if arr[2] != 99:
+        print("FAIL: array modify")
+        return 1
+
+    # Push
+    array_push(arr, 6)
+    if array_len(arr) != 6:
+        print("FAIL: array_push")
+        return 1
+
+    # Pop
+    let last: int = array_pop(arr)
+    if last != 6:
+        print("FAIL: array_pop value")
+        return 1
+    if array_len(arr) != 5:
+        print("FAIL: array_pop length")
+        return 1
+
+    print("  Arrays: PASS")
+    return 0
+
+def test_maps() -> int:
+    print("Testing maps...")
+    let m: {str: int} = {"a": 1, "b": 2, "c": 3}
+
+    if map_len(m) != 3:
+        print("FAIL: map_len")
+        return 1
+
+    if m["a"] != 1:
+        print("FAIL: map get")
+        return 1
+
+    if not map_has_key(m, "b"):
+        print("FAIL: map_has_key true")
+        return 1
+
+    if map_has_key(m, "z"):
+        print("FAIL: map_has_key false")
+        return 1
+
+    # Modify
+    m["a"] = 100
+    if m["a"] != 100:
+        print("FAIL: map modify")
+        return 1
+
+    # Add new key
+    m["d"] = 4
+    if map_len(m) != 4:
+        print("FAIL: map add key")
+        return 1
+
+    # Delete
+    map_delete(m, "d")
+    if map_len(m) != 3:
+        print("FAIL: map_delete")
+        return 1
+
+    print("  Maps: PASS")
+    return 0
+
+def test_control_flow() -> int:
+    print("Testing control flow...")
+
+    # If/elif/else
+    let x: int = 10
+    let result: int = 0
+    if x < 5:
+        result = 1
+    elif x < 15:
+        result = 2
+    else:
+        result = 3
+
+    if result != 2:
+        print("FAIL: if/elif/else")
+        return 1
+
+    # While loop
+    let i: int = 0
+    let sum: int = 0
+    while i < 5:
+        sum = sum + i
+        i = i + 1
+    if sum != 10:
+        print("FAIL: while loop")
+        return 1
+
+    # For loop with range
+    sum = 0
+    for j in range(1, 6):
+        sum = sum + j
+    if sum != 15:
+        print("FAIL: for loop")
+        return 1
+
+    # Break
+    sum = 0
+    for k in range(0, 100):
+        if k == 5:
+            break
+        sum = sum + k
+    if sum != 10:
+        print("FAIL: break")
+        return 1
+
+    # Continue (0+1+3+4 = 8, skipping l=2)
+    sum = 0
+    for l in range(0, 5):
+        if l == 2:
+            continue
+        sum = sum + l
+    if sum != 8:
+        print("FAIL: continue")
+        return 1
+
+    print("  Control flow: PASS")
+    return 0
+
+def factorial(n: int) -> int:
+    if n <= 1:
+        return 1
+    return n * factorial(n - 1)
+
+def test_functions() -> int:
+    print("Testing functions...")
+
+    # Recursion
+    if factorial(5) != 120:
+        print("FAIL: recursion")
+        return 1
+
+    if factorial(0) != 1:
+        print("FAIL: recursion base case")
+        return 1
+
+    print("  Functions: PASS")
+    return 0
+
+def test_type_conversion() -> int:
+    print("Testing type conversion...")
+
+    # Int to float
+    let i: int = 42
+    let f: float = int_to_float(i)
+    if f < 41.9 or f > 42.1:
+        print("FAIL: int_to_float")
+        return 1
+
+    # Float to int
+    let f2: float = 3.7
+    let i2: int = float_to_int(f2)
+    if i2 != 3:
+        print("FAIL: float_to_int")
+        return 1
+
+    # Generic to_str
+    let s1: str = to_str(42)
+    if s1 != "42":
+        print("FAIL: to_str")
+        return 1
+
+    # Float to string
+    let s2: str = float_to_str(3.14)
+    if len(s2) < 3:
+        print("FAIL: float_to_str")
+        return 1
+
+    # String to float
+    let f3: float = str_to_float("3.14")
+    if f3 < 3.1 or f3 > 3.2:
+        print("FAIL: str_to_float")
+        return 1
+
+    # Hex conversion
+    let hex_str: str = int_to_hex(255)
+    if hex_str != "ff":
+        print("FAIL: int_to_hex")
+        return 1
+
+    let from_hex: int = hex_to_int("ff")
+    if from_hex != 255:
+        print("FAIL: hex_to_int")
+        return 1
+
+    print("  Type conversion: PASS")
+    return 0
+
+def test_boolean_logic() -> int:
+    print("Testing boolean logic...")
+
+    let t: bool = true
+    let f: bool = false
+
+    if not t:
+        print("FAIL: true value")
+        return 1
+
+    if f:
+        print("FAIL: false value")
+        return 1
+
+    if not (t and t):
+        print("FAIL: and true")
+        return 1
+
+    if t and f:
+        print("FAIL: and false")
+        return 1
+
+    if not (t or f):
+        print("FAIL: or true")
+        return 1
+
+    if f or f:
+        print("FAIL: or false")
+        return 1
+
+    if not (not f):
+        print("FAIL: not")
+        return 1
+
+    print("  Boolean logic: PASS")
+    return 0
+
+def test_math_functions() -> int:
+    print("Testing math functions...")
+
+    # Integer math
+    if abs(-5) != 5:
+        print("FAIL: abs")
+        return 1
+
+    if min(3, 7) != 3:
+        print("FAIL: min")
+        return 1
+
+    if max(3, 7) != 7:
+        print("FAIL: max")
+        return 1
+
+    if pow(2, 10) != 1024:
+        print("FAIL: pow")
+        return 1
+
+    if clamp(5, 0, 3) != 3:
+        print("FAIL: clamp high")
+        return 1
+
+    if clamp(-1, 0, 3) != 0:
+        print("FAIL: clamp low")
+        return 1
+
+    if sign(-5) != -1:
+        print("FAIL: sign negative")
+        return 1
+
+    if sign(5) != 1:
+        print("FAIL: sign positive")
+        return 1
+
+    print("  Math functions: PASS")
+    return 0
+
+def test_validation_functions() -> int:
+    print("Testing validation functions...")
+
+    if not is_digit("123"):
+        print("FAIL: is_digit true")
+        return 1
+
+    if is_digit("12a"):
+        print("FAIL: is_digit false")
+        return 1
+
+    if not is_alpha("abc"):
+        print("FAIL: is_alpha true")
+        return 1
+
+    if is_alpha("ab1"):
+        print("FAIL: is_alpha false")
+        return 1
+
+    if not is_alnum("abc123"):
+        print("FAIL: is_alnum true")
+        return 1
+
+    if is_alnum("abc!"):
+        print("FAIL: is_alnum false")
+        return 1
+
+    if not is_space("   "):
+        print("FAIL: is_space true")
+        return 1
+
+    if is_space("a "):
+        print("FAIL: is_space false")
+        return 1
+
+    print("  Validation functions: PASS")
+    return 0
+
+def main() -> int:
+    print("========================================")
+    print("BetterPython Comprehensive Test Suite")
+    print("The Singularity - v1.0.0")
+    print("========================================")
+    print("")
+
+    let failures: int = 0
+
+    failures = failures + test_integers()
+    failures = failures + test_floats()
+    failures = failures + test_strings()
+    failures = failures + test_arrays()
+    failures = failures + test_maps()
+    failures = failures + test_control_flow()
+    failures = failures + test_functions()
+    failures = failures + test_type_conversion()
+    failures = failures + test_boolean_logic()
+    failures = failures + test_math_functions()
+    failures = failures + test_validation_functions()
+
+    print("")
+    print("========================================")
+    if failures == 0:
+        print("ALL TESTS PASSED!")
+        print("The Singularity approves.")
+    else:
+        print("FAILURES:", failures)
+    print("========================================")
+
+    return failures
