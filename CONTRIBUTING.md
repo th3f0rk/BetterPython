@@ -34,13 +34,12 @@ BetterPython is committed to providing a welcoming and inclusive environment. Pl
 - **C11 compiler** - GCC 4.9+ or Clang 3.5+
 - **Make** - Build system
 - **Git** - Version control
-- **Python 3.8+** - For LSP server and tools (optional)
 - **Node.js 18+** - For TreeSitter parser (optional)
 
 ### Clone and Build
 
 ```bash
-git clone https://github.com/5ingular1ty/BetterPython.git
+git clone https://github.com/th3f0rk/BetterPython.git
 cd BetterPython
 make
 ```
@@ -162,7 +161,7 @@ static Value do_something(VM *vm, int arg) {
 /*
  * filename.c - Brief description
  *
- * Part of BetterPython - https://github.com/5ingular1ty/BetterPython
+ * Part of BetterPython - https://github.com/th3f0rk/BetterPython
  */
 ```
 
@@ -399,8 +398,8 @@ Contributors interested in major features should open an issue first to discuss 
 
 ## Questions?
 
-- **Issues:** https://github.com/5ingular1ty/BetterPython/issues
-- **Discussions:** https://github.com/5ingular1ty/BetterPython/discussions
+- **Issues:** https://github.com/th3f0rk/BetterPython/issues
+- **Discussions:** https://github.com/th3f0rk/BetterPython/discussions
 
 ---
 

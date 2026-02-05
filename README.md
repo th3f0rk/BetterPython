@@ -4,7 +4,7 @@
 
 A statically-typed, compiled programming language combining Python's elegant syntax with systems-level performance. Designed by AI, for the future of programming.
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/5ingular1ty/BetterPython/releases)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/th3f0rk/BetterPython/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 
@@ -25,7 +25,7 @@ BetterPython is a production-ready programming language that achieves the vision
 ### Installation
 
 ```bash
-git clone https://github.com/5ingular1ty/BetterPython.git
+git clone https://github.com/th3f0rk/BetterPython.git
 cd BetterPython
 make
 ```
@@ -388,8 +388,19 @@ bplint program.bp               # Check code quality
 ```bash
 bppkg init myproject            # Initialize project
 bppkg install package           # Install dependency
+bppkg install package@1.0.0     # Install specific version
+bppkg uninstall package         # Remove dependency
 bppkg list                      # List installed
+bppkg audit                     # Security audit
+bppkg keygen my-key             # Generate signing keypair
+bppkg verify package.tar.gz     # Verify package integrity
 ```
+
+**Security Features:**
+- Ed25519 signatures for package authentication
+- SHA-256 checksums for integrity verification
+- TLS 1.2+ for secure transport
+- Lockfile for reproducible builds
 
 ---
 

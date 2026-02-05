@@ -43,11 +43,22 @@ struct BpStruct {
     size_t field_count;
 };
 
+struct BpClass {
+    uint8_t marked;
+    struct BpClass *next;
+
+    uint16_t class_id;      // Class type identifier
+    Value *fields;          // Array of field values
+    size_t field_count;
+    struct BpClass *parent; // Parent class instance (for inheritance)
+};
+
 typedef struct {
     BpStr *head;
     BpArray *arr_head;
     BpMap *map_head;
     BpStruct *struct_head;
+    BpClass *class_head;
     size_t bytes;
     size_t next_gc;
 } Gc;
@@ -72,5 +83,9 @@ BpArray *gc_map_values(Gc *gc, BpMap *map);
 BpStruct *gc_new_struct(Gc *gc, uint16_t type_id, size_t field_count);
 Value gc_struct_get(BpStruct *st, size_t field_idx);
 void gc_struct_set(BpStruct *st, size_t field_idx, Value v);
+
+BpClass *gc_new_class(Gc *gc, uint16_t class_id, size_t field_count);
+Value gc_class_get(BpClass *cls, size_t field_idx);
+void gc_class_set(BpClass *cls, size_t field_idx, Value v);
 
 void gc_collect(Gc *gc, Value *stack, size_t sp, Value *locals, size_t localc);

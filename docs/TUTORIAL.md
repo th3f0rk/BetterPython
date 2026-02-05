@@ -30,7 +30,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/5ingular1ty/BetterPython.git
+git clone https://github.com/th3f0rk/BetterPython.git
 cd BetterPython
 
 # Build the compiler and VM
@@ -1152,7 +1152,7 @@ def main() -> int:
 
 - **Documentation:** See the `docs/` folder
 - **Examples:** Browse `examples/` for working code
-- **Issues:** Report bugs at https://github.com/5ingular1ty/BetterPython/issues
+- **Issues:** Report bugs at https://github.com/th3f0rk/BetterPython/issues
 
 ---
 

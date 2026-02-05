@@ -151,7 +151,8 @@ static TokenKind keyword_kind(const char *s, size_t n) {
         {"and", TOK_AND}, {"or", TOK_OR}, {"not", TOK_NOT},
         {"import", TOK_IMPORT}, {"export", TOK_EXPORT}, {"as", TOK_AS},
         {"try", TOK_TRY}, {"catch", TOK_CATCH}, {"finally", TOK_FINALLY}, {"throw", TOK_THROW},
-        {"struct", TOK_STRUCT}, {"enum", TOK_ENUM}, {"fn", TOK_FN}, {"from", TOK_FROM}, {"self", TOK_SELF}
+        {"struct", TOK_STRUCT}, {"enum", TOK_ENUM}, {"fn", TOK_FN}, {"from", TOK_FROM}, {"self", TOK_SELF},
+        {"class", TOK_CLASS}, {"new", TOK_NEW}, {"super", TOK_SUPER}, {"extern", TOK_EXTERN}, {"ptr", TOK_PTR}
     };
     for (size_t i = 0; i < sizeof(m) / sizeof(m[0]); i++) {
         if (strlen(m[i].k) == n && memcmp(s, m[i].k, n) == 0) return m[i].t;
@@ -340,6 +341,11 @@ const char *token_kind_name(TokenKind k) {
         case TOK_SELF: return "SELF";
         case TOK_FSTRING: return "FSTRING";
         case TOK_AT: return "AT";
+        case TOK_CLASS: return "CLASS";
+        case TOK_NEW: return "NEW";
+        case TOK_SUPER: return "SUPER";
+        case TOK_EXTERN: return "EXTERN";
+        case TOK_PTR: return "PTR";
         case TOK_COLON: return "COLON";
         case TOK_COMMA: return "COMMA";
         case TOK_LPAREN: return "LPAREN";

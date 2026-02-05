@@ -7,6 +7,7 @@ void gc_init(Gc *gc) {
     gc->arr_head = NULL;
     gc->map_head = NULL;
     gc->struct_head = NULL;
+    gc->class_head = NULL;
     gc->bytes = 0;
     gc->next_gc = 1024 * 1024;
 }
@@ -29,6 +30,11 @@ static void map_free(BpMap *m) {
 static void struct_free(BpStruct *st) {
     free(st->fields);
     free(st);
+}
+
+static void class_free(BpClass *cls) {
+    free(cls->fields);
+    free(cls);
 }
 
 void gc_free_all(Gc *gc) {
@@ -63,6 +69,14 @@ void gc_free_all(Gc *gc) {
         sit = n;
     }
     gc->struct_head = NULL;
+
+    BpClass *cit = gc->class_head;
+    while (cit) {
+        BpClass *n = cit->next;
+        class_free(cit);
+        cit = n;
+    }
+    gc->class_head = NULL;
 
     gc->bytes = 0;
 }
@@ -328,6 +342,32 @@ void gc_struct_set(BpStruct *st, size_t field_idx, Value v) {
     st->fields[field_idx] = v;
 }
 
+BpClass *gc_new_class(Gc *gc, uint16_t class_id, size_t field_count) {
+    BpClass *cls = bp_xmalloc(sizeof(*cls));
+    cls->marked = 0;
+    cls->class_id = class_id;
+    cls->field_count = field_count;
+    cls->parent = NULL;
+    cls->fields = bp_xmalloc(field_count * sizeof(Value));
+    for (size_t i = 0; i < field_count; i++) cls->fields[i] = v_null();
+
+    cls->next = gc->class_head;
+    gc->class_head = cls;
+
+    gc->bytes += sizeof(*cls) + field_count * sizeof(Value);
+    return cls;
+}
+
+Value gc_class_get(BpClass *cls, size_t field_idx) {
+    if (field_idx >= cls->field_count) bp_fatal("class field index out of bounds: %zu >= %zu", field_idx, cls->field_count);
+    return cls->fields[field_idx];
+}
+
+void gc_class_set(BpClass *cls, size_t field_idx, Value v) {
+    if (field_idx >= cls->field_count) bp_fatal("class field index out of bounds: %zu >= %zu", field_idx, cls->field_count);
+    cls->fields[field_idx] = v;
+}
+
 static void mark_value(Value v);
 
 static void mark_array(BpArray *arr) {
@@ -357,6 +397,15 @@ static void mark_struct(BpStruct *st) {
     }
 }
 
+static void mark_class(BpClass *cls) {
+    if (!cls || cls->marked) return;
+    cls->marked = 1;
+    for (size_t i = 0; i < cls->field_count; i++) {
+        mark_value(cls->fields[i]);
+    }
+    if (cls->parent) mark_class(cls->parent);
+}
+
 static void mark_value(Value v) {
     if (v.type == VAL_STR && v.as.s) {
         v.as.s->marked = 1;
@@ -366,6 +415,8 @@ static void mark_value(Value v) {
         mark_map(v.as.map);
     } else if (v.type == VAL_STRUCT && v.as.st) {
         mark_struct(v.as.st);
+    } else if (v.type == VAL_CLASS && v.as.cls) {
+        mark_class(v.as.cls);
     }
 }
 
@@ -429,6 +480,20 @@ static void sweep(Gc *gc) {
         *sit = obj->next;
         gc->bytes -= sizeof(*obj) + obj->field_count * sizeof(Value);
         struct_free(obj);
+    }
+
+    // Sweep classes
+    BpClass **cit = &gc->class_head;
+    while (*cit) {
+        BpClass *obj = *cit;
+        if (obj->marked) {
+            obj->marked = 0;
+            cit = &obj->next;
+            continue;
+        }
+        *cit = obj->next;
+        gc->bytes -= sizeof(*obj) + obj->field_count * sizeof(Value);
+        class_free(obj);
     }
 
     if (gc->bytes < 1024 * 1024) gc->next_gc = 1024 * 1024;

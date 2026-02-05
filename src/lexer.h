@@ -49,6 +49,13 @@ typedef enum {
     TOK_FSTRING,    // f"..." string
     TOK_AT,         // @ for decorators
 
+    // Class and FFI keywords
+    TOK_CLASS,      // class keyword
+    TOK_NEW,        // new keyword for instantiation
+    TOK_SUPER,      // super for parent class
+    TOK_EXTERN,     // extern for C FFI
+    TOK_PTR,        // ptr type for C pointers
+
     TOK_COLON,
     TOK_COMMA,
     TOK_LPAREN,

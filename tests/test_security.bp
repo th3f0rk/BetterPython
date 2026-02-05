@@ -55,8 +55,9 @@ def main() -> int:
     
     print("Test: Random bytes length")
     test_count = test_count + 1
+    # random_bytes returns hex-encoded string, so 16 bytes = 32 hex chars
     let rb: str = random_bytes(16)
-    if len(rb) == 16:
+    if len(rb) == 32:
         print("  PASS")
         pass_count = pass_count + 1
     else:

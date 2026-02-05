@@ -44,9 +44,26 @@ typedef struct {
     size_t cap;
 } StructTable;
 
+// Class type info for type checking
+typedef struct {
+    char *name;
+    char *parent_name;
+    char **field_names;
+    Type *field_types;
+    size_t field_count;
+    size_t class_index;
+} ClassInfo;
+
+typedef struct {
+    ClassInfo *items;
+    size_t len;
+    size_t cap;
+} ClassTable;
+
 static Module *g_module = NULL;  // Global reference for function lookup
 static FnTable g_fntable = {0};
 static StructTable g_structtable = {0};
+static ClassTable g_classtable = {0};
 
 static void scope_put(Scope *s, const char *name, Type t) {
     for (size_t i = 0; i < s->len; i++) {
@@ -132,6 +149,44 @@ static void structtable_free(StructTable *st) {
     memset(st, 0, sizeof(*st));
 }
 
+static void classtable_add(ClassTable *ct, const char *name, const char *parent_name,
+                           char **field_names, Type *field_types, size_t fc, size_t idx) {
+    if (ct->len + 1 > ct->cap) {
+        ct->cap = ct->cap ? ct->cap * 2 : 16;
+        ct->items = bp_xrealloc(ct->items, ct->cap * sizeof(*ct->items));
+    }
+    ct->items[ct->len].name = bp_xstrdup(name);
+    ct->items[ct->len].parent_name = parent_name ? bp_xstrdup(parent_name) : NULL;
+    ct->items[ct->len].field_names = field_names;
+    ct->items[ct->len].field_types = field_types;
+    ct->items[ct->len].field_count = fc;
+    ct->items[ct->len].class_index = idx;
+    ct->len++;
+}
+
+static ClassInfo *classtable_get(ClassTable *ct, const char *name) {
+    for (size_t i = 0; i < ct->len; i++) {
+        if (strcmp(ct->items[i].name, name) == 0) return &ct->items[i];
+    }
+    return NULL;
+}
+
+static int classtable_get_field_index(ClassInfo *ci, const char *field_name) {
+    for (size_t i = 0; i < ci->field_count; i++) {
+        if (strcmp(ci->field_names[i], field_name) == 0) return (int)i;
+    }
+    return -1;
+}
+
+static void classtable_free(ClassTable *ct) {
+    for (size_t i = 0; i < ct->len; i++) {
+        free(ct->items[i].name);
+        free(ct->items[i].parent_name);
+    }
+    free(ct->items);
+    memset(ct, 0, sizeof(*ct));
+}
+
 static bool type_eq(Type a, Type b) {
     if (a.kind != b.kind) return false;
     if (a.kind == TY_ARRAY) {
@@ -143,9 +198,14 @@ static bool type_eq(Type a, Type b) {
         if (!a.elem_type || !b.elem_type) return false;
         return type_eq(*a.key_type, *b.key_type) && type_eq(*a.elem_type, *b.elem_type);
     }
-    if (a.kind == TY_STRUCT || a.kind == TY_ENUM) {
+    if (a.kind == TY_STRUCT || a.kind == TY_ENUM || a.kind == TY_CLASS) {
         if (!a.struct_name || !b.struct_name) return false;
         return strcmp(a.struct_name, b.struct_name) == 0;
+    }
+    if (a.kind == TY_PTR) {
+        // Null/void pointers are compatible with any pointer
+        if (!a.elem_type || !b.elem_type) return true;
+        return type_eq(*a.elem_type, *b.elem_type);
     }
     if (a.kind == TY_TUPLE) {
         if (a.tuple_len != b.tuple_len) return false;
@@ -199,6 +259,15 @@ static const char *type_name(Type t) {
         case TY_ENUM:
             if (t.struct_name) return t.struct_name;
             return "<enum>";
+        case TY_CLASS:
+            if (t.struct_name) return t.struct_name;
+            return "<class>";
+        case TY_PTR:
+            if (t.elem_type) {
+                snprintf(buf, sizeof(buf), "ptr<%s>", type_name(*t.elem_type));
+                return buf;
+            }
+            return "ptr";
         case TY_TUPLE: {
             size_t pos = 0;
             pos += snprintf(buf + pos, sizeof(buf) - pos, "(");
@@ -995,20 +1064,34 @@ static Type check_expr(Expr *e, Scope *s) {
         }
         case EX_FIELD_ACCESS: {
             Type obj_type = check_expr(e->as.field_access.object, s);
-            if (obj_type.kind != TY_STRUCT) {
-                bp_fatal("cannot access field '%s' on non-struct type %s",
+            if (obj_type.kind == TY_STRUCT) {
+                StructInfo *si = structtable_get(&g_structtable, obj_type.struct_name);
+                if (!si) {
+                    bp_fatal("unknown struct type '%s'", obj_type.struct_name);
+                }
+                int fidx = structtable_get_field_index(si, e->as.field_access.field_name);
+                if (fidx < 0) {
+                    bp_fatal("struct '%s' has no field '%s'", si->name, e->as.field_access.field_name);
+                }
+                e->as.field_access.field_index = fidx;  // Store for compiler
+                e->inferred = si->field_types[fidx];
+                return e->inferred;
+            } else if (obj_type.kind == TY_CLASS) {
+                ClassInfo *ci = classtable_get(&g_classtable, obj_type.struct_name);
+                if (!ci) {
+                    bp_fatal("unknown class type '%s'", obj_type.struct_name);
+                }
+                int fidx = classtable_get_field_index(ci, e->as.field_access.field_name);
+                if (fidx < 0) {
+                    bp_fatal("class '%s' has no field '%s'", ci->name, e->as.field_access.field_name);
+                }
+                e->as.field_access.field_index = fidx;  // Store for compiler
+                e->inferred = ci->field_types[fidx];
+                return e->inferred;
+            } else {
+                bp_fatal("cannot access field '%s' on type %s",
                          e->as.field_access.field_name, type_name(obj_type));
             }
-            StructInfo *si = structtable_get(&g_structtable, obj_type.struct_name);
-            if (!si) {
-                bp_fatal("unknown struct type '%s'", obj_type.struct_name);
-            }
-            int fidx = structtable_get_field_index(si, e->as.field_access.field_name);
-            if (fidx < 0) {
-                bp_fatal("struct '%s' has no field '%s'", si->name, e->as.field_access.field_name);
-            }
-            e->as.field_access.field_index = fidx;  // Store for compiler
-            e->inferred = si->field_types[fidx];
             return e->inferred;
         }
         case EX_UNARY: {
@@ -1140,6 +1223,43 @@ static Type check_expr(Expr *e, Scope *s) {
             e->inferred = type_int();  // Enum values are integers
             return e->inferred;
         }
+        case EX_NEW: {
+            // Look up class definition
+            ClassInfo *ci = classtable_get(&g_classtable, e->as.new_expr.class_name);
+            if (!ci) {
+                bp_fatal("unknown class type '%s'", e->as.new_expr.class_name);
+            }
+            // Check constructor arguments (if __init__ method exists)
+            // For now, just type check all arguments
+            for (size_t i = 0; i < e->as.new_expr.argc; i++) {
+                check_expr(e->as.new_expr.args[i], s);
+            }
+            // Store class index for compiler
+            e->as.new_expr.class_index = (int)ci->class_index;
+            // Return the class type
+            Type cls_type;
+            cls_type.kind = TY_CLASS;
+            cls_type.elem_type = NULL;
+            cls_type.key_type = NULL;
+            cls_type.struct_name = ci->name;
+            cls_type.tuple_types = NULL;
+            cls_type.tuple_len = 0;
+            cls_type.param_types = NULL;
+            cls_type.param_count = 0;
+            cls_type.return_type = NULL;
+            e->inferred = cls_type;
+            return e->inferred;
+        }
+        case EX_SUPER_CALL: {
+            // super() or super.method() calls
+            // Type check all arguments
+            for (size_t i = 0; i < e->as.super_call.argc; i++) {
+                check_expr(e->as.super_call.args[i], s);
+            }
+            // For now, return void - proper method lookup will be added later
+            e->inferred = type_void();
+            return e->inferred;
+        }
         default: break;
     }
     bp_fatal("unknown expr");
@@ -1259,12 +1379,19 @@ void typecheck_module(Module *m) {
     g_module = m;
     fntable_free(&g_fntable);  // Clean any previous state
     structtable_free(&g_structtable);  // Clean any previous state
+    classtable_free(&g_classtable);  // Clean any previous state
 
     // Build struct table first (structs must be defined before use)
     for (size_t i = 0; i < m->structc; i++) {
         StructDef *sd = &m->structs[i];
         // Note: we don't copy field names/types, just reference them
         structtable_add(&g_structtable, sd->name, sd->field_names, sd->field_types, sd->field_count, i);
+    }
+
+    // Build class table (classes must be defined before use)
+    for (size_t i = 0; i < m->classc; i++) {
+        ClassDef *cd = &m->classes[i];
+        classtable_add(&g_classtable, cd->name, cd->parent_name, cd->field_names, cd->field_types, cd->field_count, i);
     }
 
     for (size_t i = 0; i < m->fnc; i++) {

@@ -174,7 +174,7 @@ betterpython program.bp         # Compile and run
 ## Installation
 
 ```bash
-git clone https://github.com/5ingular1ty/BetterPython.git
+git clone https://github.com/th3f0rk/BetterPython.git
 cd BetterPython
 make
 ```
@@ -232,9 +232,9 @@ MIT License
 
 ## Links
 
-- **Repository:** https://github.com/5ingular1ty/BetterPython
+- **Repository:** https://github.com/th3f0rk/BetterPython
 - **Documentation:** See README.md and docs/ folder
-- **Issues:** https://github.com/5ingular1ty/BetterPython/issues
+- **Issues:** https://github.com/th3f0rk/BetterPython/issues
 
 ---
 

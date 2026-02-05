@@ -128,6 +128,11 @@ static Type parse_type(Parser *p) {
     else if (n == 3 && memcmp(s, "u16", 3) == 0) t = type_u16();
     else if (n == 3 && memcmp(s, "u32", 3) == 0) t = type_u32();
     else if (n == 3 && memcmp(s, "u64", 3) == 0) t = type_u64();
+    // Pointer type for FFI
+    else if (n == 3 && memcmp(s, "ptr", 3) == 0) {
+        t.kind = TY_PTR;
+        t.elem_type = NULL;  // void pointer
+    }
     else {
         // Assume it's a struct or enum type
         t.kind = TY_STRUCT;
@@ -178,6 +183,54 @@ static Expr *parse_primary(Parser *p) {
     // self keyword
     if (accept(p, TOK_SELF)) {
         return parse_postfix(p, expr_new_var(bp_xstrdup("self"), line));
+    }
+
+    // new expression: new ClassName(args)
+    if (accept(p, TOK_NEW)) {
+        if (p->cur.kind != TOK_IDENT) bp_fatal("expected class name after 'new' at %zu:%zu", p->cur.line, p->cur.col);
+        char *class_name = dup_lexeme(p->cur);
+        next(p);
+        expect(p, TOK_LPAREN, "expected '(' after class name");
+        Expr **args = NULL;
+        size_t argc = 0, cap = 0;
+        if (p->cur.kind != TOK_RPAREN) {
+            for (;;) {
+                Expr *a = parse_expr(p);
+                if (argc + 1 > cap) { cap = cap ? cap * 2 : 4; args = bp_xrealloc(args, cap * sizeof(*args)); }
+                args[argc++] = a;
+                if (!accept(p, TOK_COMMA)) break;
+            }
+        }
+        expect(p, TOK_RPAREN, "expected ')' after constructor args");
+        return parse_postfix(p, expr_new_new(class_name, args, argc, line));
+    }
+
+    // super expression: super.method(args) or super().__init__(args)
+    if (accept(p, TOK_SUPER)) {
+        if (accept(p, TOK_LPAREN)) {
+            // super() call - shorthand for parent constructor
+            expect(p, TOK_RPAREN, "expected ')' after super()");
+            return parse_postfix(p, expr_new_super_call(NULL, NULL, 0, line));
+        }
+        if (accept(p, TOK_DOT)) {
+            if (p->cur.kind != TOK_IDENT) bp_fatal("expected method name after 'super.' at %zu:%zu", p->cur.line, p->cur.col);
+            char *method_name = dup_lexeme(p->cur);
+            next(p);
+            expect(p, TOK_LPAREN, "expected '(' after super.method");
+            Expr **args = NULL;
+            size_t argc = 0, cap = 0;
+            if (p->cur.kind != TOK_RPAREN) {
+                for (;;) {
+                    Expr *a = parse_expr(p);
+                    if (argc + 1 > cap) { cap = cap ? cap * 2 : 4; args = bp_xrealloc(args, cap * sizeof(*args)); }
+                    args[argc++] = a;
+                    if (!accept(p, TOK_COMMA)) break;
+                }
+            }
+            expect(p, TOK_RPAREN, "expected ')' after super.method args");
+            return parse_postfix(p, expr_new_super_call(method_name, args, argc, line));
+        }
+        bp_fatal("expected '.' or '()' after 'super' at %zu:%zu", p->cur.line, p->cur.col);
     }
 
     // F-string: f"Hello {name}!"
@@ -935,6 +988,190 @@ static ImportDef parse_import(Parser *p) {
     return id;
 }
 
+// Parse class definition:
+// class ClassName(ParentClass):
+//     field: type
+//     def method(self, args) -> type:
+//         body
+static ClassDef parse_class(Parser *p) {
+    ClassDef cd;
+    memset(&cd, 0, sizeof(cd));
+
+    cd.line = p->cur.line;
+    expect(p, TOK_CLASS, "expected 'class'");
+    if (p->cur.kind != TOK_IDENT) bp_fatal("expected class name at %zu:%zu", p->cur.line, p->cur.col);
+    cd.name = dup_lexeme(p->cur);
+    next(p);
+
+    // Optional parent class: class Child(Parent):
+    if (accept(p, TOK_LPAREN)) {
+        if (p->cur.kind != TOK_IDENT) bp_fatal("expected parent class name at %zu:%zu", p->cur.line, p->cur.col);
+        cd.parent_name = dup_lexeme(p->cur);
+        next(p);
+        expect(p, TOK_RPAREN, "expected ')' after parent class name");
+    }
+
+    expect(p, TOK_COLON, "expected ':' after class name");
+    expect(p, TOK_NEWLINE, "expected newline after ':'");
+    expect(p, TOK_INDENT, "expected indent after class header");
+
+    char **field_names = NULL;
+    Type *field_types = NULL;
+    size_t field_count = 0, field_cap = 0;
+
+    MethodDef *methods = NULL;
+    size_t method_count = 0, method_cap = 0;
+
+    while (p->cur.kind != TOK_DEDENT && p->cur.kind != TOK_EOF) {
+        skip_newlines(p);
+        if (p->cur.kind == TOK_DEDENT || p->cur.kind == TOK_EOF) break;
+
+        // Method definition (def inside class)
+        if (p->cur.kind == TOK_DEF) {
+            MethodDef md;
+            memset(&md, 0, sizeof(md));
+            md.line = p->cur.line;
+            next(p);  // consume 'def'
+            if (p->cur.kind != TOK_IDENT) bp_fatal("expected method name at %zu:%zu", p->cur.line, p->cur.col);
+            md.name = dup_lexeme(p->cur);
+            next(p);
+
+            expect(p, TOK_LPAREN, "expected '(' after method name");
+
+            Param *params = NULL;
+            size_t paramc = 0, param_cap = 0;
+
+            // First param should be 'self' for methods
+            if (p->cur.kind != TOK_RPAREN) {
+                for (;;) {
+                    if (p->cur.kind == TOK_SELF) {
+                        next(p);
+                        // self doesn't need a type annotation - it's implicit
+                        Type self_type;
+                        memset(&self_type, 0, sizeof(self_type));
+                        self_type.kind = TY_CLASS;
+                        self_type.struct_name = bp_xstrdup(cd.name);
+                        if (paramc + 1 > param_cap) { param_cap = param_cap ? param_cap * 2 : 4; params = bp_xrealloc(params, param_cap * sizeof(*params)); }
+                        params[paramc++] = (Param){ .name = bp_xstrdup("self"), .type = self_type };
+                    } else {
+                        if (p->cur.kind != TOK_IDENT) bp_fatal("expected parameter name at %zu:%zu", p->cur.line, p->cur.col);
+                        char *pname = dup_lexeme(p->cur);
+                        next(p);
+                        expect(p, TOK_COLON, "expected ':' in parameter");
+                        Type pt = parse_type(p);
+                        if (paramc + 1 > param_cap) { param_cap = param_cap ? param_cap * 2 : 4; params = bp_xrealloc(params, param_cap * sizeof(*params)); }
+                        params[paramc++] = (Param){ .name = pname, .type = pt };
+                    }
+                    if (!accept(p, TOK_COMMA)) break;
+                }
+            }
+            expect(p, TOK_RPAREN, "expected ')' after method params");
+            expect(p, TOK_ARROW, "expected '->' return type");
+            md.ret_type = parse_type(p);
+            expect(p, TOK_COLON, "expected ':' after method signature");
+
+            size_t body_len = 0;
+            Stmt **body = parse_block(p, &body_len);
+
+            md.params = params;
+            md.paramc = paramc;
+            md.body = body;
+            md.body_len = body_len;
+
+            if (method_count + 1 > method_cap) {
+                method_cap = method_cap ? method_cap * 2 : 4;
+                methods = bp_xrealloc(methods, method_cap * sizeof(*methods));
+            }
+            methods[method_count++] = md;
+        } else if (p->cur.kind == TOK_IDENT) {
+            // Field definition
+            char *fname = dup_lexeme(p->cur);
+            next(p);
+            expect(p, TOK_COLON, "expected ':' after field name");
+            Type ftype = parse_type(p);
+
+            if (field_count + 1 > field_cap) {
+                field_cap = field_cap ? field_cap * 2 : 4;
+                field_names = bp_xrealloc(field_names, field_cap * sizeof(*field_names));
+                field_types = bp_xrealloc(field_types, field_cap * sizeof(*field_types));
+            }
+            field_names[field_count] = fname;
+            field_types[field_count] = ftype;
+            field_count++;
+        } else {
+            bp_fatal("expected field or method definition in class at %zu:%zu", p->cur.line, p->cur.col);
+        }
+
+        skip_newlines(p);
+    }
+
+    if (p->cur.kind == TOK_DEDENT) next(p);
+
+    cd.field_names = field_names;
+    cd.field_types = field_types;
+    cd.field_count = field_count;
+    cd.methods = methods;
+    cd.method_count = method_count;
+    return cd;
+}
+
+// Parse extern C function declaration:
+// extern fn printf(fmt: str) -> int from "libc.so.6"
+// extern fn custom_add(a: int, b: int) -> int from "libcustom.so" as "add"
+static ExternDef parse_extern(Parser *p) {
+    ExternDef ed;
+    memset(&ed, 0, sizeof(ed));
+
+    ed.line = p->cur.line;
+    expect(p, TOK_EXTERN, "expected 'extern'");
+    expect(p, TOK_FN, "expected 'fn' after extern");
+
+    if (p->cur.kind != TOK_IDENT) bp_fatal("expected function name at %zu:%zu", p->cur.line, p->cur.col);
+    ed.name = dup_lexeme(p->cur);
+    ed.c_name = bp_xstrdup(ed.name);  // Default to same name
+    next(p);
+
+    expect(p, TOK_LPAREN, "expected '(' after extern function name");
+
+    Param *params = NULL;
+    size_t paramc = 0, cap = 0;
+    if (p->cur.kind != TOK_RPAREN) {
+        for (;;) {
+            if (p->cur.kind != TOK_IDENT) bp_fatal("expected parameter name at %zu:%zu", p->cur.line, p->cur.col);
+            char *pname = dup_lexeme(p->cur);
+            next(p);
+            expect(p, TOK_COLON, "expected ':' in parameter");
+            Type pt = parse_type(p);
+            if (paramc + 1 > cap) { cap = cap ? cap * 2 : 4; params = bp_xrealloc(params, cap * sizeof(*params)); }
+            params[paramc++] = (Param){ .name = pname, .type = pt };
+            if (!accept(p, TOK_COMMA)) break;
+        }
+    }
+    expect(p, TOK_RPAREN, "expected ')' after extern params");
+    expect(p, TOK_ARROW, "expected '->' for return type");
+    ed.ret_type = parse_type(p);
+
+    // Required: from "library.so"
+    expect(p, TOK_FROM, "expected 'from' after extern signature");
+    if (p->cur.kind != TOK_STR) bp_fatal("expected library path string at %zu:%zu", p->cur.line, p->cur.col);
+    ed.library = bp_xstrdup(p->cur.str_val);
+    free((void *)p->cur.str_val);
+    next(p);
+
+    // Optional: as "c_function_name"
+    if (accept(p, TOK_AS)) {
+        if (p->cur.kind != TOK_STR) bp_fatal("expected C function name string at %zu:%zu", p->cur.line, p->cur.col);
+        free(ed.c_name);  // Free the default
+        ed.c_name = bp_xstrdup(p->cur.str_val);
+        free((void *)p->cur.str_val);
+        next(p);
+    }
+
+    ed.params = params;
+    ed.paramc = paramc;
+    return ed;
+}
+
 Module parse_module(const char *src) {
     Parser p;
     memset(&p, 0, sizeof(p));
@@ -944,7 +1181,7 @@ Module parse_module(const char *src) {
     Module m;
     memset(&m, 0, sizeof(m));
 
-    size_t fn_cap = 0, st_cap = 0, en_cap = 0, im_cap = 0;
+    size_t fn_cap = 0, st_cap = 0, en_cap = 0, im_cap = 0, cl_cap = 0, ex_cap = 0;
     skip_newlines(&p);
 
     while (p.cur.kind != TOK_EOF) {
@@ -989,8 +1226,17 @@ Module parse_module(const char *src) {
             ImportDef id = parse_import(&p);
             if (m.importc + 1 > im_cap) { im_cap = im_cap ? im_cap * 2 : 8; m.imports = bp_xrealloc(m.imports, im_cap * sizeof(*m.imports)); }
             m.imports[m.importc++] = id;
+        } else if (p.cur.kind == TOK_CLASS) {
+            ClassDef cd = parse_class(&p);
+            cd.is_export = is_export;
+            if (m.classc + 1 > cl_cap) { cl_cap = cl_cap ? cl_cap * 2 : 8; m.classes = bp_xrealloc(m.classes, cl_cap * sizeof(*m.classes)); }
+            m.classes[m.classc++] = cd;
+        } else if (p.cur.kind == TOK_EXTERN) {
+            ExternDef ed = parse_extern(&p);
+            if (m.externc + 1 > ex_cap) { ex_cap = ex_cap ? ex_cap * 2 : 8; m.externs = bp_xrealloc(m.externs, ex_cap * sizeof(*m.externs)); }
+            m.externs[m.externc++] = ed;
         } else {
-            bp_fatal("expected 'def', 'struct', 'enum', 'import', or 'export' at top level (line %zu)", p.cur.line);
+            bp_fatal("expected 'def', 'struct', 'enum', 'class', 'import', 'extern', or 'export' at top level (line %zu)", p.cur.line);
         }
 
         skip_newlines(&p);
