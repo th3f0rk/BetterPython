@@ -20,6 +20,8 @@ SRC := \
     src/security.c \
     src/util.c \
     src/thread.c \
+    src/module_resolver.c \
+    src/multi_compile.c \
     src/jit/jit_profile.c \
     src/jit/jit_x64.c \
     src/jit/jit_compile.c

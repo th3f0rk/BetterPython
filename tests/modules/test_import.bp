@@ -1,0 +1,26 @@
+# Test module imports
+
+import math_utils
+
+def main() -> int:
+    let sq: int = math_utils.square(5)
+    print(sq)
+
+    let cb: int = math_utils.cube(3)
+    print(cb)
+
+    let fact: int = math_utils.factorial(5)
+    print(fact)
+
+    let dbl: int = math_utils.double(7)
+    print(dbl)
+
+    if sq == 25:
+        if cb == 27:
+            if fact == 120:
+                if dbl == 14:
+                    print(1)
+                    return 0
+
+    print(0)
+    return 1

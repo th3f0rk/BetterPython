@@ -1,0 +1,73 @@
+def main() -> int:
+    let passed: int = 0
+    let errors: int = 0
+
+    # Test str_split_str
+    let parts: [str] = str_split_str("a,b,c", ",")
+    if array_len(parts) == 3:
+        passed = passed + 1
+    else:
+        errors = errors + 1
+
+    # Test str_split_str with multi-char separator
+    let parts2: [str] = str_split_str("hello::world::test", "::")
+    if array_len(parts2) == 3:
+        passed = passed + 1
+    else:
+        errors = errors + 1
+
+    # Test str_join_arr
+    let arr: [str] = ["a", "b", "c"]
+    let joined: str = str_join_arr(arr, ",")
+    if joined == "a,b,c":
+        passed = passed + 1
+    else:
+        errors = errors + 1
+
+    # Test str_join_arr with empty separator
+    let arr2: [str] = ["hello", " ", "world"]
+    let joined2: str = str_join_arr(arr2, "")
+    if joined2 == "hello world":
+        passed = passed + 1
+    else:
+        errors = errors + 1
+
+    # Test str_concat_all
+    let arr3: [str] = ["Build", "er", "Test"]
+    let concat: str = str_concat_all(arr3)
+    if concat == "BuilderTest":
+        passed = passed + 1
+    else:
+        errors = errors + 1
+
+    # Test empty array - initialize with one item and pop it
+    let empty: [str] = ["placeholder"]
+    array_pop(empty)
+    let empty_concat: str = str_concat_all(empty)
+    if empty_concat == "":
+        passed = passed + 1
+    else:
+        errors = errors + 1
+
+    # Test StringBuilder-like pattern
+    let parts3: [str] = [""]
+    array_pop(parts3)
+    array_push(parts3, "Hello")
+    array_push(parts3, " ")
+    array_push(parts3, "World")
+    array_push(parts3, "!")
+    let result: str = str_concat_all(parts3)
+    if result == "Hello World!":
+        passed = passed + 1
+    else:
+        errors = errors + 1
+
+    print("Tests passed:")
+    print(passed)
+    print("Tests with errors:")
+    print(errors)
+
+    if errors == 0:
+        print("ALL STRINGBUILDER TESTS OK")
+        return 0
+    return 1

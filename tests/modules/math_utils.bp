@@ -1,0 +1,19 @@
+# Math utilities module - tests export functionality
+
+export def square(x: int) -> int:
+    return x * x
+
+export def cube(x: int) -> int:
+    return x * x * x
+
+export def factorial(n: int) -> int:
+    if n <= 1:
+        return 1
+    return n * factorial(n - 1)
+
+# This function is private (not exported)
+def helper_multiply(a: int, b: int) -> int:
+    return a * b
+
+export def double(x: int) -> int:
+    return helper_multiply(x, 2)

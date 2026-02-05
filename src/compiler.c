@@ -223,6 +223,18 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "cond_signal") == 0) return BI_COND_SIGNAL;
     if (strcmp(name, "cond_broadcast") == 0) return BI_COND_BROADCAST;
 
+    // Regex operations
+    if (strcmp(name, "regex_match") == 0) return BI_REGEX_MATCH;
+    if (strcmp(name, "regex_search") == 0) return BI_REGEX_SEARCH;
+    if (strcmp(name, "regex_replace") == 0) return BI_REGEX_REPLACE;
+    if (strcmp(name, "regex_split") == 0) return BI_REGEX_SPLIT;
+    if (strcmp(name, "regex_find_all") == 0) return BI_REGEX_FIND_ALL;
+
+    // StringBuilder-like operations
+    if (strcmp(name, "str_split_str") == 0) return BI_STR_SPLIT_STR;
+    if (strcmp(name, "str_join_arr") == 0) return BI_STR_JOIN_ARR;
+    if (strcmp(name, "str_concat_all") == 0) return BI_STR_CONCAT_ALL;
+
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
 }

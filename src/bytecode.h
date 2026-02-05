@@ -327,7 +327,19 @@ typedef enum {
     BI_COND_NEW,
     BI_COND_WAIT,
     BI_COND_SIGNAL,
-    BI_COND_BROADCAST
+    BI_COND_BROADCAST,
+
+    // Regex operations
+    BI_REGEX_MATCH,
+    BI_REGEX_SEARCH,
+    BI_REGEX_REPLACE,
+    BI_REGEX_SPLIT,
+    BI_REGEX_FIND_ALL,
+
+    // StringBuilder-like operations
+    BI_STR_SPLIT_STR,
+    BI_STR_JOIN_ARR,
+    BI_STR_CONCAT_ALL
 } BuiltinId;
 
 typedef struct {

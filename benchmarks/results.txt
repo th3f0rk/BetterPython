@@ -1,0 +1,22 @@
+==================================================================
+  BetterPython Benchmark Suite
+==================================================================
+
+Date: Thu Feb  5 15:43:04 UTC 2026
+
+=== FIBONACCI BENCHMARK ===
+Language                 Compile(ms)     Runtime(ms)
+--------                 -----------     -----------
+C (gcc -O2)                      272           10.00
+BetterPython                      19             771
+CPython                          N/A         1037.83
+Java                             854              38
+
+=== PRIME SIEVE BENCHMARK ===
+Language                       Limit     Compile(ms)     Runtime(ms)
+--------                       -----     -----------     -----------
+C (gcc -O2)                  1000000             274            0.00
+BetterPython                  100000              17              20
+CPython                      1000000             N/A           60.48
+Java                         1000000             919              12
+
