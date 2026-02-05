@@ -12,6 +12,7 @@
 #include "reg_vm.h"
 #include "stdlib.h"
 #include "util.h"
+#include "jit/jit.h"
 #include <string.h>
 
 #define MAX_CALL_FRAMES 256
@@ -469,6 +470,44 @@ L_R_CALL: {
     BpFunc *callee = &vm->mod.funcs[fn_idx];
 
     if (UNLIKELY(frame_count >= MAX_CALL_FRAMES)) bp_fatal("call stack overflow");
+
+    // JIT profiling and compilation
+    if (vm->jit) {
+        jit_record_call(vm->jit, fn_idx);
+
+        // Try to compile hot functions
+        if (jit_should_compile(vm->jit, fn_idx)) {
+            jit_compile(vm->jit, &vm->mod, fn_idx);
+        }
+
+        // Execute native code if available
+        if (jit_has_native(vm->jit, fn_idx)) {
+            // Set up arguments in temporary register space
+            size_t new_reg_base = regs_top;
+            size_t needed = new_reg_base + callee->reg_count;
+            if (UNLIKELY(needed > total_regs_cap)) {
+                while (needed > total_regs_cap) total_regs_cap *= 2;
+                regs = bp_xrealloc(regs, total_regs_cap * sizeof(Value));
+                for (size_t i = regs_top; i < total_regs_cap; i++) regs[i] = v_null();
+            }
+
+            // Copy arguments
+            for (uint8_t i = 0; i < argc; i++) {
+                regs[new_reg_base + i] = REG(arg_base + i);
+            }
+
+            // Get native function pointer and call it
+            typedef int64_t (*NativeFunc)(void);
+            NativeFunc native = (NativeFunc)jit_get_native(vm->jit, fn_idx);
+            int64_t result = native();
+
+            // Store result in destination register
+            REG(dst) = v_int(result);
+            vm->jit->native_executions++;
+            VM_DISPATCH();
+        }
+        vm->jit->interp_executions++;
+    }
 
     // Save return info
     frames[frame_count - 1].ip = ip;
@@ -1033,6 +1072,40 @@ vm_exit:
                 BpFunc *callee = &vm->mod.funcs[fn_idx];
 
                 if (frame_count >= MAX_CALL_FRAMES) bp_fatal("call stack overflow");
+
+                // JIT profiling and compilation
+                if (vm->jit) {
+                    jit_record_call(vm->jit, fn_idx);
+
+                    // Try to compile hot functions
+                    if (jit_should_compile(vm->jit, fn_idx)) {
+                        jit_compile(vm->jit, &vm->mod, fn_idx);
+                    }
+
+                    // Execute native code if available
+                    if (jit_has_native(vm->jit, fn_idx)) {
+                        size_t new_reg_base = regs_top;
+                        size_t needed = new_reg_base + callee->reg_count;
+                        if (needed > total_regs_cap) {
+                            while (needed > total_regs_cap) total_regs_cap *= 2;
+                            regs = bp_xrealloc(regs, total_regs_cap * sizeof(Value));
+                            for (size_t i = regs_top; i < total_regs_cap; i++) regs[i] = v_null();
+                        }
+
+                        for (uint8_t i = 0; i < argc; i++) {
+                            regs[new_reg_base + i] = REG(arg_base + i);
+                        }
+
+                        typedef int64_t (*NativeFunc)(void);
+                        NativeFunc native = (NativeFunc)jit_get_native(vm->jit, fn_idx);
+                        int64_t result = native();
+
+                        REG(dst) = v_int(result);
+                        vm->jit->native_executions++;
+                        break;
+                    }
+                    vm->jit->interp_executions++;
+                }
 
                 frames[frame_count - 1].ip = ip;
 

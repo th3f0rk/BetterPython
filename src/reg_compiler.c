@@ -206,6 +206,20 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "cond_signal") == 0) return BI_COND_SIGNAL;
     if (strcmp(name, "cond_broadcast") == 0) return BI_COND_BROADCAST;
 
+    // Regex operations
+    if (strcmp(name, "regex_match") == 0) return BI_REGEX_MATCH;
+    if (strcmp(name, "regex_search") == 0) return BI_REGEX_SEARCH;
+    if (strcmp(name, "regex_replace") == 0) return BI_REGEX_REPLACE;
+    if (strcmp(name, "regex_split") == 0) return BI_REGEX_SPLIT;
+    if (strcmp(name, "regex_find_all") == 0) return BI_REGEX_FIND_ALL;
+
+    // StringBuilder-like operations (with aliases)
+    if (strcmp(name, "str_split") == 0) return BI_STR_SPLIT_STR;
+    if (strcmp(name, "str_split_str") == 0) return BI_STR_SPLIT_STR;
+    if (strcmp(name, "str_join") == 0) return BI_STR_JOIN_ARR;
+    if (strcmp(name, "str_join_arr") == 0) return BI_STR_JOIN_ARR;
+    if (strcmp(name, "str_concat_all") == 0) return BI_STR_CONCAT_ALL;
+
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
 }
@@ -656,11 +670,8 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             uint8_t arg_base = 0;
 
             if (argc > 0) {
-                // Allocate a block of consecutive temps for args
-                arg_base = reg_alloc_temp(&fe->ra);
-                for (size_t i = 1; i < argc; i++) {
-                    reg_alloc_temp(&fe->ra);
-                }
+                // Allocate a contiguous block of registers for args
+                arg_base = reg_alloc_block(&fe->ra, argc);
 
                 // Evaluate arguments into consecutive registers
                 for (size_t i = 0; i < argc; i++) {
@@ -791,10 +802,8 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             uint8_t src_base = 0;
 
             if (count > 0) {
-                src_base = reg_alloc_temp(&fe->ra);
-                for (size_t i = 1; i < count; i++) {
-                    reg_alloc_temp(&fe->ra);
-                }
+                // Allocate a contiguous block of registers
+                src_base = reg_alloc_block(&fe->ra, count);
 
                 // Evaluate elements
                 for (size_t i = 0; i < count; i++) {
@@ -848,10 +857,8 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             uint8_t src_base = 0;
 
             if (total > 0) {
-                src_base = reg_alloc_temp(&fe->ra);
-                for (size_t i = 1; i < total; i++) {
-                    reg_alloc_temp(&fe->ra);
-                }
+                // Allocate a contiguous block of registers for key-value pairs
+                src_base = reg_alloc_block(&fe->ra, total);
 
                 // Evaluate key-value pairs
                 for (size_t i = 0; i < count; i++) {
@@ -895,10 +902,8 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             uint8_t src_base = 0;
 
             if (count > 0) {
-                src_base = reg_alloc_temp(&fe->ra);
-                for (size_t i = 1; i < count; i++) {
-                    reg_alloc_temp(&fe->ra);
-                }
+                // Allocate a contiguous block of registers for struct fields
+                src_base = reg_alloc_block(&fe->ra, count);
 
                 for (size_t i = 0; i < count; i++) {
                     uint8_t val = reg_emit_expr(fe, e->as.struct_literal.field_values[i]);
@@ -947,10 +952,8 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             uint8_t arg_base = 0;
 
             if (argc > 0) {
-                arg_base = reg_alloc_temp(&fe->ra);
-                for (size_t i = 1; i < argc; i++) {
-                    reg_alloc_temp(&fe->ra);
-                }
+                // Allocate a contiguous block of registers for constructor args
+                arg_base = reg_alloc_block(&fe->ra, argc);
 
                 for (size_t i = 0; i < argc; i++) {
                     uint8_t val = reg_emit_expr(fe, e->as.new_expr.args[i]);
@@ -983,10 +986,8 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             uint8_t arg_base = 0;
 
             if (argc > 0) {
-                arg_base = reg_alloc_temp(&fe->ra);
-                for (size_t i = 1; i < argc; i++) {
-                    reg_alloc_temp(&fe->ra);
-                }
+                // Allocate a contiguous block of registers for super call args
+                arg_base = reg_alloc_block(&fe->ra, argc);
 
                 for (size_t i = 0; i < argc; i++) {
                     uint8_t val = reg_emit_expr(fe, e->as.super_call.args[i]);

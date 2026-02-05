@@ -61,3 +61,7 @@ bool reg_has_var(RegAlloc *ra, const char *name);
 
 // Get the maximum register used (for BpFunc.reg_count)
 uint8_t reg_max_used(RegAlloc *ra);
+
+// Allocate a contiguous block of N registers (for function call arguments)
+// Returns the base register of the block
+uint8_t reg_alloc_block(RegAlloc *ra, size_t count);

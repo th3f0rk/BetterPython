@@ -202,7 +202,7 @@ def main() -> int:
 
 ---
 
-## Standard Library (98+ Functions)
+## Standard Library (115 Functions)
 
 ### I/O Functions
 - `print(...)` - Print values to stdout
@@ -587,20 +587,24 @@ make clean && make
 - [x] User-defined structs
 - [x] Exception handling (try/catch/finally/throw)
 - [x] For loops with break/continue
-- [x] 98+ built-in functions
+- [x] 115 built-in functions
 - [x] Full float support with math library
 - [x] IDE tooling (LSP, formatter, linter)
+- [x] Module system (import/export)
+- [x] Threading primitives (spawn, join, mutex, condition variables)
+- [x] Regular expressions (match, search, replace, split)
+- [x] JIT compilation (register-based bytecode)
+- [x] Package manager with security features
 
 ### v1.1.0 (Planned)
-- [ ] Module system (import/export)
 - [ ] HTTP client
 - [ ] Generic types
+- [ ] Database drivers
 
 ### v2.0.0 (Future)
-- [ ] JIT compilation
 - [ ] Debugger
 - [ ] Native code generation
-- [ ] Threading primitives
+- [ ] Classes with inheritance
 
 ---
 

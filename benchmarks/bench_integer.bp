@@ -1,0 +1,50 @@
+# Benchmark: Integer Arithmetic
+# Tests basic integer operations in a tight loop
+
+def compute_sum(n: int) -> int:
+    let sum: int = 0
+    for i in range(0, n):
+        sum = sum + i
+    return sum
+
+def compute_factorial_iter(n: int) -> int:
+    let result: int = 1
+    for i in range(1, n + 1):
+        result = result * i
+    return result
+
+def main() -> int:
+    let iterations: int = 1000000
+
+    let start: int = clock_ms()
+
+    # Sum test
+    let sum_result: int = compute_sum(iterations)
+
+    let mid1: int = clock_ms()
+
+    # Factorial test (smaller n to avoid overflow)
+    for i in range(0, 10000):
+        let f: int = compute_factorial_iter(12)
+
+    let mid2: int = clock_ms()
+
+    # Arithmetic operations test
+    let x: int = 1
+    for i in range(0, iterations):
+        x = x + i
+        x = x - (i / 2)
+        x = x * 2
+        x = x / 2
+        x = x % 1000000
+
+    let end: int = clock_ms()
+
+    print("=== Integer Arithmetic Benchmark ===")
+    print("Sum of 0 to 1M:", sum_result)
+    print("Sum time (ms):", mid1 - start)
+    print("Factorial x10000 time (ms):", mid2 - mid1)
+    print("Mixed arithmetic time (ms):", end - mid2)
+    print("Total time (ms):", end - start)
+
+    return 0

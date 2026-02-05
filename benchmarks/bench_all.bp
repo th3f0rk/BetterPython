@@ -1,0 +1,130 @@
+def fibonacci(n: int) -> int:
+    if n <= 1:
+        return n
+    return fibonacci(n - 1) + fibonacci(n - 2)
+
+def bubble_sort(arr: [int]) -> void:
+    let n: int = array_len(arr)
+    for i in range(0, n):
+        for j in range(0, n - i - 1):
+            if arr[j] > arr[j + 1]:
+                let temp: int = arr[j]
+                arr[j] = arr[j + 1]
+                arr[j + 1] = temp
+
+def sieve_of_eratosthenes(limit: int) -> int:
+    let is_prime: [int] = [1]
+    for i in range(1, limit + 1):
+        array_push(is_prime, 1)
+
+    is_prime[0] = 0
+    is_prime[1] = 0
+
+    for i in range(2, limit + 1):
+        if is_prime[i] == 1:
+            let j: int = i * i
+            while j <= limit:
+                is_prime[j] = 0
+                j = j + i
+
+    let count: int = 0
+    for i in range(0, limit + 1):
+        if is_prime[i] == 1:
+            count = count + 1
+    return count
+
+def main() -> int:
+    print("BetterPython v1.0.0 Performance Benchmark Suite")
+    print("================================================")
+    print("")
+
+    let total_start: int = clock_ms()
+
+    print("Integer Arithmetic (sum 0 to 1M)...")
+    let start: int = clock_ms()
+    let sum: int = 0
+    for i in range(0, 1000000):
+        sum = sum + i
+    let t1: int = clock_ms() - start
+    print("  Result:", sum, "| Time:", t1, "ms")
+
+    print("Float Math (trig functions x100K)...")
+    start = clock_ms()
+    let fsum: float = 0.0
+    for i in range(0, 100000):
+        let x: float = int_to_float(i) / 10000.0
+        fsum = fsum + sin(x) + cos(x)
+    let t2: int = clock_ms() - start
+    print("  Time:", t2, "ms")
+
+    print("Recursive Fibonacci (fib(30))...")
+    start = clock_ms()
+    let fib: int = fibonacci(30)
+    let t3: int = clock_ms() - start
+    print("  Result:", fib, "| Time:", t3, "ms")
+
+    print("Array Operations (push/access 50K elements)...")
+    start = clock_ms()
+    let arr: [int] = [0]
+    for i in range(1, 50000):
+        array_push(arr, i)
+    let arr_sum: int = 0
+    for i in range(0, 50000):
+        arr_sum = arr_sum + arr[i]
+    let t4: int = clock_ms() - start
+    print("  Sum:", arr_sum, "| Time:", t4, "ms")
+
+    print("String Operations (concat + find x10K)...")
+    start = clock_ms()
+    let s: str = str_repeat("hello world ", 50)
+    for i in range(0, 10000):
+        let pos: int = str_find(s, "world")
+        let sub: str = substr(s, 0, 50)
+    let t5: int = clock_ms() - start
+    print("  Time:", t5, "ms")
+
+    print("Map Operations (insert/lookup 10K entries)...")
+    start = clock_ms()
+    let m: {str: int} = {"key0": 0}
+    for i in range(1, 10000):
+        let key: str = "key" + to_str(i)
+        m[key] = i
+    let map_sum: int = 0
+    for i in range(0, 10000):
+        let key: str = "key" + to_str(i)
+        map_sum = map_sum + m[key]
+    let t6: int = clock_ms() - start
+    print("  Sum:", map_sum, "| Time:", t6, "ms")
+
+    print("Bubble Sort (1000 elements)...")
+    start = clock_ms()
+    let sort_arr: [int] = [1000]
+    for i in range(1, 1000):
+        array_push(sort_arr, 1000 - i)
+    bubble_sort(sort_arr)
+    let t7: int = clock_ms() - start
+    print("  First 5:", sort_arr[0], sort_arr[1], sort_arr[2], sort_arr[3], sort_arr[4], "| Time:", t7, "ms")
+
+    print("Sieve of Eratosthenes (primes < 100K)...")
+    start = clock_ms()
+    let prime_count: int = sieve_of_eratosthenes(100000)
+    let t8: int = clock_ms() - start
+    print("  Primes found:", prime_count, "| Time:", t8, "ms")
+
+    let total_time: int = clock_ms() - total_start
+
+    print("")
+    print("BENCHMARK SUMMARY")
+    print("=================")
+    print("Integer Arithmetic:    ", t1, "ms")
+    print("Float Math:            ", t2, "ms")
+    print("Recursive Fibonacci:   ", t3, "ms")
+    print("Array Operations:      ", t4, "ms")
+    print("String Operations:     ", t5, "ms")
+    print("Map Operations:        ", t6, "ms")
+    print("Bubble Sort:           ", t7, "ms")
+    print("Sieve of Eratosthenes: ", t8, "ms")
+    print("-----------------")
+    print("TOTAL TIME:            ", total_time, "ms")
+
+    return 0

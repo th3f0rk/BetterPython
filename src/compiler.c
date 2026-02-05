@@ -27,17 +27,62 @@ static void buf_f64(Buf *b, double x) { buf_put(b, &x, 8); }
 typedef struct {
     char *name;
     uint16_t slot;
+    uint32_t scope_id;  // Unique scope ID when variable was created
 } Local;
 
 typedef struct {
     Local *items;
     size_t len;
     size_t cap;
+    // Scope stack: each entry is a unique scope ID
+    uint32_t *scope_stack;
+    size_t scope_depth;
+    size_t scope_cap;
+    uint32_t next_scope_id;  // Counter for generating unique scope IDs
 } Locals;
 
+// Enter a new block scope with a unique ID
+static void locals_push_scope(Locals *ls) {
+    if (ls->scope_depth + 1 > ls->scope_cap) {
+        ls->scope_cap = ls->scope_cap ? ls->scope_cap * 2 : 16;
+        ls->scope_stack = bp_xrealloc(ls->scope_stack, ls->scope_cap * sizeof(uint32_t));
+    }
+    ls->scope_stack[ls->scope_depth++] = ls->next_scope_id++;
+}
+
+// Exit current block scope
+static void locals_pop_scope(Locals *ls) {
+    if (ls->scope_depth > 0) {
+        ls->scope_depth--;
+    }
+}
+
+// Special scope ID for function-level scope
+#define SCOPE_FUNCTION_LEVEL UINT32_MAX
+
+// Get the current scope ID (or SCOPE_FUNCTION_LEVEL if at function level)
+static uint32_t locals_current_scope(Locals *ls) {
+    if (ls->scope_depth == 0) return SCOPE_FUNCTION_LEVEL;
+    return ls->scope_stack[ls->scope_depth - 1];
+}
+
+// Check if a scope ID is visible (is it in our current scope chain?)
+static bool locals_scope_visible(Locals *ls, uint32_t scope_id) {
+    if (scope_id == SCOPE_FUNCTION_LEVEL) return true;  // Function-level scope always visible
+    for (size_t i = 0; i < ls->scope_depth; i++) {
+        if (ls->scope_stack[i] == scope_id) return true;
+    }
+    return false;
+}
+
 static uint16_t locals_add(Locals *ls, const char *name) {
+    uint32_t current = locals_current_scope(ls);
+    // Only check for duplicates in the SAME scope (same scope_id)
     for (size_t i = 0; i < ls->len; i++) {
-        if (strcmp(ls->items[i].name, name) == 0) bp_fatal("duplicate local '%s'", name);
+        if (ls->items[i].scope_id == current &&
+            strcmp(ls->items[i].name, name) == 0) {
+            bp_fatal("duplicate local '%s' in same scope", name);
+        }
     }
     if (ls->len + 1 > ls->cap) {
         ls->cap = ls->cap ? ls->cap * 2 : 16;
@@ -46,13 +91,18 @@ static uint16_t locals_add(Locals *ls, const char *name) {
     uint16_t slot = (uint16_t)ls->len;
     ls->items[ls->len].name = bp_xstrdup(name);
     ls->items[ls->len].slot = slot;
+    ls->items[ls->len].scope_id = current;
     ls->len++;
     return slot;
 }
 
 static uint16_t locals_get(Locals *ls, const char *name) {
-    for (size_t i = 0; i < ls->len; i++) {
-        if (strcmp(ls->items[i].name, name) == 0) return ls->items[i].slot;
+    // Search from newest to oldest to find innermost visible variable
+    for (size_t i = ls->len; i > 0; i--) {
+        if (locals_scope_visible(ls, ls->items[i-1].scope_id) &&
+            strcmp(ls->items[i-1].name, name) == 0) {
+            return ls->items[i-1].slot;
+        }
     }
     bp_fatal("unknown local '%s'", name);
     return 0;
@@ -61,6 +111,7 @@ static uint16_t locals_get(Locals *ls, const char *name) {
 static void locals_free(Locals *ls) {
     for (size_t i = 0; i < ls->len; i++) free(ls->items[i].name);
     free(ls->items);
+    free(ls->scope_stack);
     memset(ls, 0, sizeof(*ls));
 }
 
@@ -231,8 +282,11 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "regex_find_all") == 0) return BI_REGEX_FIND_ALL;
 
     // StringBuilder-like operations
-    if (strcmp(name, "str_split_str") == 0) return BI_STR_SPLIT_STR;
-    if (strcmp(name, "str_join_arr") == 0) return BI_STR_JOIN_ARR;
+    // String split/join - support both short and long names
+    if (strcmp(name, "str_split") == 0) return BI_STR_SPLIT_STR;
+    if (strcmp(name, "str_split_str") == 0) return BI_STR_SPLIT_STR;  // Legacy name
+    if (strcmp(name, "str_join") == 0) return BI_STR_JOIN_ARR;
+    if (strcmp(name, "str_join_arr") == 0) return BI_STR_JOIN_ARR;    // Legacy name
     if (strcmp(name, "str_concat_all") == 0) return BI_STR_CONCAT_ALL;
 
     bp_fatal("unknown builtin '%s'", name);
@@ -390,7 +444,10 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             size_t jmp_false_at = fe->code.len;
             buf_u32(&fe->code, 0);
 
+            // Enter then-block scope
+            locals_push_scope(&fe->locals);
             for (size_t i = 0; i < s->as.ifs.then_len; i++) emit_stmt(fe, s->as.ifs.then_stmts[i]);
+            locals_pop_scope(&fe->locals);
 
             buf_u8(&fe->code, OP_JMP);
             size_t jmp_end_at = fe->code.len;
@@ -398,7 +455,10 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
 
             emit_jump_patch(&fe->code, jmp_false_at, (uint32_t)fe->code.len);
 
+            // Enter else-block scope
+            locals_push_scope(&fe->locals);
             for (size_t i = 0; i < s->as.ifs.else_len; i++) emit_stmt(fe, s->as.ifs.else_stmts[i]);
+            locals_pop_scope(&fe->locals);
 
             emit_jump_patch(&fe->code, jmp_end_at, (uint32_t)fe->code.len);
             return;
@@ -412,7 +472,10 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             size_t jmp_out_at = fe->code.len;
             buf_u32(&fe->code, 0);
 
+            // Enter while body scope
+            locals_push_scope(&fe->locals);
             for (size_t i = 0; i < s->as.wh.body_len; i++) emit_stmt(fe, s->as.wh.body[i]);
+            locals_pop_scope(&fe->locals);
 
             buf_u8(&fe->code, OP_JMP);
             buf_u32(&fe->code, loop_start);
@@ -431,6 +494,9 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             //   while i < end:
             //     body
             //     i = i + 1
+
+            // Enter for loop scope (includes iterator variable)
+            locals_push_scope(&fe->locals);
 
             // Emit: let i = start
             emit_expr(fe, s->as.forr.start);
@@ -462,7 +528,7 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             // We'll patch this later
             push_loop(fe, 0);  // placeholder, will be patched
 
-            // Emit body
+            // Emit body (already in for loop scope)
             for (size_t i = 0; i < s->as.forr.body_len; i++) emit_stmt(fe, s->as.forr.body[i]);
 
             // continue_target: increment section
@@ -488,6 +554,9 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             emit_jump_patch(&fe->code, jmp_out_at, loop_end);
             patch_breaks(fe, loop_end);
             pop_loop(fe);
+
+            // Exit for loop scope
+            locals_pop_scope(&fe->locals);
             return;
         }
         case ST_BREAK: {
@@ -511,11 +580,13 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             return;
         }
         case ST_TRY: {
-            // Allocate slot for catch variable if needed
+            // Enter try scope
+            locals_push_scope(&fe->locals);
+
+            // Allocate slot for catch variable if needed (must be done before try body)
+            // The catch variable is in catch scope, but we allocate its slot first
             uint16_t catch_var_slot = 0;
-            if (s->as.try_catch.catch_var) {
-                catch_var_slot = locals_add(&fe->locals, s->as.try_catch.catch_var);
-            }
+            bool has_catch_var = s->as.try_catch.catch_var != NULL;
 
             // Emit: OP_TRY_BEGIN <catch_addr> <finally_addr> <catch_var_slot>
             buf_u8(&fe->code, OP_TRY_BEGIN);
@@ -523,12 +594,16 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             buf_u32(&fe->code, 0);  // Placeholder for catch address
             size_t finally_addr_at = fe->code.len;
             buf_u32(&fe->code, 0);  // Placeholder for finally address (0 = none)
-            buf_u16(&fe->code, catch_var_slot);
+            size_t catch_var_slot_at = fe->code.len;
+            buf_u16(&fe->code, 0);  // Placeholder for catch var slot
 
             // Emit try body
             for (size_t i = 0; i < s->as.try_catch.try_len; i++) {
                 emit_stmt(fe, s->as.try_catch.try_stmts[i]);
             }
+
+            // Exit try scope
+            locals_pop_scope(&fe->locals);
 
             // Emit: OP_TRY_END (normal exit - no exception)
             buf_u8(&fe->code, OP_TRY_END);
@@ -542,10 +617,20 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             uint32_t catch_addr = (uint32_t)fe->code.len;
             emit_jump_patch(&fe->code, catch_addr_at, catch_addr);
 
+            // Enter catch scope
+            locals_push_scope(&fe->locals);
+            if (has_catch_var) {
+                catch_var_slot = locals_add(&fe->locals, s->as.try_catch.catch_var);
+                // Patch the catch var slot in the OP_TRY_BEGIN instruction
+                memcpy(fe->code.data + catch_var_slot_at, &catch_var_slot, 2);
+            }
+
             // Emit catch body
             for (size_t i = 0; i < s->as.try_catch.catch_len; i++) {
                 emit_stmt(fe, s->as.try_catch.catch_stmts[i]);
             }
+            // Exit catch scope
+            locals_pop_scope(&fe->locals);
 
             // Patch skip_catch to jump to finally/end
             uint32_t finally_addr = (uint32_t)fe->code.len;
@@ -555,10 +640,14 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             if (s->as.try_catch.finally_len > 0) {
                 emit_jump_patch(&fe->code, finally_addr_at, finally_addr);
 
+                // Enter finally scope
+                locals_push_scope(&fe->locals);
                 // Emit finally body
                 for (size_t i = 0; i < s->as.try_catch.finally_len; i++) {
                     emit_stmt(fe, s->as.try_catch.finally_stmts[i]);
                 }
+                // Exit finally scope
+                locals_pop_scope(&fe->locals);
             }
             return;
         }

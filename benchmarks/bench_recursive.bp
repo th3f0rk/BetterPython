@@ -1,0 +1,47 @@
+# Benchmark: Recursive Functions
+# Tests function call overhead and recursion (JIT compilation target)
+
+def fibonacci(n: int) -> int:
+    if n <= 1:
+        return n
+    return fibonacci(n - 1) + fibonacci(n - 2)
+
+def ackermann(m: int, n: int) -> int:
+    if m == 0:
+        return n + 1
+    if n == 0:
+        return ackermann(m - 1, 1)
+    return ackermann(m - 1, ackermann(m, n - 1))
+
+def factorial(n: int) -> int:
+    if n <= 1:
+        return 1
+    return n * factorial(n - 1)
+
+def main() -> int:
+    print("=== Recursive Functions Benchmark ===")
+
+    # Fibonacci benchmark (exponential calls)
+    let start: int = clock_ms()
+    let fib_result: int = fibonacci(30)
+    let mid1: int = clock_ms()
+    print("fibonacci(30) =", fib_result)
+    print("Fibonacci time (ms):", mid1 - start)
+
+    # Multiple factorial calls
+    let fact_sum: int = 0
+    for i in range(0, 10000):
+        fact_sum = fact_sum + factorial(12)
+    let mid2: int = clock_ms()
+    print("factorial(12) x 10000 sum:", fact_sum)
+    print("Factorial time (ms):", mid2 - mid1)
+
+    # Ackermann (very deep recursion, smaller values)
+    let ack_result: int = ackermann(3, 6)
+    let end: int = clock_ms()
+    print("ackermann(3, 6) =", ack_result)
+    print("Ackermann time (ms):", end - mid2)
+
+    print("Total time (ms):", end - start)
+
+    return 0
