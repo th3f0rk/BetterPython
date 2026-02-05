@@ -22,6 +22,7 @@ SRC := \
     src/thread.c \
     src/module_resolver.c \
     src/multi_compile.c \
+    src/c_transpiler.c \
     src/jit/jit_profile.c \
     src/jit/jit_x64.c \
     src/jit/jit_compile.c
