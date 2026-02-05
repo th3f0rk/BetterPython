@@ -16,6 +16,7 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <fcntl.h>
+#include <regex.h>
 
 // Global storage for command line arguments
 static int g_argc = 0;
@@ -1280,6 +1281,313 @@ static Value bi_thread_detach(Value *args, uint16_t argc) {
     return v_bool(bp_thread_detach(thread));
 }
 
+// ===== Regex operations =====
+
+// regex_match(pattern, text) -> bool
+// Returns true if pattern matches the entire text
+static Value bi_regex_match(Value *args, uint16_t argc) {
+    if (argc != 2 || args[0].type != VAL_STR || args[1].type != VAL_STR)
+        bp_fatal("regex_match expects (str, str)");
+
+    const char *pattern = args[0].as.s->data;
+    const char *text = args[1].as.s->data;
+
+    regex_t regex;
+    int ret = regcomp(&regex, pattern, REG_EXTENDED | REG_NOSUB);
+    if (ret != 0) {
+        return v_bool(false);  // Invalid regex pattern
+    }
+
+    ret = regexec(&regex, text, 0, NULL, 0);
+    regfree(&regex);
+
+    return v_bool(ret == 0);
+}
+
+// regex_search(pattern, text) -> int
+// Returns the starting index of the first match, or -1 if no match
+static Value bi_regex_search(Value *args, uint16_t argc) {
+    if (argc != 2 || args[0].type != VAL_STR || args[1].type != VAL_STR)
+        bp_fatal("regex_search expects (str, str)");
+
+    const char *pattern = args[0].as.s->data;
+    const char *text = args[1].as.s->data;
+
+    regex_t regex;
+    int ret = regcomp(&regex, pattern, REG_EXTENDED);
+    if (ret != 0) {
+        return v_int(-1);  // Invalid regex pattern
+    }
+
+    regmatch_t match;
+    ret = regexec(&regex, text, 1, &match, 0);
+    regfree(&regex);
+
+    if (ret == 0) {
+        return v_int(match.rm_so);  // Return start of match
+    }
+    return v_int(-1);  // No match
+}
+
+// regex_replace(pattern, replacement, text) -> str
+// Replaces all matches of pattern with replacement
+static Value bi_regex_replace(Value *args, uint16_t argc, Gc *gc) {
+    if (argc != 3 || args[0].type != VAL_STR || args[1].type != VAL_STR || args[2].type != VAL_STR)
+        bp_fatal("regex_replace expects (str, str, str)");
+
+    const char *pattern = args[0].as.s->data;
+    const char *replacement = args[1].as.s->data;
+    const char *text = args[2].as.s->data;
+    size_t text_len = args[2].as.s->len;
+    size_t repl_len = strlen(replacement);
+
+    regex_t regex;
+    int ret = regcomp(&regex, pattern, REG_EXTENDED);
+    if (ret != 0) {
+        // Invalid regex, return original text
+        return v_str(gc_new_str(gc, text, text_len));
+    }
+
+    // Build result string
+    size_t result_cap = text_len * 2 + 64;
+    char *result = bp_xmalloc(result_cap);
+    size_t result_len = 0;
+
+    const char *cursor = text;
+    regmatch_t match;
+
+    while (regexec(&regex, cursor, 1, &match, 0) == 0) {
+        // Copy text before match
+        size_t before_len = (size_t)match.rm_so;
+        if (result_len + before_len + repl_len + 1 > result_cap) {
+            result_cap = (result_len + before_len + repl_len) * 2;
+            result = bp_xrealloc(result, result_cap);
+        }
+        memcpy(result + result_len, cursor, before_len);
+        result_len += before_len;
+
+        // Copy replacement
+        memcpy(result + result_len, replacement, repl_len);
+        result_len += repl_len;
+
+        // Move cursor past match
+        cursor += match.rm_eo;
+        if (match.rm_eo == 0) cursor++;  // Avoid infinite loop on empty match
+    }
+
+    // Copy remaining text
+    size_t remaining = strlen(cursor);
+    if (result_len + remaining + 1 > result_cap) {
+        result_cap = result_len + remaining + 1;
+        result = bp_xrealloc(result, result_cap);
+    }
+    memcpy(result + result_len, cursor, remaining);
+    result_len += remaining;
+    result[result_len] = '\0';
+
+    regfree(&regex);
+
+    BpStr *s = gc_new_str(gc, result, result_len);
+    free(result);
+    return v_str(s);
+}
+
+// regex_split(pattern, text) -> [str]
+// Splits text by pattern, returns array of strings
+static Value bi_regex_split(Value *args, uint16_t argc, Gc *gc) {
+    if (argc != 2 || args[0].type != VAL_STR || args[1].type != VAL_STR)
+        bp_fatal("regex_split expects (str, str)");
+
+    const char *pattern = args[0].as.s->data;
+    const char *text = args[1].as.s->data;
+
+    regex_t regex;
+    int ret = regcomp(&regex, pattern, REG_EXTENDED);
+    if (ret != 0) {
+        // Invalid regex, return array with original string
+        BpArray *arr = gc_new_array(gc, 1);
+        gc_array_push(gc, arr, v_str(gc_new_str(gc, text, strlen(text))));
+        return v_array(arr);
+    }
+
+    BpArray *arr = gc_new_array(gc, 8);
+    const char *cursor = text;
+    regmatch_t match;
+
+    while (regexec(&regex, cursor, 1, &match, 0) == 0) {
+        // Add substring before match
+        size_t before_len = (size_t)match.rm_so;
+        BpStr *part = gc_new_str(gc, cursor, before_len);
+        gc_array_push(gc, arr, v_str(part));
+
+        // Move cursor past match
+        cursor += match.rm_eo;
+        if (match.rm_eo == 0) cursor++;  // Avoid infinite loop on empty match
+    }
+
+    // Add remaining text
+    BpStr *remaining = gc_new_str(gc, cursor, strlen(cursor));
+    gc_array_push(gc, arr, v_str(remaining));
+
+    regfree(&regex);
+    return v_array(arr);
+}
+
+// regex_find_all(pattern, text) -> [str]
+// Returns array of all matches
+static Value bi_regex_find_all(Value *args, uint16_t argc, Gc *gc) {
+    if (argc != 2 || args[0].type != VAL_STR || args[1].type != VAL_STR)
+        bp_fatal("regex_find_all expects (str, str)");
+
+    const char *pattern = args[0].as.s->data;
+    const char *text = args[1].as.s->data;
+
+    regex_t regex;
+    int ret = regcomp(&regex, pattern, REG_EXTENDED);
+    if (ret != 0) {
+        // Invalid regex, return empty array
+        return v_array(gc_new_array(gc, 0));
+    }
+
+    BpArray *arr = gc_new_array(gc, 8);
+    const char *cursor = text;
+    regmatch_t match;
+
+    while (regexec(&regex, cursor, 1, &match, 0) == 0) {
+        // Add matched substring
+        size_t match_len = (size_t)(match.rm_eo - match.rm_so);
+        BpStr *m = gc_new_str(gc, cursor + match.rm_so, match_len);
+        gc_array_push(gc, arr, v_str(m));
+
+        // Move cursor past match
+        cursor += match.rm_eo;
+        if (match.rm_eo == 0) cursor++;  // Avoid infinite loop on empty match
+    }
+
+    regfree(&regex);
+    return v_array(arr);
+}
+
+// ===== StringBuilder-like operations =====
+
+// str_split_str(text, separator) -> [str]
+// Splits text by a string separator, returns array of strings
+static Value bi_str_split_str(Value *args, uint16_t argc, Gc *gc) {
+    if (argc != 2 || args[0].type != VAL_STR || args[1].type != VAL_STR)
+        bp_fatal("str_split_str expects (str, str)");
+
+    const char *text = args[0].as.s->data;
+    const char *sep = args[1].as.s->data;
+    size_t sep_len = args[1].as.s->len;
+
+    BpArray *arr = gc_new_array(gc, 8);
+
+    if (sep_len == 0) {
+        // Empty separator - split into individual characters
+        const char *p = text;
+        while (*p) {
+            BpStr *part = gc_new_str(gc, p, 1);
+            gc_array_push(gc, arr, v_str(part));
+            p++;
+        }
+        return v_array(arr);
+    }
+
+    const char *cursor = text;
+    const char *found;
+
+    while ((found = strstr(cursor, sep)) != NULL) {
+        size_t part_len = (size_t)(found - cursor);
+        BpStr *part = gc_new_str(gc, cursor, part_len);
+        gc_array_push(gc, arr, v_str(part));
+        cursor = found + sep_len;
+    }
+
+    // Add remaining text
+    BpStr *remaining = gc_new_str(gc, cursor, strlen(cursor));
+    gc_array_push(gc, arr, v_str(remaining));
+
+    return v_array(arr);
+}
+
+// str_join_arr(arr, separator) -> str
+// Joins array of strings with separator
+static Value bi_str_join_arr(Value *args, uint16_t argc, Gc *gc) {
+    if (argc != 2 || args[0].type != VAL_ARRAY || args[1].type != VAL_STR)
+        bp_fatal("str_join_arr expects (array, str)");
+
+    BpArray *arr = args[0].as.arr;
+    const char *sep = args[1].as.s->data;
+    size_t sep_len = args[1].as.s->len;
+
+    if (arr->len == 0) {
+        return v_str(gc_new_str(gc, "", 0));
+    }
+
+    // Calculate total length
+    size_t total_len = 0;
+    for (size_t i = 0; i < arr->len; i++) {
+        if (arr->data[i].type != VAL_STR) bp_fatal("str_join_arr: array elements must be strings");
+        total_len += arr->data[i].as.s->len;
+    }
+    total_len += (arr->len - 1) * sep_len;
+
+    // Allocate and build result
+    char *result = bp_xmalloc(total_len + 1);
+    size_t pos = 0;
+
+    for (size_t i = 0; i < arr->len; i++) {
+        BpStr *s = arr->data[i].as.s;
+        memcpy(result + pos, s->data, s->len);
+        pos += s->len;
+
+        if (i + 1 < arr->len) {
+            memcpy(result + pos, sep, sep_len);
+            pos += sep_len;
+        }
+    }
+    result[pos] = '\0';
+
+    BpStr *str = gc_new_str(gc, result, total_len);
+    free(result);
+    return v_str(str);
+}
+
+// str_concat_all(arr) -> str
+// Concatenates all strings in array (like join with empty separator)
+static Value bi_str_concat_all(Value *args, uint16_t argc, Gc *gc) {
+    if (argc != 1 || args[0].type != VAL_ARRAY)
+        bp_fatal("str_concat_all expects (array)");
+
+    BpArray *arr = args[0].as.arr;
+
+    if (arr->len == 0) {
+        return v_str(gc_new_str(gc, "", 0));
+    }
+
+    // Calculate total length
+    size_t total_len = 0;
+    for (size_t i = 0; i < arr->len; i++) {
+        if (arr->data[i].type != VAL_STR) bp_fatal("str_concat_all: array elements must be strings");
+        total_len += arr->data[i].as.s->len;
+    }
+
+    // Allocate and build result
+    char *result = bp_xmalloc(total_len + 1);
+    size_t pos = 0;
+
+    for (size_t i = 0; i < arr->len; i++) {
+        BpStr *s = arr->data[i].as.s;
+        memcpy(result + pos, s->data, s->len);
+        pos += s->len;
+    }
+    result[pos] = '\0';
+
+    BpStr *str = gc_new_str(gc, result, total_len);
+    free(result);
+    return v_str(str);
+}
+
 Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_code, bool *exiting) {
     switch (id) {
         case BI_PRINT: return bi_print(args, argc, gc);
@@ -1421,6 +1729,18 @@ Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_co
         case BI_COND_WAIT: return bi_cond_wait(args, argc);
         case BI_COND_SIGNAL: return bi_cond_signal(args, argc);
         case BI_COND_BROADCAST: return bi_cond_broadcast(args, argc);
+
+        // Regex operations
+        case BI_REGEX_MATCH: return bi_regex_match(args, argc);
+        case BI_REGEX_SEARCH: return bi_regex_search(args, argc);
+        case BI_REGEX_REPLACE: return bi_regex_replace(args, argc, gc);
+        case BI_REGEX_SPLIT: return bi_regex_split(args, argc, gc);
+        case BI_REGEX_FIND_ALL: return bi_regex_find_all(args, argc, gc);
+
+        // StringBuilder-like operations
+        case BI_STR_SPLIT_STR: return bi_str_split_str(args, argc, gc);
+        case BI_STR_JOIN_ARR: return bi_str_join_arr(args, argc, gc);
+        case BI_STR_CONCAT_ALL: return bi_str_concat_all(args, argc, gc);
 
         default: break;
     }

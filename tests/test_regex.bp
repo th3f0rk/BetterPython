@@ -1,0 +1,58 @@
+def main() -> int:
+    let passed: int = 0
+    let errors: int = 0
+
+    # Test regex_match
+    if regex_match("[0-9]+", "12345"):
+        passed = passed + 1
+    else:
+        errors = errors + 1
+
+    if regex_match("[0-9]+", "abc"):
+        errors = errors + 1
+    else:
+        passed = passed + 1
+
+    # Test regex_search
+    let pos: int = regex_search("world", "hello world")
+    if pos == 6:
+        passed = passed + 1
+    else:
+        errors = errors + 1
+
+    let pos2: int = regex_search("xyz", "hello world")
+    if pos2 == -1:
+        passed = passed + 1
+    else:
+        errors = errors + 1
+
+    # Test regex_replace
+    let result: str = regex_replace("[0-9]+", "X", "a1b2c3")
+    if result == "aXbXcX":
+        passed = passed + 1
+    else:
+        errors = errors + 1
+
+    # Test regex_split
+    let parts: [str] = regex_split(",", "a,b,c")
+    if array_len(parts) == 3:
+        passed = passed + 1
+    else:
+        errors = errors + 1
+
+    # Test regex_find_all
+    let matches: [str] = regex_find_all("[0-9]+", "a1b22c333")
+    if array_len(matches) == 3:
+        passed = passed + 1
+    else:
+        errors = errors + 1
+
+    print("Tests passed:")
+    print(passed)
+    print("Tests with errors:")
+    print(errors)
+
+    if errors == 0:
+        print("ALL REGEX TESTS OK")
+        return 0
+    return 1

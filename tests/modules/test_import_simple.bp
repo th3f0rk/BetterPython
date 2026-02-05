@@ -1,0 +1,6 @@
+import math_utils
+
+def main() -> int:
+    let sq: int = math_utils.square(5)
+    print(sq)
+    return 0

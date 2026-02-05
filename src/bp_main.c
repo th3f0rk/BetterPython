@@ -7,6 +7,8 @@
 #include "reg_vm.h"
 #include "stdlib.h"
 #include "util.h"
+#include "module_resolver.h"
+#include "multi_compile.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -40,22 +42,51 @@ static int cmd_bpcc(int argc, char **argv) {
     }
     if (!out) bp_fatal("missing -o <output.bpc>");
 
+    // First, parse to check for imports
     char *src = read_file_text(in);
     Module m = parse_module(src);
-    typecheck_module(&m);
 
     BpModule bc;
-    if (use_register_vm) {
-        bc = reg_compile_module(&m);
+    memset(&bc, 0, sizeof(bc));
+
+    if (m.importc > 0) {
+        // Multi-module compilation needed
+        module_free(&m);
+        free(src);
+
+        // Use module resolver to find all dependencies
+        ModuleGraph graph;
+        module_graph_init(&graph);
+
+        if (!module_graph_resolve_all(&graph, in)) {
+            module_graph_free(&graph);
+            bp_fatal("failed to resolve module dependencies");
+        }
+
+        // Compile all modules together
+        if (!multi_compile(&graph, &bc)) {
+            module_graph_free(&graph);
+            bp_fatal("failed to compile modules");
+        }
+
+        module_graph_free(&graph);
     } else {
-        bc = compile_module(&m);
+        // Single-file compilation (original path)
+        typecheck_module(&m);
+
+        if (use_register_vm) {
+            bc = reg_compile_module(&m);
+        } else {
+            bc = compile_module(&m);
+        }
+
+        module_free(&m);
+        free(src);
     }
 
     if (!bc_write_file(out, &bc)) bp_fatal("failed to write %s", out);
 
     bc_module_free(&bc);
-    module_free(&m);
-    free(src);
     return 0;
 }
 

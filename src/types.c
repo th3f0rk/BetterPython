@@ -65,6 +65,40 @@ static FnTable g_fntable = {0};
 static StructTable g_structtable = {0};
 static ClassTable g_classtable = {0};
 
+// Import tracking for module system
+typedef struct {
+    char *module_name;      // Original module name
+    char *alias;            // Alias or NULL
+    char **import_names;    // Specific imports or NULL for all
+    size_t import_count;
+} ImportInfo;
+
+static ImportInfo *g_imports = NULL;
+static size_t g_import_count = 0;
+static size_t g_import_cap = 0;
+
+// Check if a name is an imported module
+static bool is_imported_module(const char *name) {
+    for (size_t i = 0; i < g_import_count; i++) {
+        const char *check_name = g_imports[i].alias ? g_imports[i].alias : g_imports[i].module_name;
+        if (strcmp(check_name, name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Get actual module name from alias or name
+static const char *get_module_name(const char *name) {
+    for (size_t i = 0; i < g_import_count; i++) {
+        const char *check_name = g_imports[i].alias ? g_imports[i].alias : g_imports[i].module_name;
+        if (strcmp(check_name, name) == 0) {
+            return g_imports[i].module_name;
+        }
+    }
+    return NULL;
+}
+
 static void scope_put(Scope *s, const char *name, Type t) {
     for (size_t i = 0; i < s->len; i++) {
         if (strcmp(s->items[i].name, name) == 0) bp_fatal("duplicate symbol '%s'", name);
@@ -112,6 +146,22 @@ static void fntable_free(FnTable *ft) {
     }
     free(ft->items);
     memset(ft, 0, sizeof(*ft));
+}
+
+// Public API for multi-module support
+static bool g_preserve_external_functions = false;
+
+void types_register_function(const char *name, Type *param_types, size_t param_count,
+                             Type ret_type, size_t fn_index) {
+    fntable_add(&g_fntable, name, param_types, param_count, ret_type, fn_index);
+}
+
+void types_clear_external_functions(void) {
+    fntable_free(&g_fntable);
+}
+
+void types_set_preserve_external(bool preserve) {
+    g_preserve_external_functions = preserve;
 }
 
 static void structtable_add(StructTable *st, const char *name, char **field_names, Type *field_types, size_t fc, size_t idx) {
@@ -425,6 +475,18 @@ static bool is_builtin(const char *name) {
     if (strcmp(name, "cond_wait") == 0) return true;
     if (strcmp(name, "cond_signal") == 0) return true;
     if (strcmp(name, "cond_broadcast") == 0) return true;
+
+    // Regex operations
+    if (strcmp(name, "regex_match") == 0) return true;
+    if (strcmp(name, "regex_search") == 0) return true;
+    if (strcmp(name, "regex_replace") == 0) return true;
+    if (strcmp(name, "regex_split") == 0) return true;
+    if (strcmp(name, "regex_find_all") == 0) return true;
+
+    // StringBuilder-like operations
+    if (strcmp(name, "str_split_str") == 0) return true;
+    if (strcmp(name, "str_join_arr") == 0) return true;
+    if (strcmp(name, "str_concat_all") == 0) return true;
 
     return false;
 }
@@ -1012,6 +1074,83 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
 
+    // Regex operations
+    if (strcmp(name, "regex_match") == 0) {
+        if (e->as.call.argc != 2) bp_fatal("regex_match expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("regex_match arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("regex_match arg1 must be str");
+        e->inferred = type_bool();
+        return e->inferred;
+    }
+    if (strcmp(name, "regex_search") == 0) {
+        if (e->as.call.argc != 2) bp_fatal("regex_search expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("regex_search arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("regex_search arg1 must be str");
+        e->inferred = type_int();
+        return e->inferred;
+    }
+    if (strcmp(name, "regex_replace") == 0) {
+        if (e->as.call.argc != 3) bp_fatal("regex_replace expects 3 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("regex_replace arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("regex_replace arg1 must be str");
+        if (check_expr(e->as.call.args[2], s).kind != TY_STR) bp_fatal("regex_replace arg2 must be str");
+        e->inferred = type_str();
+        return e->inferred;
+    }
+    if (strcmp(name, "regex_split") == 0) {
+        if (e->as.call.argc != 2) bp_fatal("regex_split expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("regex_split arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("regex_split arg1 must be str");
+        Type arr_type;
+        arr_type.kind = TY_ARRAY;
+        arr_type.key_type = NULL;
+        arr_type.elem_type = type_new(TY_STR);
+        arr_type.struct_name = NULL;
+        e->inferred = arr_type;
+        return e->inferred;
+    }
+    if (strcmp(name, "regex_find_all") == 0) {
+        if (e->as.call.argc != 2) bp_fatal("regex_find_all expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("regex_find_all arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("regex_find_all arg1 must be str");
+        Type arr_type;
+        arr_type.kind = TY_ARRAY;
+        arr_type.key_type = NULL;
+        arr_type.elem_type = type_new(TY_STR);
+        arr_type.struct_name = NULL;
+        e->inferred = arr_type;
+        return e->inferred;
+    }
+
+    // StringBuilder-like operations
+    if (strcmp(name, "str_split_str") == 0) {
+        if (e->as.call.argc != 2) bp_fatal("str_split_str expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("str_split_str arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("str_split_str arg1 must be str");
+        Type arr_type;
+        arr_type.kind = TY_ARRAY;
+        arr_type.key_type = NULL;
+        arr_type.elem_type = type_new(TY_STR);
+        arr_type.struct_name = NULL;
+        e->inferred = arr_type;
+        return e->inferred;
+    }
+    if (strcmp(name, "str_join_arr") == 0) {
+        if (e->as.call.argc != 2) bp_fatal("str_join_arr expects 2 args");
+        Type arr_type = check_expr(e->as.call.args[0], s);
+        if (arr_type.kind != TY_ARRAY) bp_fatal("str_join_arr arg0 must be array");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("str_join_arr arg1 must be str");
+        e->inferred = type_str();
+        return e->inferred;
+    }
+    if (strcmp(name, "str_concat_all") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("str_concat_all expects 1 arg");
+        Type arr_type = check_expr(e->as.call.args[0], s);
+        if (arr_type.kind != TY_ARRAY) bp_fatal("str_concat_all arg0 must be array");
+        e->inferred = type_str();
+        return e->inferred;
+    }
+
     bp_fatal("unknown builtin '%s'", name);
     return type_void();
 }
@@ -1310,6 +1449,45 @@ static Type check_expr(Expr *e, Scope *s) {
             return e->inferred;
         }
         case EX_METHOD_CALL: {
+            // Check if this is actually a module function call (e.g., math_utils.square())
+            if (e->as.method_call.object->kind == EX_VAR) {
+                const char *var_name = e->as.method_call.object->as.var_name;
+                if (is_imported_module(var_name)) {
+                    // Transform into a regular function call with qualified name
+                    const char *module_name = get_module_name(var_name);
+                    const char *func_name = e->as.method_call.method_name;
+
+                    // Create qualified name: module$function
+                    size_t qname_len = strlen(module_name) + 1 + strlen(func_name) + 1;
+                    char *qname = bp_xmalloc(qname_len);
+                    snprintf(qname, qname_len, "%s$%s", module_name, func_name);
+
+                    // Transform the expression to EX_CALL
+                    e->kind = EX_CALL;
+                    e->as.call.name = qname;
+                    e->as.call.args = e->as.method_call.args;
+                    e->as.call.argc = e->as.method_call.argc;
+                    e->as.call.fn_index = -2;  // Special marker: cross-module call, resolve by name
+
+                    // Check arguments
+                    for (size_t i = 0; i < e->as.call.argc; i++) {
+                        check_expr(e->as.call.args[i], s);
+                    }
+
+                    // Look up function signature in function table for type checking only
+                    FnSig *sig = fntable_get(&g_fntable, qname);
+                    if (sig) {
+                        // Keep fn_index as -2 (don't use sig->fn_index)
+                        // The global index will be resolved during multi-compile
+                        e->inferred = sig->ret_type;
+                    } else {
+                        // Function from external module - type will be resolved during multi-compile
+                        e->inferred = type_int();  // Default to int for now
+                    }
+                    return e->inferred;
+                }
+            }
+
             // Check object type
             Type obj_type = check_expr(e->as.method_call.object, s);
             if (obj_type.kind != TY_STRUCT) {
@@ -1489,9 +1667,49 @@ static void check_stmt(Stmt *st, Scope *s, Type ret_type) {
 void typecheck_module(Module *m) {
     // Build function table first (for forward references and recursion)
     g_module = m;
-    fntable_free(&g_fntable);  // Clean any previous state
+
+    // When preserving external functions (multi-module mode), don't clear the function table
+    // External functions were pre-registered with qualified names
+    if (!g_preserve_external_functions) {
+        fntable_free(&g_fntable);  // Clean any previous state
+    }
     structtable_free(&g_structtable);  // Clean any previous state
     classtable_free(&g_classtable);  // Clean any previous state
+
+    // Clear and rebuild import table
+    for (size_t i = 0; i < g_import_count; i++) {
+        free(g_imports[i].module_name);
+        free(g_imports[i].alias);
+        for (size_t j = 0; j < g_imports[i].import_count; j++) {
+            free(g_imports[i].import_names[j]);
+        }
+        free(g_imports[i].import_names);
+    }
+    free(g_imports);
+    g_imports = NULL;
+    g_import_count = 0;
+    g_import_cap = 0;
+
+    // Load imports from module
+    for (size_t i = 0; i < m->importc; i++) {
+        ImportDef *id = &m->imports[i];
+        if (g_import_count + 1 > g_import_cap) {
+            g_import_cap = g_import_cap ? g_import_cap * 2 : 8;
+            g_imports = bp_xrealloc(g_imports, g_import_cap * sizeof(*g_imports));
+        }
+        ImportInfo *ii = &g_imports[g_import_count++];
+        ii->module_name = bp_xstrdup(id->module_name);
+        ii->alias = id->alias ? bp_xstrdup(id->alias) : NULL;
+        ii->import_count = id->import_count;
+        if (id->import_count > 0) {
+            ii->import_names = bp_xmalloc(id->import_count * sizeof(char *));
+            for (size_t j = 0; j < id->import_count; j++) {
+                ii->import_names[j] = bp_xstrdup(id->import_names[j]);
+            }
+        } else {
+            ii->import_names = NULL;
+        }
+    }
 
     // Build struct table first (structs must be defined before use)
     for (size_t i = 0; i < m->structc; i++) {

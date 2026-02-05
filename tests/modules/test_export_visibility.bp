@@ -1,0 +1,6 @@
+import math_utils
+
+def main() -> int:
+    let result: int = math_utils.helper_multiply(3, 4)
+    print(result)
+    return 0
