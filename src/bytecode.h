@@ -194,7 +194,11 @@ typedef enum {
     BI_MAP_KEYS,
     BI_MAP_VALUES,
     BI_MAP_HAS_KEY,
-    BI_MAP_DELETE
+    BI_MAP_DELETE,
+
+    // System/argv
+    BI_ARGV,
+    BI_ARGC
 } BuiltinId;
 
 typedef struct {

@@ -3,8 +3,10 @@
 #include "compiler.h"
 #include "bytecode.h"
 #include "vm.h"
+#include "stdlib.h"
 #include "util.h"
 #include <string.h>
+#include <stdio.h>
 
 static char *read_file_text(const char *path) {
     FILE *f = fopen(path, "rb");
@@ -44,8 +46,12 @@ static int cmd_bpcc(int argc, char **argv) {
 }
 
 static int cmd_bpvm(int argc, char **argv) {
-    if (argc < 2) bp_fatal("usage: bpvm <file.bpc>");
+    if (argc < 2) bp_fatal("usage: bpvm <file.bpc> [args...]");
     const char *path = argv[1];
+
+    // Set program arguments (argv[2:] become the program's argv)
+    stdlib_set_args(argc - 2, argv + 2);
+
     BpModule m = bc_read_file(path);
     Vm vm;
     vm_init(&vm, m);
@@ -54,13 +60,61 @@ static int cmd_bpvm(int argc, char **argv) {
     return code;
 }
 
+static int cmd_repl(void) {
+    printf("BetterPython REPL v1.0.0\n");
+    printf("Type expressions to evaluate, or 'exit' to quit.\n\n");
+
+    char line[4096];
+    while (1) {
+        printf(">>> ");
+        fflush(stdout);
+        if (!fgets(line, sizeof(line), stdin)) break;
+
+        // Remove trailing newline
+        size_t len = strlen(line);
+        if (len > 0 && line[len - 1] == '\n') line[len - 1] = '\0';
+
+        // Check for exit command
+        if (strcmp(line, "exit") == 0 || strcmp(line, "quit") == 0) {
+            printf("Goodbye!\n");
+            break;
+        }
+
+        // Skip empty lines
+        if (strlen(line) == 0) continue;
+
+        // Wrap the expression in a main function
+        char src[8192];
+        snprintf(src, sizeof(src),
+            "def main() -> int:\n"
+            "    print(%s)\n"
+            "    return 0\n",
+            line);
+
+        // Try to compile and run
+        Module m = parse_module(src);
+        typecheck_module(&m);
+        BpModule bc = compile_module(&m);
+
+        Vm vm;
+        vm_init(&vm, bc);
+        vm_run(&vm);
+        vm_free(&vm);
+
+        bc_module_free(&bc);
+        module_free(&m);
+    }
+    return 0;
+}
+
 int main(int argc, char **argv) {
     const char *p = strrchr(argv[0], '/');
     const char *exe = p ? p + 1 : argv[0];
 
     if (strcmp(exe, "bpcc") == 0) return cmd_bpcc(argc, argv);
     if (strcmp(exe, "bpvm") == 0) return cmd_bpvm(argc, argv);
+    if (strcmp(exe, "bprepl") == 0) return cmd_repl();
 
-    bp_fatal("unknown entrypoint '%s' (expected bpcc or bpvm)", exe);
+    bp_fatal("unknown entrypoint '%s' (expected bpcc, bpvm, or bprepl)", exe);
     return 1;
 }

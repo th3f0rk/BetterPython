@@ -143,21 +143,44 @@ static bool type_eq(Type a, Type b) {
         if (!a.elem_type || !b.elem_type) return false;
         return type_eq(*a.key_type, *b.key_type) && type_eq(*a.elem_type, *b.elem_type);
     }
-    if (a.kind == TY_STRUCT) {
+    if (a.kind == TY_STRUCT || a.kind == TY_ENUM) {
         if (!a.struct_name || !b.struct_name) return false;
         return strcmp(a.struct_name, b.struct_name) == 0;
+    }
+    if (a.kind == TY_TUPLE) {
+        if (a.tuple_len != b.tuple_len) return false;
+        for (size_t i = 0; i < a.tuple_len; i++) {
+            if (!type_eq(*a.tuple_types[i], *b.tuple_types[i])) return false;
+        }
+        return true;
+    }
+    if (a.kind == TY_FUNC) {
+        if (a.param_count != b.param_count) return false;
+        for (size_t i = 0; i < a.param_count; i++) {
+            if (!type_eq(*a.param_types[i], *b.param_types[i])) return false;
+        }
+        if (!a.return_type || !b.return_type) return a.return_type == b.return_type;
+        return type_eq(*a.return_type, *b.return_type);
     }
     return true;
 }
 
 static const char *type_name(Type t) {
-    static char buf[128];
+    static char buf[256];
     switch (t.kind) {
         case TY_INT: return "int";
         case TY_FLOAT: return "float";
         case TY_BOOL: return "bool";
         case TY_STR: return "str";
         case TY_VOID: return "void";
+        case TY_I8: return "i8";
+        case TY_I16: return "i16";
+        case TY_I32: return "i32";
+        case TY_I64: return "i64";
+        case TY_U8: return "u8";
+        case TY_U16: return "u16";
+        case TY_U32: return "u32";
+        case TY_U64: return "u64";
         case TY_ARRAY:
             if (t.elem_type) {
                 snprintf(buf, sizeof(buf), "[%s]", type_name(*t.elem_type));
@@ -173,6 +196,22 @@ static const char *type_name(Type t) {
         case TY_STRUCT:
             if (t.struct_name) return t.struct_name;
             return "<struct>";
+        case TY_ENUM:
+            if (t.struct_name) return t.struct_name;
+            return "<enum>";
+        case TY_TUPLE: {
+            size_t pos = 0;
+            pos += snprintf(buf + pos, sizeof(buf) - pos, "(");
+            for (size_t i = 0; i < t.tuple_len; i++) {
+                if (i > 0) pos += snprintf(buf + pos, sizeof(buf) - pos, ", ");
+                pos += snprintf(buf + pos, sizeof(buf) - pos, "%s", type_name(*t.tuple_types[i]));
+            }
+            snprintf(buf + pos, sizeof(buf) - pos, ")");
+            return buf;
+        }
+        case TY_FUNC:
+            snprintf(buf, sizeof(buf), "fn(...) -> %s", t.return_type ? type_name(*t.return_type) : "void");
+            return buf;
         default: return "?";
     }
 }
@@ -297,6 +336,10 @@ static bool is_builtin(const char *name) {
     if (strcmp(name, "map_values") == 0) return true;
     if (strcmp(name, "map_has_key") == 0) return true;
     if (strcmp(name, "map_delete") == 0) return true;
+
+    // System functions
+    if (strcmp(name, "argv") == 0) return true;
+    if (strcmp(name, "argc") == 0) return true;
 
     return false;
 }
@@ -764,6 +807,30 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
 
+    // argv() - returns array of strings
+    if (strcmp(name, "argv") == 0) {
+        if (e->as.call.argc != 0) bp_fatal("argv expects 0 args");
+        Type arr_type;
+        arr_type.kind = TY_ARRAY;
+        arr_type.key_type = NULL;
+        arr_type.elem_type = type_new(TY_STR);
+        arr_type.struct_name = NULL;
+        arr_type.tuple_types = NULL;
+        arr_type.tuple_len = 0;
+        arr_type.param_types = NULL;
+        arr_type.param_count = 0;
+        arr_type.return_type = NULL;
+        e->inferred = arr_type;
+        return e->inferred;
+    }
+
+    // argc() - returns int
+    if (strcmp(name, "argc") == 0) {
+        if (e->as.call.argc != 0) bp_fatal("argc expects 0 args");
+        e->inferred = type_int();
+        return e->inferred;
+    }
+
     bp_fatal("unknown builtin '%s'", name);
     return type_void();
 }
@@ -995,6 +1062,83 @@ static Type check_expr(Expr *e, Scope *s) {
             }
             bp_fatal("unknown binary op");
             return type_void();
+        }
+        case EX_TUPLE: {
+            // Type check all elements and build tuple type
+            Type **elem_types = NULL;
+            if (e->as.tuple.len > 0) {
+                elem_types = bp_xmalloc(e->as.tuple.len * sizeof(*elem_types));
+                for (size_t i = 0; i < e->as.tuple.len; i++) {
+                    Type et = check_expr(e->as.tuple.elements[i], s);
+                    elem_types[i] = type_new(et.kind);
+                    *elem_types[i] = et;
+                }
+            }
+            e->inferred = *type_tuple(elem_types, e->as.tuple.len);
+            return e->inferred;
+        }
+        case EX_LAMBDA: {
+            // Build function type from lambda
+            Type **param_types = NULL;
+            if (e->as.lambda.paramc > 0) {
+                param_types = bp_xmalloc(e->as.lambda.paramc * sizeof(*param_types));
+                for (size_t i = 0; i < e->as.lambda.paramc; i++) {
+                    param_types[i] = type_new(e->as.lambda.params[i].type.kind);
+                    *param_types[i] = e->as.lambda.params[i].type;
+                }
+            }
+            Type *ret_type = type_new(e->as.lambda.return_type.kind);
+            *ret_type = e->as.lambda.return_type;
+
+            // Type check the body in a new scope with parameters
+            Scope body_scope = {0};
+            for (size_t i = 0; i < s->len; i++) {
+                scope_put(&body_scope, s->items[i].name, s->items[i].type);
+            }
+            for (size_t i = 0; i < e->as.lambda.paramc; i++) {
+                scope_put(&body_scope, e->as.lambda.params[i].name, e->as.lambda.params[i].type);
+            }
+            Type body_type = check_expr(e->as.lambda.body, &body_scope);
+            if (!type_eq(body_type, e->as.lambda.return_type)) {
+                bp_fatal("lambda body type %s doesn't match declared return type %s",
+                         type_name(body_type), type_name(e->as.lambda.return_type));
+            }
+            for (size_t i = 0; i < body_scope.len; i++) free(body_scope.items[i].name);
+            free(body_scope.items);
+
+            e->inferred = *type_func(param_types, e->as.lambda.paramc, ret_type);
+            return e->inferred;
+        }
+        case EX_FSTRING: {
+            // F-strings always result in str type
+            e->inferred = type_str();
+            return e->inferred;
+        }
+        case EX_METHOD_CALL: {
+            // Check object type
+            Type obj_type = check_expr(e->as.method_call.object, s);
+            if (obj_type.kind != TY_STRUCT) {
+                bp_fatal("cannot call method '%s' on non-struct type %s",
+                         e->as.method_call.method_name, type_name(obj_type));
+            }
+            // Look up struct to find method
+            StructInfo *si = structtable_get(&g_structtable, obj_type.struct_name);
+            if (!si) {
+                bp_fatal("unknown struct type '%s'", obj_type.struct_name);
+            }
+            // For now, just check the args - method lookup will happen in compiler
+            for (size_t i = 0; i < e->as.method_call.argc; i++) {
+                check_expr(e->as.method_call.args[i], s);
+            }
+            // TODO: Look up method signature and return proper type
+            // For now, return void - this needs full method table implementation
+            e->inferred = type_void();
+            return e->inferred;
+        }
+        case EX_ENUM_MEMBER: {
+            // TODO: Implement enum lookup
+            e->inferred = type_int();  // Enum values are integers
+            return e->inferred;
         }
         default: break;
     }

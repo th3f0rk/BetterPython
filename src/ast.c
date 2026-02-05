@@ -5,39 +5,65 @@
 
 Type *type_new(TypeKind kind) {
     Type *t = bp_xmalloc(sizeof(*t));
+    memset(t, 0, sizeof(*t));
     t->kind = kind;
-    t->elem_type = NULL;
-    t->key_type = NULL;
-    t->struct_name = NULL;
     return t;
 }
 
 Type *type_array(Type *elem) {
     Type *t = bp_xmalloc(sizeof(*t));
+    memset(t, 0, sizeof(*t));
     t->kind = TY_ARRAY;
     t->elem_type = elem;
-    t->key_type = NULL;
-    t->struct_name = NULL;
     return t;
 }
 
 Type *type_map(Type *key, Type *value) {
     Type *t = bp_xmalloc(sizeof(*t));
+    memset(t, 0, sizeof(*t));
     t->kind = TY_MAP;
     t->key_type = key;
     t->elem_type = value;
-    t->struct_name = NULL;
     return t;
 }
 
 Type *type_struct(char *name) {
     Type *t = bp_xmalloc(sizeof(*t));
+    memset(t, 0, sizeof(*t));
     t->kind = TY_STRUCT;
-    t->elem_type = NULL;
-    t->key_type = NULL;
     t->struct_name = name;
     return t;
 }
+
+Type *type_tuple(Type **types, size_t len) {
+    Type *t = bp_xmalloc(sizeof(*t));
+    memset(t, 0, sizeof(*t));
+    t->kind = TY_TUPLE;
+    t->tuple_types = types;
+    t->tuple_len = len;
+    return t;
+}
+
+Type *type_func(Type **params, size_t paramc, Type *ret) {
+    Type *t = bp_xmalloc(sizeof(*t));
+    memset(t, 0, sizeof(*t));
+    t->kind = TY_FUNC;
+    t->param_types = params;
+    t->param_count = paramc;
+    t->return_type = ret;
+    return t;
+}
+
+Type *type_enum(char *name) {
+    Type *t = bp_xmalloc(sizeof(*t));
+    memset(t, 0, sizeof(*t));
+    t->kind = TY_ENUM;
+    t->struct_name = name;  // Reuse struct_name for enum name
+    return t;
+}
+
+// Forward declarations
+static void stmt_free(Stmt *s);
 
 static Expr *expr_alloc(ExprKind k, size_t line) {
     Expr *e = bp_xmalloc(sizeof(*e));
@@ -137,6 +163,48 @@ Expr *expr_new_field_access(Expr *object, char *field_name, size_t line) {
     Expr *e = expr_alloc(EX_FIELD_ACCESS, line);
     e->as.field_access.object = object;
     e->as.field_access.field_name = field_name;
+    return e;
+}
+
+Expr *expr_new_tuple(Expr **elements, size_t len, size_t line) {
+    Expr *e = expr_alloc(EX_TUPLE, line);
+    e->as.tuple.elements = elements;
+    e->as.tuple.len = len;
+    return e;
+}
+
+Expr *expr_new_lambda(Param *params, size_t paramc, Expr *body, Type ret_type, size_t line) {
+    Expr *e = expr_alloc(EX_LAMBDA, line);
+    e->as.lambda.params = params;
+    e->as.lambda.paramc = paramc;
+    e->as.lambda.body = body;
+    e->as.lambda.body_stmts = NULL;
+    e->as.lambda.body_len = 0;
+    e->as.lambda.return_type = ret_type;
+    return e;
+}
+
+Expr *expr_new_enum_member(char *enum_name, char *member_name, size_t line) {
+    Expr *e = expr_alloc(EX_ENUM_MEMBER, line);
+    e->as.enum_member.enum_name = enum_name;
+    e->as.enum_member.member_name = member_name;
+    e->as.enum_member.member_value = 0;  // Set by type checker
+    return e;
+}
+
+Expr *expr_new_fstring(char *template_str, size_t line) {
+    Expr *e = expr_alloc(EX_FSTRING, line);
+    e->as.fstring.template_str = template_str;
+    return e;
+}
+
+Expr *expr_new_method_call(Expr *object, char *method_name, Expr **args, size_t argc, size_t line) {
+    Expr *e = expr_alloc(EX_METHOD_CALL, line);
+    e->as.method_call.object = object;
+    e->as.method_call.method_name = method_name;
+    e->as.method_call.args = args;
+    e->as.method_call.argc = argc;
+    e->as.method_call.method_index = -1;  // Set by type checker
     return e;
 }
 
@@ -280,6 +348,30 @@ static void expr_free(Expr *e) {
             expr_free(e->as.field_access.object);
             free(e->as.field_access.field_name);
             break;
+        case EX_TUPLE:
+            for (size_t i = 0; i < e->as.tuple.len; i++) expr_free(e->as.tuple.elements[i]);
+            free(e->as.tuple.elements);
+            break;
+        case EX_LAMBDA:
+            for (size_t i = 0; i < e->as.lambda.paramc; i++) free(e->as.lambda.params[i].name);
+            free(e->as.lambda.params);
+            expr_free(e->as.lambda.body);
+            for (size_t i = 0; i < e->as.lambda.body_len; i++) stmt_free(e->as.lambda.body_stmts[i]);
+            free(e->as.lambda.body_stmts);
+            break;
+        case EX_ENUM_MEMBER:
+            free(e->as.enum_member.enum_name);
+            free(e->as.enum_member.member_name);
+            break;
+        case EX_FSTRING:
+            free(e->as.fstring.template_str);
+            break;
+        case EX_METHOD_CALL:
+            expr_free(e->as.method_call.object);
+            free(e->as.method_call.method_name);
+            for (size_t i = 0; i < e->as.method_call.argc; i++) expr_free(e->as.method_call.args[i]);
+            free(e->as.method_call.args);
+            break;
         default: break;
     }
     free(e);
@@ -365,8 +457,42 @@ void module_free(Module *m) {
         for (size_t j = 0; j < sd->field_count; j++) free(sd->field_names[j]);
         free(sd->field_names);
         free(sd->field_types);
+        // Free methods
+        for (size_t j = 0; j < sd->method_count; j++) {
+            MethodDef *md = &sd->methods[j];
+            free(md->name);
+            for (size_t p = 0; p < md->paramc; p++) free(md->params[p].name);
+            free(md->params);
+            for (size_t s = 0; s < md->body_len; s++) stmt_free(md->body[s]);
+            free(md->body);
+        }
+        free(sd->methods);
     }
     free(m->structs);
     m->structs = NULL;
     m->structc = 0;
+
+    // Free enums
+    for (size_t i = 0; i < m->enumc; i++) {
+        EnumDef *ed = &m->enums[i];
+        free(ed->name);
+        for (size_t j = 0; j < ed->variant_count; j++) free(ed->variant_names[j]);
+        free(ed->variant_names);
+        free(ed->variant_values);
+    }
+    free(m->enums);
+    m->enums = NULL;
+    m->enumc = 0;
+
+    // Free imports
+    for (size_t i = 0; i < m->importc; i++) {
+        ImportDef *id = &m->imports[i];
+        free(id->module_name);
+        free(id->alias);
+        for (size_t j = 0; j < id->import_count; j++) free(id->import_names[j]);
+        free(id->import_names);
+    }
+    free(m->imports);
+    m->imports = NULL;
+    m->importc = 0;
 }

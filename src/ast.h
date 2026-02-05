@@ -11,7 +11,22 @@ typedef enum {
     TY_VOID,
     TY_ARRAY,
     TY_MAP,
-    TY_STRUCT
+    TY_STRUCT,
+    // Fixed-width integer types
+    TY_I8,
+    TY_I16,
+    TY_I32,
+    TY_I64,
+    TY_U8,
+    TY_U16,
+    TY_U32,
+    TY_U64,
+    // Tuple type
+    TY_TUPLE,
+    // Enum type
+    TY_ENUM,
+    // Function/closure type
+    TY_FUNC
 } TypeKind;
 
 typedef struct Type Type;
@@ -20,19 +35,39 @@ struct Type {
     TypeKind kind;
     Type *elem_type;  // For TY_ARRAY: the element type, for TY_MAP: the value type
     Type *key_type;   // For TY_MAP: the key type
-    char *struct_name; // For TY_STRUCT: the struct name
+    char *struct_name; // For TY_STRUCT: the struct name, TY_ENUM: the enum name
+    // For TY_TUPLE: array of element types
+    Type **tuple_types;
+    size_t tuple_len;
+    // For TY_FUNC: parameter types and return type
+    Type **param_types;
+    size_t param_count;
+    Type *return_type;
 };
 
-static inline Type type_int(void)   { Type t = {TY_INT, NULL, NULL, NULL}; return t; }
-static inline Type type_float(void) { Type t = {TY_FLOAT, NULL, NULL, NULL}; return t; }
-static inline Type type_bool(void)  { Type t = {TY_BOOL, NULL, NULL, NULL}; return t; }
-static inline Type type_str(void)   { Type t = {TY_STR, NULL, NULL, NULL}; return t; }
-static inline Type type_void(void)  { Type t = {TY_VOID, NULL, NULL, NULL}; return t; }
+static inline Type type_int(void)   { Type t = {TY_INT, NULL, NULL, NULL, NULL, 0, NULL, 0, NULL}; return t; }
+static inline Type type_float(void) { Type t = {TY_FLOAT, NULL, NULL, NULL, NULL, 0, NULL, 0, NULL}; return t; }
+static inline Type type_bool(void)  { Type t = {TY_BOOL, NULL, NULL, NULL, NULL, 0, NULL, 0, NULL}; return t; }
+static inline Type type_str(void)   { Type t = {TY_STR, NULL, NULL, NULL, NULL, 0, NULL, 0, NULL}; return t; }
+static inline Type type_void(void)  { Type t = {TY_VOID, NULL, NULL, NULL, NULL, 0, NULL, 0, NULL}; return t; }
+
+// Fixed-width integer types
+static inline Type type_i8(void)   { Type t = {TY_I8, NULL, NULL, NULL, NULL, 0, NULL, 0, NULL}; return t; }
+static inline Type type_i16(void)  { Type t = {TY_I16, NULL, NULL, NULL, NULL, 0, NULL, 0, NULL}; return t; }
+static inline Type type_i32(void)  { Type t = {TY_I32, NULL, NULL, NULL, NULL, 0, NULL, 0, NULL}; return t; }
+static inline Type type_i64(void)  { Type t = {TY_I64, NULL, NULL, NULL, NULL, 0, NULL, 0, NULL}; return t; }
+static inline Type type_u8(void)   { Type t = {TY_U8, NULL, NULL, NULL, NULL, 0, NULL, 0, NULL}; return t; }
+static inline Type type_u16(void)  { Type t = {TY_U16, NULL, NULL, NULL, NULL, 0, NULL, 0, NULL}; return t; }
+static inline Type type_u32(void)  { Type t = {TY_U32, NULL, NULL, NULL, NULL, 0, NULL, 0, NULL}; return t; }
+static inline Type type_u64(void)  { Type t = {TY_U64, NULL, NULL, NULL, NULL, 0, NULL, 0, NULL}; return t; }
 
 Type *type_new(TypeKind kind);
 Type *type_array(Type *elem);
 Type *type_map(Type *key, Type *value);
 Type *type_struct(char *name);
+Type *type_tuple(Type **types, size_t len);
+Type *type_func(Type **params, size_t paramc, Type *ret);
+Type *type_enum(char *name);
 
 typedef enum {
     EX_INT,
@@ -47,7 +82,13 @@ typedef enum {
     EX_INDEX,
     EX_MAP,
     EX_STRUCT_LITERAL,
-    EX_FIELD_ACCESS
+    EX_FIELD_ACCESS,
+    // New expression kinds
+    EX_TUPLE,           // Tuple literal: (a, b, c)
+    EX_LAMBDA,          // Lambda: fn(x, y) -> x + y
+    EX_ENUM_MEMBER,     // Enum member access: Color.RED
+    EX_FSTRING,         // f-string: f"Hello {name}"
+    EX_METHOD_CALL      // Method call: obj.method(args)
 } ExprKind;
 
 typedef enum {
@@ -128,6 +169,43 @@ struct Expr {
             char *field_name;
             int field_index;  // Set by type checker
         } field_access;
+
+        // Tuple literal
+        struct {
+            Expr **elements;
+            size_t len;
+        } tuple;
+
+        // Lambda expression
+        struct {
+            Param *params;
+            size_t paramc;
+            Expr *body;         // For expression lambdas: fn(x) -> x + 1
+            Stmt **body_stmts;  // For block lambdas (if needed)
+            size_t body_len;
+            Type return_type;
+        } lambda;
+
+        // Enum member access: Color.RED
+        struct {
+            char *enum_name;
+            char *member_name;
+            int member_value;  // Set by type checker
+        } enum_member;
+
+        // f-string (format string for interpolation)
+        struct {
+            char *template_str;  // Raw string with {expr} placeholders
+        } fstring;
+
+        // Method call: obj.method(args)
+        struct {
+            Expr *object;
+            char *method_name;
+            Expr **args;
+            size_t argc;
+            int method_index;  // Set by type checker
+        } method_call;
     } as;
 };
 
@@ -222,21 +300,61 @@ typedef struct {
     Stmt **body;
     size_t body_len;
     size_t line;
+    bool is_export;  // Is this function exported from the module
 } Function;
+
+// Method definition (for methods on structs)
+typedef struct {
+    char *name;
+    Param *params;      // First param is implicit 'self'
+    size_t paramc;
+    Type ret_type;
+    Stmt **body;
+    size_t body_len;
+    size_t line;
+} MethodDef;
 
 typedef struct {
     char *name;
     char **field_names;
     Type *field_types;
     size_t field_count;
+    // Methods on this struct
+    MethodDef *methods;
+    size_t method_count;
+    bool is_packed;     // @packed attribute
+    bool is_export;     // Is this struct exported from the module
     size_t line;
 } StructDef;
+
+// Enum definition
+typedef struct {
+    char *name;
+    char **variant_names;
+    int64_t *variant_values;  // Optional explicit values
+    size_t variant_count;
+    bool is_export;           // Is this enum exported from the module
+    size_t line;
+} EnumDef;
+
+// Import statement info
+typedef struct {
+    char *module_name;      // "math" or "utils/helper"
+    char *alias;            // "as" name, or NULL
+    char **import_names;    // Specific names, or NULL for all
+    size_t import_count;
+    size_t line;
+} ImportDef;
 
 typedef struct {
     Function *fns;
     size_t fnc;
     StructDef *structs;
     size_t structc;
+    EnumDef *enums;
+    size_t enumc;
+    ImportDef *imports;
+    size_t importc;
 } Module;
 
 Expr *expr_new_int(int64_t v, size_t line);
@@ -252,6 +370,11 @@ Expr *expr_new_index(Expr *array, Expr *index, size_t line);
 Expr *expr_new_map(Expr **keys, Expr **values, size_t len, size_t line);
 Expr *expr_new_struct_literal(char *struct_name, char **field_names, Expr **field_values, size_t field_count, size_t line);
 Expr *expr_new_field_access(Expr *object, char *field_name, size_t line);
+Expr *expr_new_tuple(Expr **elements, size_t len, size_t line);
+Expr *expr_new_lambda(Param *params, size_t paramc, Expr *body, Type ret_type, size_t line);
+Expr *expr_new_enum_member(char *enum_name, char *member_name, size_t line);
+Expr *expr_new_fstring(char *template_str, size_t line);
+Expr *expr_new_method_call(Expr *object, char *method_name, Expr **args, size_t argc, size_t line);
 
 Stmt *stmt_new_let(char *name, Type t, Expr *init, size_t line);
 Stmt *stmt_new_assign(char *name, Expr *value, size_t line);

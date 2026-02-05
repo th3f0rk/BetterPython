@@ -41,6 +41,13 @@ typedef enum {
     TOK_FINALLY,
     TOK_THROW,
     TOK_STRUCT,
+    TOK_ENUM,
+    TOK_FN,
+    TOK_FROM,
+    TOK_SELF,
+
+    TOK_FSTRING,    // f"..." string
+    TOK_AT,         // @ for decorators
 
     TOK_COLON,
     TOK_COMMA,

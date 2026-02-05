@@ -16,6 +16,15 @@
 #include <stdint.h>
 #include <fcntl.h>
 
+// Global storage for command line arguments
+static int g_argc = 0;
+static char **g_argv = NULL;
+
+void stdlib_set_args(int argc, char **argv) {
+    g_argc = argc;
+    g_argv = argv;
+}
+
 static BpStr *val_to_str(Value v, Gc *gc) {
     char buf[64];
     if (v.type == VAL_INT) {
@@ -1158,6 +1167,23 @@ static Value bi_map_delete(Value *args, uint16_t argc) {
     return v_bool(gc_map_delete(args[0].as.map, args[1]));
 }
 
+static Value bi_argv(Gc *gc) {
+    // Create an array of strings from command line arguments
+    BpArray *arr = gc_new_array(gc, (size_t)g_argc);
+    for (int i = 0; i < g_argc; i++) {
+        const char *arg = g_argv[i];
+        size_t len = strlen(arg);
+        BpStr *s = gc_new_str(gc, arg, len);
+        arr->data[i] = v_str(s);
+    }
+    arr->len = (size_t)g_argc;
+    return v_array(arr);
+}
+
+static Value bi_argc(void) {
+    return v_int((int64_t)g_argc);
+}
+
 Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_code, bool *exiting) {
     switch (id) {
         case BI_PRINT: return bi_print(args, argc, gc);
@@ -1279,6 +1305,10 @@ Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_co
         case BI_MAP_VALUES: return bi_map_values(args, argc, gc);
         case BI_MAP_HAS_KEY: return bi_map_has_key(args, argc);
         case BI_MAP_DELETE: return bi_map_delete(args, argc);
+
+        // System/argv
+        case BI_ARGV: return bi_argv(gc);
+        case BI_ARGC: return bi_argc();
 
         default: break;
     }
