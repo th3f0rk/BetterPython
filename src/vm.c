@@ -93,12 +93,20 @@ void vm_init(Vm *vm, BpModule mod) {
     // Initialize inline cache (2-5x faster method dispatch)
     vm->ic_cache = bp_xmalloc(IC_CACHE_SIZE * sizeof(InlineCacheEntry));
     memset(vm->ic_cache, 0, IC_CACHE_SIZE * sizeof(InlineCacheEntry));
+
+    // JIT is initialized separately when using register VM
+    vm->jit = NULL;
 }
 
 void vm_free(Vm *vm) {
     gc_free_all(&vm->gc);
     free(vm->locals);
     free(vm->ic_cache);
+
+    // JIT is freed by caller if it was initialized
+    // (jit_shutdown handles this)
+    vm->jit = NULL;
+
     bc_module_free(&vm->mod);
 }
 

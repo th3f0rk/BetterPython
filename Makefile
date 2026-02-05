@@ -18,7 +18,10 @@ SRC := \
     src/gc.c \
     src/stdlib.c \
     src/security.c \
-    src/util.c
+    src/util.c \
+    src/jit/jit_profile.c \
+    src/jit/jit_x64.c \
+    src/jit/jit_compile.c
 
 OBJ := $(SRC:.c=.o)
 

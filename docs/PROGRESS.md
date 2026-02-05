@@ -3,8 +3,8 @@
 ## Current Task: Register-Based VM + JIT Compilation
 
 ### Overall Status
-- **Register-Based VM**: IN PROGRESS (Phase 1)
-- **JIT Compilation**: NOT STARTED
+- **Register-Based VM**: COMPLETE
+- **JIT Compilation**: IN PROGRESS (Phase 2 - Core Implementation)
 
 ### Session Log
 
@@ -21,35 +21,72 @@
 - [x] Implemented register allocator (regalloc.c/h)
 - [x] Implemented register code generator (reg_compiler.c/h)
 - [x] Implemented register VM execution (reg_vm.c/h)
+- [x] Fixed bytecode serialization (version 2 format)
+- [x] Fixed parameter handling (reg_alloc_param)
+- [x] Created 20 register VM tests (all passing)
+- **Commits**: 55f5e14, 47334f2, 9867c23, 2af51a5
+
+#### Session 3 - JIT Compilation (In Progress)
+- [x] Created JIT_DESIGN.md
+- [x] Implemented profiling infrastructure (jit_profile.c)
+- [x] Implemented code buffer management (jit_profile.c)
+- [x] Implemented x86-64 code generation (jit_x64.c/h)
+- [x] Implemented JIT compiler (jit_compile.c)
+- [x] Updated Makefile with JIT files
+- [x] Updated VM structures for JIT support
+- [ ] Integrate JIT dispatch into register VM
+- [ ] Add --jit command line flag
 - [ ] Test and benchmark
-- **Commits**: 55f5e14, 47334f2, (pending)
-
-### Files Created/Modified This Session
-- docs/REGISTER_VM_DESIGN.md (created)
-- docs/PROGRESS.md (created)
-- src/bytecode.h (modified - added R_* opcodes, BcFormat)
-- src/regalloc.c (created - linear scan register allocator)
-- src/regalloc.h (created - register allocator header)
-- src/reg_compiler.c (created - AST to register bytecode)
-- src/reg_compiler.h (created - register compiler header)
-- src/reg_vm.c (created - register VM execution loop)
-- src/reg_vm.h (created - register VM header)
-- Makefile (modified - added regalloc.c, reg_compiler.c, reg_vm.c)
-
-### Key Design Decisions
-1. **256 virtual registers** (r0-r255)
-2. **3-address instruction format** (dst, src1, src2)
-3. **Backward compatible** - keep stack format, add new register format
-4. **Linear scan register allocation** - simple and fast
-
-### Next Steps (for next session if interrupted)
-1. Read this file and REGISTER_VM_DESIGN.md
-2. Check git log for recent commits
-3. Continue from current phase
 
 ### Test Status
-- All 19 tests passing (as of session 1)
-- Tests need updating after register VM complete
+- **Standard tests**: 19 passing
+- **Register VM tests**: 20 passing
+- **Total**: 39 tests passing
+
+### Files Created This Session
+- docs/JIT_DESIGN.md (created)
+- src/jit/jit.h (created - JIT API header)
+- src/jit/jit_profile.c (created - profiling and code cache)
+- src/jit/jit_x64.h (created - x86-64 instruction macros)
+- src/jit/jit_x64.c (created - x86-64 code generation)
+- src/jit/jit_compile.c (created - bytecode to native compiler)
+
+### Key Design Decisions (JIT)
+1. **Profile-guided compilation**: Compile after 100 calls
+2. **x86-64 target**: Primary architecture
+3. **Register mapping**: Virtual r0-r7 → x86-64 physical registers
+4. **Spilled registers**: r8+ stored on stack
+5. **4MB code cache**: Bump allocator for simplicity
+6. **GC integration**: Safepoints at function entry and loop back-edges
+
+### JIT Compilation Status
+
+**Supported Operations:**
+- Integer constants (R_CONST_I64)
+- Boolean constants (R_CONST_BOOL)
+- Register moves (R_MOV)
+- Integer arithmetic (R_ADD_I64, R_SUB_I64, R_MUL_I64, R_DIV_I64, R_MOD_I64)
+- Integer negation (R_NEG_I64)
+- Comparisons (R_EQ, R_NEQ, R_LT, R_LTE, R_GT, R_GTE)
+- Logical NOT (R_NOT)
+- Control flow (R_JMP, R_JMP_IF_FALSE, R_JMP_IF_TRUE)
+- Return (R_RET)
+
+**Not Yet Supported (fall back to interpreter):**
+- Float operations
+- String operations
+- Function calls (R_CALL, R_CALL_BUILTIN)
+- Array/Map operations
+- Struct/Class operations
+- Exception handling
+- FFI calls
+
+### Next Steps
+1. Add profiling to R_CALL opcode in reg_vm.c
+2. Check for JIT-compiled code and dispatch to native
+3. Add --jit flag to bpvm
+4. Create benchmark tests
+5. Optimize hot paths
 
 ---
 *Auto-updated by Claude during development*

@@ -15,7 +15,10 @@ typedef struct {
     BpFunc *fn_ptr;            // Cached function pointer (avoids array lookup)
 } InlineCacheEntry;
 
-typedef struct {
+// Forward declare JIT context
+struct JitContext;
+
+typedef struct Vm {
     BpModule mod;
     Gc gc;
 
@@ -30,6 +33,9 @@ typedef struct {
 
     // Inline cache for function calls (initialized on first run)
     InlineCacheEntry *ic_cache;
+
+    // JIT compilation context (optional, NULL if JIT disabled)
+    struct JitContext *jit;
 } Vm;
 
 void vm_init(Vm *vm, BpModule mod);
