@@ -9,6 +9,7 @@
 #include "util.h"
 #include "module_resolver.h"
 #include "multi_compile.h"
+#include "jit/jit.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -101,14 +102,31 @@ static int cmd_bpvm(int argc, char **argv) {
     Vm vm;
     vm_init(&vm, m);
 
+    // Initialize JIT for register-based bytecode
+    JitContext jit;
+    bool use_jit = (m.fn_len > 0 && m.funcs[m.entry].format == BC_FORMAT_REGISTER);
+    if (use_jit) {
+        jit_init(&jit, m.fn_len);
+        vm.jit = &jit;
+    }
+
     // Auto-detect bytecode format and use appropriate VM
     int code;
-    if (m.fn_len > 0 && m.funcs[m.entry].format == BC_FORMAT_REGISTER) {
+    if (use_jit) {
         code = reg_vm_run(&vm);
     } else {
         code = vm_run(&vm);
     }
 
+    // Print JIT stats if any compilations happened
+    if (use_jit && jit.total_compilations > 0) {
+        jit_print_stats(&jit);
+    }
+
+    // Cleanup
+    if (use_jit) {
+        jit_shutdown(&jit);
+    }
     vm_free(&vm);
     return code;
 }

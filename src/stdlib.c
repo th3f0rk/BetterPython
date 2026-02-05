@@ -33,6 +33,11 @@ static BpStr *val_to_str(Value v, Gc *gc) {
         snprintf(buf, sizeof(buf), "%lld", (long long)v.as.i);
         return gc_new_str(gc, buf, strlen(buf));
     }
+    if (v.type == VAL_FLOAT) {
+        // Use %g for clean output (removes trailing zeros)
+        snprintf(buf, sizeof(buf), "%g", v.as.f);
+        return gc_new_str(gc, buf, strlen(buf));
+    }
     if (v.type == VAL_BOOL) {
         const char *s = v.as.b ? "true" : "false";
         return gc_new_str(gc, s, strlen(s));

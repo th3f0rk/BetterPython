@@ -1,0 +1,18 @@
+def main() -> int:
+    let parts: [str] = str_split("a,b,c", ",")
+    if array_len(parts) == 3:
+        print("str_split: PASS")
+    else:
+        print("str_split: FAIL")
+        return 1
+
+    let arr: [str] = ["x", "y", "z"]
+    let joined: str = str_join(arr, "-")
+    if joined == "x-y-z":
+        print("str_join: PASS")
+    else:
+        print("str_join: FAIL")
+        return 1
+
+    print("ALL SHORT NAME TESTS OK")
+    return 0

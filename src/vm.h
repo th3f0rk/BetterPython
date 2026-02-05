@@ -2,6 +2,7 @@
 #include "bytecode.h"
 #include "common.h"
 #include "gc.h"
+#include "jit/jit.h"
 
 // Inline cache entry for call site caching (10-20% faster call-heavy code)
 // Monomorphic cache: stores last function called at each call site
@@ -14,9 +15,6 @@ typedef struct {
     uint32_t fn_idx;           // Expected function index
     BpFunc *fn_ptr;            // Cached function pointer (avoids array lookup)
 } InlineCacheEntry;
-
-// Forward declare JIT context
-struct JitContext;
 
 typedef struct Vm {
     BpModule mod;
@@ -35,7 +33,7 @@ typedef struct Vm {
     InlineCacheEntry *ic_cache;
 
     // JIT compilation context (optional, NULL if JIT disabled)
-    struct JitContext *jit;
+    JitContext *jit;
 } Vm;
 
 void vm_init(Vm *vm, BpModule mod);

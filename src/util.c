@@ -29,3 +29,13 @@ void bp_fatal(const char *fmt, ...) {
     va_end(ap);
     exit(1);
 }
+
+void bp_fatal_at(size_t line, const char *fmt, ...) {
+    fprintf(stderr, "line %zu: ", line);
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    fprintf(stderr, "\n");
+    va_end(ap);
+    exit(1);
+}
