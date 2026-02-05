@@ -45,13 +45,13 @@ $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
 
 $(BPCC): $(BIN_DIR) $(OBJ)
-	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm -lpthread
+	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm -lpthread -ldl
 
 $(BPVM): $(BIN_DIR) $(OBJ)
-	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm -lpthread
+	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm -lpthread -ldl
 
 $(BPREPL): $(BIN_DIR) $(OBJ)
-	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm -lpthread
+	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm -lpthread -ldl
 
 $(BPRUN): $(BIN_DIR) tools/betterpython.sh
 	cp tools/betterpython.sh $@

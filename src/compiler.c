@@ -82,6 +82,17 @@ static uint32_t strpool_add(StrPool *sp, const char *s) {
     return (uint32_t)sp->len++;
 }
 
+/* Convert AST Type to FFI type code for parameter marshalling */
+static uint8_t type_to_ffi_tc(TypeKind k) {
+    switch (k) {
+        case TY_FLOAT: return FFI_TC_FLOAT;
+        case TY_STR:   return FFI_TC_STR;
+        case TY_PTR:   return FFI_TC_PTR;
+        case TY_VOID:  return FFI_TC_VOID;
+        default:       return FFI_TC_INT;   /* int, bool, enum, all fixed-width ints */
+    }
+}
+
 static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "print") == 0) return BI_PRINT;
     if (strcmp(name, "len") == 0) return BI_LEN;
@@ -602,7 +613,13 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
         case EX_CALL: {
             for (size_t i = 0; i < e->as.call.argc; i++) emit_expr(fe, e->as.call.args[i]);
 
-            if (e->as.call.fn_index < 0) {
+            if (e->as.call.fn_index <= -100) {
+                // FFI extern function call (fn_index = -(100 + extern_index))
+                uint16_t extern_id = (uint16_t)(-(e->as.call.fn_index + 100));
+                buf_u8(&fe->code, OP_FFI_CALL);
+                buf_u16(&fe->code, extern_id);
+                buf_u8(&fe->code, (uint8_t)e->as.call.argc);
+            } else if (e->as.call.fn_index < 0) {
                 // Builtin function call
                 BuiltinId id = builtin_id(e->as.call.name);
                 buf_u8(&fe->code, OP_CALL_BUILTIN);
@@ -825,7 +842,7 @@ BpModule compile_module(const Module *m) {
         }
     }
 
-    // Compile extern function declarations
+    // Compile extern function declarations (FFI metadata)
     out.extern_func_len = m->externc;
     if (m->externc > 0) {
         out.extern_funcs = bp_xmalloc(m->externc * sizeof(*out.extern_funcs));
@@ -837,8 +854,15 @@ BpModule compile_module(const Module *m) {
             out.extern_funcs[i].library = bp_xstrdup(ed->library);
             out.extern_funcs[i].param_count = (uint16_t)ed->paramc;
             out.extern_funcs[i].is_variadic = ed->is_variadic;
+            out.extern_funcs[i].ret_type = type_to_ffi_tc(ed->ret_type.kind);
             out.extern_funcs[i].handle = NULL;
             out.extern_funcs[i].fn_ptr = NULL;
+            if (ed->paramc > 0) {
+                out.extern_funcs[i].param_types = bp_xmalloc(ed->paramc);
+                for (size_t j = 0; j < ed->paramc; j++) {
+                    out.extern_funcs[i].param_types[j] = type_to_ffi_tc(ed->params[j].type.kind);
+                }
+            }
         }
     }
 

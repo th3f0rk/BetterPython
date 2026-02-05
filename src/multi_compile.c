@@ -492,6 +492,100 @@ bool multi_compile(ModuleGraph *g, BpModule *out) {
     out->strings = all_strings;
     out->str_len = all_str_count;
 
+    // Merge extern functions from all modules and patch OP_FFI_CALL indices
+    {
+        BpExternFunc *all_externs = NULL;
+        size_t all_extern_count = 0;
+        size_t all_extern_cap = 0;
+
+        // Collect all externs, tracking per-module offset for bytecode patching
+        size_t *extern_offsets = bp_xmalloc(order_count * sizeof(size_t));
+        size_t fn_off = 0;
+        for (size_t i = 0; i < order_count; i++) {
+            ModuleInfo *mi = module_graph_get(g, order[i]);
+            extern_offsets[i] = all_extern_count;
+
+            for (size_t e = 0; e < mi->ast.externc; e++) {
+                ExternDef *ed = &mi->ast.externs[e];
+                // Add to merged extern list
+                if (all_extern_count + 1 > all_extern_cap) {
+                    all_extern_cap = all_extern_cap ? all_extern_cap * 2 : 8;
+                    all_externs = bp_xrealloc(all_externs, all_extern_cap * sizeof(*all_externs));
+                }
+                BpExternFunc *ef = &all_externs[all_extern_count++];
+                memset(ef, 0, sizeof(*ef));
+                ef->name = bp_xstrdup(ed->name);
+                ef->c_name = ed->c_name ? bp_xstrdup(ed->c_name) : bp_xstrdup(ed->name);
+                ef->library = bp_xstrdup(ed->library);
+                ef->param_count = (uint16_t)ed->paramc;
+                ef->is_variadic = ed->is_variadic;
+                ef->ret_type = 0; /* Will be set from type info below */
+                switch (ed->ret_type.kind) {
+                    case TY_FLOAT: ef->ret_type = FFI_TC_FLOAT; break;
+                    case TY_STR:   ef->ret_type = FFI_TC_STR; break;
+                    case TY_PTR:   ef->ret_type = FFI_TC_PTR; break;
+                    case TY_VOID:  ef->ret_type = FFI_TC_VOID; break;
+                    default:       ef->ret_type = FFI_TC_INT; break;
+                }
+                if (ed->paramc > 0) {
+                    ef->param_types = bp_xmalloc(ed->paramc);
+                    for (size_t p = 0; p < ed->paramc; p++) {
+                        switch (ed->params[p].type.kind) {
+                            case TY_FLOAT: ef->param_types[p] = FFI_TC_FLOAT; break;
+                            case TY_STR:   ef->param_types[p] = FFI_TC_STR; break;
+                            case TY_PTR:   ef->param_types[p] = FFI_TC_PTR; break;
+                            default:       ef->param_types[p] = FFI_TC_INT; break;
+                        }
+                    }
+                }
+            }
+
+            // Patch OP_FFI_CALL instructions in this module's functions
+            if (extern_offsets[i] > 0) {
+                for (size_t f = 0; f < mi->ast.fnc; f++) {
+                    BpFunc *func = &out->funcs[fn_off + f];
+                    uint8_t *code = func->code;
+                    size_t ip = 0;
+                    while (ip < func->code_len) {
+                        uint8_t op = code[ip++];
+                        if (op == OP_FFI_CALL) {
+                            // Patch the extern_id by adding the module's offset
+                            uint16_t old_id;
+                            memcpy(&old_id, &code[ip], 2);
+                            uint16_t new_id = old_id + (uint16_t)extern_offsets[i];
+                            memcpy(&code[ip], &new_id, 2);
+                            ip += 2; // extern_id
+                            ip += 1; // argc
+                        } else {
+                            // Skip instruction operands based on opcode
+                            switch (op) {
+                                case OP_CONST_I64: case OP_CONST_F64: ip += 8; break;
+                                case OP_CONST_BOOL: ip += 1; break;
+                                case OP_CONST_STR: ip += 4; break;
+                                case OP_LOAD_LOCAL: case OP_STORE_LOCAL: ip += 2; break;
+                                case OP_JMP: case OP_JMP_IF_FALSE: ip += 4; break;
+                                case OP_CALL: case OP_CALL_BUILTIN: ip += 3; break;
+                                case OP_ARRAY_NEW: case OP_MAP_NEW: ip += 2; break;
+                                case OP_STRUCT_NEW: ip += 2; break;
+                                case OP_STRUCT_GET: case OP_STRUCT_SET: ip += 2; break;
+                                case OP_CLASS_NEW: case OP_METHOD_CALL: case OP_SUPER_CALL: ip += 3; break;
+                                case OP_CLASS_GET: case OP_CLASS_SET: ip += 2; break;
+                                case OP_TRY_BEGIN: ip += 10; break;
+                                default: break; /* All other opcodes have no operands */
+                            }
+                        }
+                    }
+                }
+            }
+
+            fn_off += mi->ast.fnc;
+        }
+
+        out->extern_funcs = all_externs;
+        out->extern_func_len = all_extern_count;
+        free(extern_offsets);
+    }
+
     // Cleanup
     for (size_t i = 0; i < order_count; i++) {
         free(fn_maps[i].local_to_global);

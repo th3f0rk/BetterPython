@@ -2,6 +2,7 @@
 #include "util.h"
 #include <string.h>
 #include <stdio.h>
+#include <dlfcn.h>
 
 static void w_u32(FILE *f, uint32_t x) { fwrite(&x, 4, 1, f); }
 static void w_u16(FILE *f, uint16_t x) { fwrite(&x, 2, 1, f); }
@@ -28,6 +29,14 @@ void bc_module_free(BpModule *m) {
         free(m->funcs[i].str_const_ids);
     }
     free(m->funcs);
+    for (size_t i = 0; i < m->extern_func_len; i++) {
+        free(m->extern_funcs[i].name);
+        free(m->extern_funcs[i].c_name);
+        free(m->extern_funcs[i].library);
+        free(m->extern_funcs[i].param_types);
+        if (m->extern_funcs[i].handle) dlclose(m->extern_funcs[i].handle);
+    }
+    free(m->extern_funcs);
     memset(m, 0, sizeof(*m));
 }
 
@@ -35,9 +44,9 @@ int bc_write_file(const char *path, const BpModule *m) {
     FILE *f = fopen(path, "wb");
     if (!f) return 0;
 
-    // magic "BPC0" + version 2 (includes format and reg_count)
+    // magic "BPC0" + version 3 (adds extern function metadata)
     w_bytes(f, "BPC0", 4);
-    w_u32(f, 2);
+    w_u32(f, 3);
 
     w_u32(f, (uint32_t)m->entry);
 
@@ -67,6 +76,30 @@ int bc_write_file(const char *path, const BpModule *m) {
         w_bytes(f, fn->code, fn->code_len);
     }
 
+    /* Extern functions (FFI metadata) */
+    w_u32(f, (uint32_t)m->extern_func_len);
+    for (size_t i = 0; i < m->extern_func_len; i++) {
+        BpExternFunc *ext = &m->extern_funcs[i];
+        uint32_t nlen = (uint32_t)strlen(ext->name);
+        w_u32(f, nlen);
+        w_bytes(f, ext->name, nlen);
+
+        uint32_t clen = (uint32_t)strlen(ext->c_name);
+        w_u32(f, clen);
+        w_bytes(f, ext->c_name, clen);
+
+        uint32_t llen = (uint32_t)strlen(ext->library);
+        w_u32(f, llen);
+        w_bytes(f, ext->library, llen);
+
+        w_u16(f, ext->param_count);
+        w_u8(f, ext->ret_type);
+        w_u8(f, ext->is_variadic ? 1 : 0);
+        if (ext->param_count > 0) {
+            w_bytes(f, ext->param_types, ext->param_count);
+        }
+    }
+
     fclose(f);
     return 1;
 }
@@ -80,7 +113,7 @@ BpModule bc_read_file(const char *path) {
     if (memcmp(magic, "BPC0", 4) != 0) bp_fatal("bad .bpc file");
 
     uint32_t ver = r_u32(f);
-    if (ver != 1 && ver != 2) bp_fatal("unsupported .bpc version %u", ver);
+    if (ver != 1 && ver != 2 && ver != 3) bp_fatal("unsupported .bpc version %u", ver);
 
     BpModule m;
     memset(&m, 0, sizeof(m));
@@ -128,6 +161,41 @@ BpModule bc_read_file(const char *path) {
         m.funcs[i].code_len = r_u32(f);
         m.funcs[i].code = bp_xmalloc(m.funcs[i].code_len);
         r_bytes(f, m.funcs[i].code, m.funcs[i].code_len);
+    }
+
+    /* Extern functions (FFI metadata) — version 3+ */
+    if (ver >= 3) {
+        m.extern_func_len = r_u32(f);
+        if (m.extern_func_len > 0) {
+            m.extern_funcs = bp_xmalloc(m.extern_func_len * sizeof(*m.extern_funcs));
+            memset(m.extern_funcs, 0, m.extern_func_len * sizeof(*m.extern_funcs));
+            for (size_t i = 0; i < m.extern_func_len; i++) {
+                uint32_t nlen = r_u32(f);
+                m.extern_funcs[i].name = bp_xmalloc(nlen + 1);
+                r_bytes(f, m.extern_funcs[i].name, nlen);
+                m.extern_funcs[i].name[nlen] = '\0';
+
+                uint32_t clen = r_u32(f);
+                m.extern_funcs[i].c_name = bp_xmalloc(clen + 1);
+                r_bytes(f, m.extern_funcs[i].c_name, clen);
+                m.extern_funcs[i].c_name[clen] = '\0';
+
+                uint32_t llen = r_u32(f);
+                m.extern_funcs[i].library = bp_xmalloc(llen + 1);
+                r_bytes(f, m.extern_funcs[i].library, llen);
+                m.extern_funcs[i].library[llen] = '\0';
+
+                m.extern_funcs[i].param_count = r_u16(f);
+                m.extern_funcs[i].ret_type = r_u8(f);
+                m.extern_funcs[i].is_variadic = r_u8(f) ? true : false;
+                if (m.extern_funcs[i].param_count > 0) {
+                    m.extern_funcs[i].param_types = bp_xmalloc(m.extern_funcs[i].param_count);
+                    r_bytes(f, m.extern_funcs[i].param_types, m.extern_funcs[i].param_count);
+                }
+                m.extern_funcs[i].handle = NULL;
+                m.extern_funcs[i].fn_ptr = NULL;
+            }
+        }
     }
 
     fclose(f);

@@ -1739,6 +1739,20 @@ void typecheck_module(Module *m) {
         fntable_add(&g_fntable, f->name, param_types, f->paramc, f->ret_type, i);
     }
 
+    // Register extern functions (FFI) so calls to them are recognized
+    for (size_t i = 0; i < m->externc; i++) {
+        ExternDef *ed = &m->externs[i];
+        Type *param_types = NULL;
+        if (ed->paramc > 0) {
+            param_types = bp_xmalloc(ed->paramc * sizeof(Type));
+            for (size_t p = 0; p < ed->paramc; p++) {
+                param_types[p] = ed->params[p].type;
+            }
+        }
+        // Use fn_index = -(100 + i) to encode as FFI call
+        fntable_add(&g_fntable, ed->name, param_types, ed->paramc, ed->ret_type, (size_t)(int)(-(100 + (int)i)));
+    }
+
     // Now type-check all function bodies
     for (size_t i = 0; i < m->fnc; i++) {
         Function *f = &m->fns[i];

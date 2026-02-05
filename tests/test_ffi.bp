@@ -1,0 +1,141 @@
+# Test: FFI (Foreign Function Interface)
+# Tests calling C functions from BetterPython via extern declarations
+
+# --- libc functions ---
+extern fn c_strlen(s: str) -> int from "libc.so.6" as "strlen"
+extern fn c_abs(x: int) -> int from "libc.so.6" as "abs"
+extern fn c_atoi(s: str) -> int from "libc.so.6" as "atoi"
+
+# --- libm functions (all-float signatures) ---
+extern fn c_sqrt(x: float) -> float from "libm.so.6" as "sqrt"
+extern fn c_sin(x: float) -> float from "libm.so.6" as "sin"
+extern fn c_cos(x: float) -> float from "libm.so.6" as "cos"
+extern fn c_pow(base: float, exp: float) -> float from "libm.so.6" as "pow"
+extern fn c_floor(x: float) -> float from "libm.so.6" as "floor"
+
+# --- Custom shared library ---
+extern fn add_numbers(a: int, b: int) -> int from "./tests/ffi/libtest_ffi.so"
+extern fn multiply(a: int, b: int) -> int from "./tests/ffi/libtest_ffi.so"
+extern fn add_doubles(a: float, b: float) -> float from "./tests/ffi/libtest_ffi.so"
+extern fn circle_area(r: float) -> float from "./tests/ffi/libtest_ffi.so"
+extern fn string_length(s: str) -> int from "./tests/ffi/libtest_ffi.so"
+extern fn greet() -> str from "./tests/ffi/libtest_ffi.so"
+
+def main() -> int:
+    let failures: int = 0
+
+    # Test 1: libc strlen
+    let slen: int = c_strlen("hello")
+    if slen == 5:
+        print("Test 1 - libc strlen: PASS")
+    else:
+        print("Test 1 - libc strlen: FAIL")
+        failures = failures + 1
+
+    # Test 2: libc abs
+    let a: int = c_abs(-42)
+    if a == 42:
+        print("Test 2 - libc abs: PASS")
+    else:
+        print("Test 2 - libc abs: FAIL")
+        failures = failures + 1
+
+    # Test 3: libc atoi
+    let n: int = c_atoi("12345")
+    if n == 12345:
+        print("Test 3 - libc atoi: PASS")
+    else:
+        print("Test 3 - libc atoi: FAIL")
+        failures = failures + 1
+
+    # Test 4: libm sqrt
+    let sq: float = c_sqrt(16.0)
+    if sq == 4.0:
+        print("Test 4 - libm sqrt: PASS")
+    else:
+        print("Test 4 - libm sqrt: FAIL")
+        failures = failures + 1
+
+    # Test 5: libm sin
+    let s: float = c_sin(0.0)
+    if s == 0.0:
+        print("Test 5 - libm sin(0): PASS")
+    else:
+        print("Test 5 - libm sin(0): FAIL")
+        failures = failures + 1
+
+    # Test 6: libm pow
+    let p: float = c_pow(2.0, 10.0)
+    if p == 1024.0:
+        print("Test 6 - libm pow(2,10): PASS")
+    else:
+        print("Test 6 - libm pow(2,10): FAIL")
+        failures = failures + 1
+
+    # Test 7: libm floor
+    let fl: float = c_floor(3.7)
+    if fl == 3.0:
+        print("Test 7 - libm floor: PASS")
+    else:
+        print("Test 7 - libm floor: FAIL")
+        failures = failures + 1
+
+    # Test 8: Custom lib add_numbers
+    let sum: int = add_numbers(17, 25)
+    if sum == 42:
+        print("Test 8 - custom add_numbers: PASS")
+    else:
+        print("Test 8 - custom add_numbers: FAIL")
+        failures = failures + 1
+
+    # Test 9: Custom lib multiply
+    let prod: int = multiply(6, 7)
+    if prod == 42:
+        print("Test 9 - custom multiply: PASS")
+    else:
+        print("Test 9 - custom multiply: FAIL")
+        failures = failures + 1
+
+    # Test 10: Custom lib add_doubles
+    let dsum: float = add_doubles(1.5, 2.5)
+    if dsum == 4.0:
+        print("Test 10 - custom add_doubles: PASS")
+    else:
+        print("Test 10 - custom add_doubles: FAIL")
+        failures = failures + 1
+
+    # Test 11: Custom lib circle_area
+    let area: float = circle_area(1.0)
+    if area > 3.14:
+        if area < 3.15:
+            print("Test 11 - custom circle_area: PASS")
+        else:
+            print("Test 11 - custom circle_area: FAIL")
+            failures = failures + 1
+    else:
+        print("Test 11 - custom circle_area: FAIL")
+        failures = failures + 1
+
+    # Test 12: Custom lib string_length
+    let sl: int = string_length("BetterPython")
+    if sl == 12:
+        print("Test 12 - custom string_length: PASS")
+    else:
+        print("Test 12 - custom string_length: FAIL")
+        failures = failures + 1
+
+    # Test 13: Custom lib greet (returns string)
+    let g: str = greet()
+    if g == "Hello from C!":
+        print("Test 13 - custom greet: PASS")
+    else:
+        print("Test 13 - custom greet: FAIL")
+        failures = failures + 1
+
+    if failures == 0:
+        print("All FFI tests passed!")
+    else:
+        print("FFI test failures: ")
+        print(failures)
+
+    return failures
