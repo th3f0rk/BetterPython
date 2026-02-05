@@ -24,8 +24,12 @@ BPCC := $(BIN_DIR)/bpcc
 BPVM := $(BIN_DIR)/bpvm
 BPREPL := $(BIN_DIR)/bprepl
 BPRUN := $(BIN_DIR)/betterpython
+BPPKG := $(BIN_DIR)/bppkg
+BPLSP := $(BIN_DIR)/bplsp
+BPLINT := $(BIN_DIR)/bplint
+BPFMT := $(BIN_DIR)/bpfmt
 
-all: $(BPCC) $(BPVM) $(BPREPL) $(BPRUN)
+all: $(BPCC) $(BPVM) $(BPREPL) $(BPRUN) $(BPPKG) $(BPLSP) $(BPLINT) $(BPFMT)
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
@@ -43,12 +47,28 @@ $(BPRUN): $(BIN_DIR) tools/betterpython.sh
 	cp tools/betterpython.sh $@
 	chmod +x $@
 
+$(BPPKG): $(BIN_DIR) src/bppkg.c
+	$(CC) $(CFLAGS) src/bppkg.c -o $@ $(LDFLAGS)
+
+$(BPLSP): $(BIN_DIR) src/bplsp.c
+	$(CC) $(CFLAGS) src/bplsp.c -o $@ $(LDFLAGS)
+
+$(BPLINT): $(BIN_DIR) src/bplint.c
+	$(CC) $(CFLAGS) src/bplint.c -o $@ $(LDFLAGS)
+
+$(BPFMT): $(BIN_DIR) src/bpfmt.c
+	$(CC) $(CFLAGS) src/bpfmt.c -o $@ $(LDFLAGS)
+
 install: all
 	install -d $(PREFIX)/bin
 	install -m 0755 $(BPCC) $(PREFIX)/bin/bpcc
 	install -m 0755 $(BPVM) $(PREFIX)/bin/bpvm
 	install -m 0755 $(BPREPL) $(PREFIX)/bin/bprepl
 	install -m 0755 $(BPRUN) $(PREFIX)/bin/betterpython
+	install -m 0755 $(BPPKG) $(PREFIX)/bin/bppkg
+	install -m 0755 $(BPLSP) $(PREFIX)/bin/bplsp
+	install -m 0755 $(BPLINT) $(PREFIX)/bin/bplint
+	install -m 0755 $(BPFMT) $(PREFIX)/bin/bpfmt
 
 clean:
 	rm -f $(OBJ)
