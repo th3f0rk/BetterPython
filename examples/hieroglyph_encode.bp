@@ -52,7 +52,7 @@ def decode_from_hieroglyphs(hieroglyph_str: str) -> str:
 def main() -> int:
     print("Egyptian Hieroglyph File Encoder")
     print("")
-    let test_str: str = "Hello, Divine Singularity!"
+    let test_str: str = "Hello, BetterPython!"
     print("Original:", test_str)
     let base64_encoded: str = base64_encode(test_str)
     print("Base64:", base64_encoded)

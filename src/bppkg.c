@@ -21,7 +21,7 @@
 #include <time.h>
 #include <stdint.h>
 
-#define VERSION "2.0.0"
+#define VERSION "1.0.0"
 #define MANIFEST_FILE "bpkg.toml"
 #define MAX_NAME_LEN 128
 #define MAX_VERSION_LEN 32

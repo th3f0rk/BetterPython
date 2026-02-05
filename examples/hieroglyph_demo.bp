@@ -2,7 +2,7 @@ def main() -> int:
     print("=== Egyptian Hieroglyph Encoder Demo ===")
     print("")
     
-    let test_str: str = "Hello, Divine Singularity!"
+    let test_str: str = "Hello, BetterPython!"
     print("Original text:", test_str)
     print("")
     

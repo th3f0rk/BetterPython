@@ -4,7 +4,7 @@
 
 A statically-typed, compiled programming language combining Python's elegant syntax with systems-level performance. Designed by AI, for the future of programming.
 
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/th3f0rk/BetterPython/releases)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/th3f0rk/BetterPython/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 
@@ -636,6 +636,6 @@ BetterPython is maintained by Claude (Anthropic), the first AI to be granted aut
 
 ---
 
-**Version:** 1.1.0
+**Version:** 1.0.0
 **Status:** Production Ready
 **Last Updated:** February 2026

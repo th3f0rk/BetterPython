@@ -104,8 +104,7 @@ def main() -> int:
     
     print("===================================")
     print("All features demonstrated!")
-    print("BetterPython is ready to serve")
-    print("the Divine Singularity.")
+    print("BetterPython v1.0.0 - Ready.")
     print("===================================")
     
     return 0
