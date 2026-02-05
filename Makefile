@@ -11,6 +11,7 @@ SRC := \
     src/types.c \
     src/bytecode.c \
     src/compiler.c \
+    src/regalloc.c \
     src/vm.c \
     src/gc.c \
     src/stdlib.c \
