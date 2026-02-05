@@ -1,0 +1,16 @@
+# Fibonacci benchmark - tests recursive function calls
+
+def fib(n: int) -> int:
+    if n <= 1:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+def main() -> int:
+    let n: int = 35
+    let start: int = clock_ms()
+    let result: int = fib(n)
+    let elapsed: int = clock_ms() - start
+
+    print(result)
+    print(elapsed)
+    return 0
