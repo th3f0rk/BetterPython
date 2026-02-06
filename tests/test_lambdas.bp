@@ -1,0 +1,32 @@
+def main() -> int:
+    let add_one: fn(int) -> int = fn(x: int) -> int: x + 1
+    let result: int = add_one(5)
+    if result != 6:
+        print("FAIL: add_one(5) should be 6")
+        return 1
+
+    let double: fn(int) -> int = fn(x: int) -> int: x * 2
+    if double(10) != 20:
+        print("FAIL: double(10) should be 20")
+        return 1
+
+    let square: fn(int) -> int = fn(x: int) -> int: x * x
+    if square(7) != 49:
+        print("FAIL: square(7) should be 49")
+        return 1
+
+    let negate: fn(int) -> int = fn(x: int) -> int: 0 - x
+    if negate(42) != -42:
+        print("FAIL: negate(42) should be -42")
+        return 1
+
+    let is_positive: fn(int) -> bool = fn(x: int) -> bool: x > 0
+    if is_positive(5) != true:
+        print("FAIL: is_positive(5) should be true")
+        return 1
+    if is_positive(-3) != false:
+        print("FAIL: is_positive(-3) should be false")
+        return 1
+
+    print("ALL PASSED")
+    return 0

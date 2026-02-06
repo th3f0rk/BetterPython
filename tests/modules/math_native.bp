@@ -1,0 +1,14 @@
+# Module that wraps native C math functions via FFI
+extern fn c_sqrt(x: float) -> float from "libm.so.6" as "sqrt"
+extern fn c_pow(base: float, exp: float) -> float from "libm.so.6" as "pow"
+extern fn c_floor(x: float) -> float from "libm.so.6" as "floor"
+extern fn c_ceil(x: float) -> float from "libm.so.6" as "ceil"
+
+export def native_sqrt(x: float) -> float:
+    return c_sqrt(x)
+
+export def native_pow(base: float, exp: float) -> float:
+    return c_pow(base, exp)
+
+export def native_hypotenuse(a: float, b: float) -> float:
+    return c_sqrt(c_pow(a, 2.0) + c_pow(b, 2.0))

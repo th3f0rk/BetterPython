@@ -1,0 +1,23 @@
+def main() -> int:
+    let s: str = "ABC"
+    let bytes: [int] = str_to_bytes(s)
+    if array_len(bytes) != 3:
+        print("FAIL: str_to_bytes length should be 3")
+        return 1
+    if bytes[0] != 65:
+        print("FAIL: byte 0 should be 65 (A)")
+        return 1
+    if bytes[1] != 66:
+        print("FAIL: byte 1 should be 66 (B)")
+        return 1
+    if bytes[2] != 67:
+        print("FAIL: byte 2 should be 67 (C)")
+        return 1
+
+    let back: str = bytes_to_str(s)
+    if back != "ABC":
+        print("FAIL: bytes_to_str should return ABC")
+        return 1
+
+    print("ALL PASSED")
+    return 0

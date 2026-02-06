@@ -739,6 +739,12 @@ static Stmt *parse_stmt(Parser *p) {
     }
 
     Expr *e = parse_expr(p);
+    // Check for field assignment: expr.field = value
+    if (p->cur.kind == TOK_ASSIGN && e->kind == EX_FIELD_ACCESS) {
+        next(p);  // consume '='
+        Expr *value = parse_expr(p);
+        return stmt_new_field_assign(e, value, line);
+    }
     return stmt_new_expr(e, line);
 }
 

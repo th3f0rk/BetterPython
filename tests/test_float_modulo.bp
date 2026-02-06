@@ -1,0 +1,24 @@
+def main() -> int:
+    let a: float = 5.5
+    let b: float = 2.0
+    let r: float = a % b
+    if r != 1.5:
+        print("FAIL: 5.5 % 2.0 should be 1.5")
+        return 1
+
+    let c: float = 10.0
+    let d: float = 3.0
+    let r2: float = c % d
+    if r2 != 1.0:
+        print("FAIL: 10.0 % 3.0 should be 1.0")
+        return 1
+
+    let e: float = 7.5
+    let f: float = 2.5
+    let r3: float = e % f
+    if r3 != 0.0:
+        print("FAIL: 7.5 % 2.5 should be 0.0")
+        return 1
+
+    print("ALL PASSED")
+    return 0

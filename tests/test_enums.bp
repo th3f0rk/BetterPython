@@ -1,0 +1,99 @@
+# Test enum definitions and member access
+
+enum Color:
+    RED
+    GREEN
+    BLUE
+
+enum HttpStatus:
+    OK
+    CREATED = 201
+    NOT_FOUND = 404
+    SERVER_ERROR = 500
+
+enum Priority:
+    LOW
+    MEDIUM
+    HIGH
+    CRITICAL
+
+def test_basic_enum() -> int:
+    let r: int = Color.RED
+    let g: int = Color.GREEN
+    let b: int = Color.BLUE
+    if r != 0:
+        print("FAIL: Color.RED should be 0")
+        return 1
+    if g != 1:
+        print("FAIL: Color.GREEN should be 1")
+        return 1
+    if b != 2:
+        print("FAIL: Color.BLUE should be 2")
+        return 1
+    print("  Basic enum: PASS")
+    return 0
+
+def test_explicit_values() -> int:
+    if HttpStatus.OK != 0:
+        print("FAIL: HttpStatus.OK should be 0")
+        return 1
+    if HttpStatus.CREATED != 201:
+        print("FAIL: HttpStatus.CREATED should be 201")
+        return 1
+    if HttpStatus.NOT_FOUND != 404:
+        print("FAIL: HttpStatus.NOT_FOUND should be 404")
+        return 1
+    if HttpStatus.SERVER_ERROR != 500:
+        print("FAIL: HttpStatus.SERVER_ERROR should be 500")
+        return 1
+    print("  Explicit values: PASS")
+    return 0
+
+def test_enum_comparison() -> int:
+    let status: int = HttpStatus.NOT_FOUND
+    if status == HttpStatus.OK:
+        print("FAIL: 404 should not equal OK")
+        return 1
+    if not (status == HttpStatus.NOT_FOUND):
+        print("FAIL: status should equal NOT_FOUND")
+        return 1
+    print("  Enum comparison: PASS")
+    return 0
+
+def test_enum_in_conditions() -> int:
+    let priority: int = Priority.HIGH
+    let label: str = "unknown"
+    if priority == Priority.LOW:
+        label = "low"
+    elif priority == Priority.MEDIUM:
+        label = "medium"
+    elif priority == Priority.HIGH:
+        label = "high"
+    elif priority == Priority.CRITICAL:
+        label = "critical"
+    if label != "high":
+        print("FAIL: expected 'high', got: ")
+        print(label)
+        return 1
+    print("  Enum in conditions: PASS")
+    return 0
+
+def test_enum_arithmetic() -> int:
+    let sum: int = Color.RED + Color.GREEN + Color.BLUE
+    if sum != 3:
+        print("FAIL: sum of colors should be 3")
+        return 1
+    print("  Enum arithmetic: PASS")
+    return 0
+
+def main() -> int:
+    print("Testing enums...")
+    let failures: int = 0
+    failures = failures + test_basic_enum()
+    failures = failures + test_explicit_values()
+    failures = failures + test_enum_comparison()
+    failures = failures + test_enum_in_conditions()
+    failures = failures + test_enum_arithmetic()
+    if failures == 0:
+        print("All enum tests passed!")
+    return failures

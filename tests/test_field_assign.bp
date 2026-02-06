@@ -1,0 +1,109 @@
+# Test struct field assignment and mutation
+
+struct Point:
+    x: int
+    y: int
+
+struct Rect:
+    width: int
+    height: int
+
+struct Person:
+    name: str
+    age: int
+
+def test_basic_field_assign() -> int:
+    let p: Point = Point{x: 10, y: 20}
+    if p.x != 10:
+        print("FAIL: initial x")
+        return 1
+    p.x = 42
+    if p.x != 42:
+        print("FAIL: assigned x")
+        return 1
+    p.y = 99
+    if p.y != 99:
+        print("FAIL: assigned y")
+        return 1
+    print("  Basic field assign: PASS")
+    return 0
+
+def test_multiple_assigns() -> int:
+    let r: Rect = Rect{width: 100, height: 50}
+    r.width = 200
+    r.height = 100
+    r.width = 300
+    if r.width != 300:
+        print("FAIL: multiple width assigns")
+        return 1
+    if r.height != 100:
+        print("FAIL: height after width changes")
+        return 1
+    print("  Multiple assigns: PASS")
+    return 0
+
+def test_string_field_assign() -> int:
+    let p: Person = Person{name: "Alice", age: 30}
+    p.name = "Bob"
+    p.age = 25
+    if p.name != "Bob":
+        print("FAIL: string field assign")
+        return 1
+    if p.age != 25:
+        print("FAIL: int field after string assign")
+        return 1
+    print("  String field assign: PASS")
+    return 0
+
+def test_field_assign_with_expressions() -> int:
+    let p: Point = Point{x: 5, y: 10}
+    p.x = p.x + p.y
+    if p.x != 15:
+        print("FAIL: field assign with expression")
+        return 1
+    p.y = p.x * 2
+    if p.y != 30:
+        print("FAIL: field assign with multiply")
+        return 1
+    print("  Field assign with expressions: PASS")
+    return 0
+
+def modify_point(p: Point) -> int:
+    p.x = 999
+    return p.x
+
+def test_field_assign_in_function() -> int:
+    let p: Point = Point{x: 0, y: 0}
+    let result: int = modify_point(p)
+    if result != 999:
+        print("FAIL: field assign in function")
+        return 1
+    print("  Field assign in function: PASS")
+    return 0
+
+def test_computed_area() -> int:
+    let r: Rect = Rect{width: 0, height: 0}
+    for i in range(1, 11):
+        r.width = i
+        r.height = i * 2
+    if r.width != 10:
+        print("FAIL: loop field assign width")
+        return 1
+    if r.height != 20:
+        print("FAIL: loop field assign height")
+        return 1
+    print("  Computed area loop: PASS")
+    return 0
+
+def main() -> int:
+    print("Testing field assignment...")
+    let failures: int = 0
+    failures = failures + test_basic_field_assign()
+    failures = failures + test_multiple_assigns()
+    failures = failures + test_string_field_assign()
+    failures = failures + test_field_assign_with_expressions()
+    failures = failures + test_field_assign_in_function()
+    failures = failures + test_computed_area()
+    if failures == 0:
+        print("All field assignment tests passed!")
+    return failures

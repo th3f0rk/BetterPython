@@ -1,0 +1,64 @@
+def test_basic_substr() -> int:
+    let s: str = "Hello, World!"
+    let sub: str = substr(s, 0, 5)
+    if sub != "Hello":
+        print("FAIL: substr(0,5)")
+        return 1
+    let sub2: str = substr(s, 7, 5)
+    if sub2 != "World":
+        print("FAIL: substr(7,5)")
+        return 1
+    print("  Basic substr: PASS")
+    return 0
+
+def test_substr_edge_cases() -> int:
+    let s: str = "abcdef"
+    let empty: str = substr(s, 0, 0)
+    if len(empty) != 0:
+        print("FAIL: substr length 0")
+        return 1
+    let full: str = substr(s, 0, 6)
+    if full != "abcdef":
+        print("FAIL: substr full string")
+        return 1
+    let beyond: str = substr(s, 0, 100)
+    if beyond != "abcdef":
+        print("FAIL: substr beyond length")
+        return 1
+    let end: str = substr(s, 5, 1)
+    if end != "f":
+        print("FAIL: substr last char")
+        return 1
+    print("  Substr edge cases: PASS")
+    return 0
+
+def test_substr_with_operations() -> int:
+    let s: str = "2025-02-05"
+    let year: str = substr(s, 0, 4)
+    let month: str = substr(s, 5, 2)
+    let day: str = substr(s, 8, 2)
+    if year != "2025":
+        print("FAIL: year extraction")
+        return 1
+    if month != "02":
+        print("FAIL: month extraction")
+        return 1
+    if day != "05":
+        print("FAIL: day extraction")
+        return 1
+    let rebuilt: str = year + "/" + month + "/" + day
+    if rebuilt != "2025/02/05":
+        print("FAIL: rebuilt date")
+        return 1
+    print("  Substr with operations: PASS")
+    return 0
+
+def main() -> int:
+    print("Testing substr function...")
+    let failures: int = 0
+    failures = failures + test_basic_substr()
+    failures = failures + test_substr_edge_cases()
+    failures = failures + test_substr_with_operations()
+    if failures == 0:
+        print("All substr tests passed!")
+    return failures

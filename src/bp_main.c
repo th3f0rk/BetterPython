@@ -2,6 +2,7 @@
 #include "types.h"
 #include "compiler.h"
 #include "reg_compiler.h"
+#include "c_transpiler.h"
 #include "bytecode.h"
 #include "vm.h"
 #include "reg_vm.h"
@@ -29,16 +30,34 @@ static char *read_file_text(const char *path) {
 }
 
 static int cmd_bpcc(int argc, char **argv) {
-    if (argc < 3) bp_fatal("usage: bpcc <input.bp> -o <output.bpc>");
+    if (argc < 3) bp_fatal("usage: bpcc <input.bp> -o <output> [--transpile-c]");
     const char *in = argv[1];
     const char *out = NULL;
+    bool transpile_c = false;
 
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
             out = argv[i + 1];
+        } else if (strcmp(argv[i], "--transpile-c") == 0 || strcmp(argv[i], "-c") == 0) {
+            transpile_c = true;
         }
     }
-    if (!out) bp_fatal("missing -o <output.bpc>");
+    if (!out) bp_fatal("missing -o <output>");
+
+    // C transpilation path: parse, typecheck, emit C code
+    if (transpile_c) {
+        char *src = read_file_text(in);
+        Module m = parse_module(src);
+        typecheck_module(&m);
+        if (!transpile_module_to_c(&m, out)) {
+            module_free(&m);
+            free(src);
+            bp_fatal("failed to write C output to %s", out);
+        }
+        module_free(&m);
+        free(src);
+        return 0;
+    }
 
     // First, parse to check for imports
     char *src = read_file_text(in);

@@ -40,3 +40,6 @@ void vm_init(Vm *vm, BpModule mod);
 void vm_free(Vm *vm);
 
 int vm_run(Vm *vm);
+
+/* FFI invoke — used by both stack VM and register VM */
+Value ffi_invoke(BpExternFunc *ext, Value *args, uint8_t argc, Gc *gc);

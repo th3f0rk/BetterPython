@@ -22,6 +22,7 @@ SRC := \
     src/thread.c \
     src/module_resolver.c \
     src/multi_compile.c \
+    src/c_transpiler.c \
     src/jit/jit_profile.c \
     src/jit/jit_x64.c \
     src/jit/jit_compile.c
@@ -44,13 +45,13 @@ $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
 
 $(BPCC): $(BIN_DIR) $(OBJ)
-	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm -lpthread
+	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm -lpthread -ldl
 
 $(BPVM): $(BIN_DIR) $(OBJ)
-	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm -lpthread
+	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm -lpthread -ldl
 
 $(BPREPL): $(BIN_DIR) $(OBJ)
-	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm -lpthread
+	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -lm -lpthread -ldl
 
 $(BPRUN): $(BIN_DIR) tools/betterpython.sh
 	cp tools/betterpython.sh $@

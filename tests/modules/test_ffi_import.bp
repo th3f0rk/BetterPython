@@ -1,0 +1,27 @@
+# Test: FFI functions accessed through module imports
+import math_native
+
+def main() -> int:
+    let sq: float = math_native.native_sqrt(25.0)
+    if sq == 5.0:
+        print("Test 1 - imported native_sqrt: PASS")
+    else:
+        print("Test 1 - imported native_sqrt: FAIL")
+        return 1
+
+    let pw: float = math_native.native_pow(3.0, 3.0)
+    if pw == 27.0:
+        print("Test 2 - imported native_pow: PASS")
+    else:
+        print("Test 2 - imported native_pow: FAIL")
+        return 1
+
+    let h: float = math_native.native_hypotenuse(3.0, 4.0)
+    if h == 5.0:
+        print("Test 3 - imported native_hypotenuse: PASS")
+    else:
+        print("Test 3 - imported native_hypotenuse: FAIL")
+        return 1
+
+    print("All FFI import tests passed!")
+    return 0

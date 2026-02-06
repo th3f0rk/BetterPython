@@ -340,6 +340,13 @@ Stmt *stmt_new_throw(Expr *value, size_t line) {
     return s;
 }
 
+Stmt *stmt_new_field_assign(Expr *object, Expr *value, size_t line) {
+    Stmt *s = stmt_alloc(ST_FIELD_ASSIGN, line);
+    s->as.field_assign.object = object;
+    s->as.field_assign.value = value;
+    return s;
+}
+
 static void expr_free(Expr *e) {
     if (!e) return;
     switch (e->kind) {
@@ -475,6 +482,10 @@ static void stmt_free(Stmt *s) {
             break;
         case ST_THROW:
             expr_free(s->as.throw.value);
+            break;
+        case ST_FIELD_ASSIGN:
+            expr_free(s->as.field_assign.object);
+            expr_free(s->as.field_assign.value);
             break;
     }
     free(s);

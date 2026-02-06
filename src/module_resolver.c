@@ -123,6 +123,11 @@ void module_graph_init(ModuleGraph *g) {
             g->search_paths[g->search_path_count++] = bp_xstrdup(stdlib_paths[i]);
         }
     }
+
+    // 4. Package manager directory (bppkg installs packages here)
+    if (dir_exists("./packages") && g->search_path_count < MAX_SEARCH_PATHS) {
+        g->search_paths[g->search_path_count++] = bp_xstrdup("./packages");
+    }
 }
 
 void module_graph_add_search_path(ModuleGraph *g, const char *path) {

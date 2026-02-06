@@ -15,3 +15,7 @@ void types_clear_external_functions(void);
 // Set flag to preserve pre-registered functions during typecheck_module
 // When true, typecheck_module will ADD to the function table instead of replacing it
 void types_set_preserve_external(bool preserve);
+
+// Return the number of lambda functions found during type checking
+// Must be called after typecheck_module()
+size_t typecheck_lambda_count(void);

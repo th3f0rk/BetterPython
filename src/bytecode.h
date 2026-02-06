@@ -34,6 +34,7 @@ typedef enum {
     OP_SUB_F64,
     OP_MUL_F64,
     OP_DIV_F64,
+    OP_MOD_F64,
     OP_NEG_F64,
 
     OP_ADD_STR,
@@ -116,6 +117,7 @@ typedef enum {
     R_SUB_F64,          // dst, src1, src2: r[dst] = r[src1] - r[src2]
     R_MUL_F64,          // dst, src1, src2: r[dst] = r[src1] * r[src2]
     R_DIV_F64,          // dst, src1, src2: r[dst] = r[src1] / r[src2]
+    R_MOD_F64,          // dst, src1, src2: r[dst] = fmod(r[src1], r[src2])
     R_NEG_F64,          // dst, src: r[dst] = -r[src]
 
     // String Operations
@@ -339,7 +341,15 @@ typedef enum {
     // StringBuilder-like operations
     BI_STR_SPLIT_STR,
     BI_STR_JOIN_ARR,
-    BI_STR_CONCAT_ALL
+    BI_STR_CONCAT_ALL,
+
+    // Bitwise operations
+    BI_BIT_AND,
+    BI_BIT_OR,
+    BI_BIT_XOR,
+    BI_BIT_NOT,
+    BI_BIT_SHL,
+    BI_BIT_SHR
 } BuiltinId;
 
 typedef struct {
@@ -373,11 +383,20 @@ typedef struct {
     size_t method_count;
 } BpClassType;
 
+// FFI type codes for parameter/return marshalling
+#define FFI_TC_INT    0   // int64_t (int, i8..i64, u8..u64, bool, enum)
+#define FFI_TC_FLOAT  1   // double
+#define FFI_TC_STR    2   // const char* (BpStr->data on call, new BpStr on return)
+#define FFI_TC_PTR    3   // void*
+#define FFI_TC_VOID   4   // void (return only)
+
 typedef struct {
     char *name;                 // Function name in BetterPython
     char *c_name;               // Actual C function name
     char *library;              // Library path (e.g., "libc.so.6")
     uint16_t param_count;
+    uint8_t *param_types;       // Array of FFI_TC_* codes, one per param
+    uint8_t ret_type;           // FFI_TC_* code for return type
     bool is_variadic;
     void *handle;               // dlopen handle (set at runtime)
     void *fn_ptr;               // dlsym function pointer (set at runtime)

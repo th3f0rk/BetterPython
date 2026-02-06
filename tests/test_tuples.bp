@@ -1,0 +1,33 @@
+def main() -> int:
+    let t: [int] = (1, 2, 3)
+    if t[0] != 1:
+        print("FAIL: t[0] should be 1")
+        return 1
+    if t[1] != 2:
+        print("FAIL: t[1] should be 2")
+        return 1
+    if t[2] != 3:
+        print("FAIL: t[2] should be 3")
+        return 1
+
+    let a: int = 10
+    let b: int = 20
+    let c: int = 30
+    let t2: [int] = (a, b, c)
+    if t2[0] != 10:
+        print("FAIL: t2[0] should be 10")
+        return 1
+    if t2[1] != 20:
+        print("FAIL: t2[1] should be 20")
+        return 1
+
+    let strs: [str] = ("hello", "world")
+    if strs[0] != "hello":
+        print("FAIL: strs[0] should be hello")
+        return 1
+    if strs[1] != "world":
+        print("FAIL: strs[1] should be world")
+        return 1
+
+    print("ALL PASSED")
+    return 0

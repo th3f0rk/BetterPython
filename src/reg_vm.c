@@ -14,6 +14,7 @@
 #include "util.h"
 #include "jit/jit.h"
 #include <string.h>
+#include <math.h>
 
 #define MAX_CALL_FRAMES 256
 #define MAX_TRY_HANDLERS 64
@@ -162,6 +163,7 @@ int reg_vm_run(Vm *vm) {
         [R_SUB_F64] = &&L_R_SUB_F64,
         [R_MUL_F64] = &&L_R_MUL_F64,
         [R_DIV_F64] = &&L_R_DIV_F64,
+        [R_MOD_F64] = &&L_R_MOD_F64,
         [R_NEG_F64] = &&L_R_NEG_F64,
         [R_ADD_STR] = &&L_R_ADD_STR,
         [R_EQ] = &&L_R_EQ,
@@ -337,6 +339,13 @@ L_R_DIV_F64: {
     uint8_t src1 = code[ip++];
     uint8_t src2 = code[ip++];
     REG(dst) = v_float(REG(src1).as.f / REG(src2).as.f);
+    VM_DISPATCH();
+}
+L_R_MOD_F64: {
+    uint8_t dst = code[ip++];
+    uint8_t src1 = code[ip++];
+    uint8_t src2 = code[ip++];
+    REG(dst) = v_float(fmod(REG(src1).as.f, REG(src2).as.f));
     VM_DISPATCH();
 }
 L_R_NEG_F64: {
@@ -805,10 +814,12 @@ L_R_FFI_CALL: {
     uint16_t extern_id = rd_u16(code, &ip);
     uint8_t arg_base = code[ip++];
     uint8_t argc = code[ip++];
-    BP_UNUSED(extern_id);
-    BP_UNUSED(arg_base);
-    BP_UNUSED(argc);
-    REG(dst) = v_null();
+    if (extern_id >= vm->mod.extern_func_len)
+        bp_fatal("FFI: invalid extern id %u", extern_id);
+    Value ffi_args[8];
+    for (uint8_t i = 0; i < argc && i < 8; i++)
+        ffi_args[i] = REG(arg_base + i);
+    REG(dst) = ffi_invoke(&vm->mod.extern_funcs[extern_id], ffi_args, argc, &vm->gc);
     VM_DISPATCH();
 }
 
@@ -939,6 +950,13 @@ vm_exit:
                 uint8_t src1 = code[ip++];
                 uint8_t src2 = code[ip++];
                 REG(dst) = v_float(REG(src1).as.f / REG(src2).as.f);
+                break;
+            }
+            case R_MOD_F64: {
+                uint8_t dst = code[ip++];
+                uint8_t src1 = code[ip++];
+                uint8_t src2 = code[ip++];
+                REG(dst) = v_float(fmod(REG(src1).as.f, REG(src2).as.f));
                 break;
             }
             case R_NEG_F64: {
@@ -1381,10 +1399,15 @@ vm_exit:
             }
             case R_FFI_CALL: {
                 uint8_t dst = code[ip++];
-                rd_u16(code, &ip); // extern_id
-                (void)code[ip++]; // arg_base
-                (void)code[ip++]; // argc
-                REG(dst) = v_null();
+                uint16_t extern_id = rd_u16(code, &ip);
+                uint8_t arg_base = code[ip++];
+                uint8_t argc = code[ip++];
+                if (extern_id >= vm->mod.extern_func_len)
+                    bp_fatal("FFI: invalid extern id %u", extern_id);
+                Value ffi_args[8];
+                for (uint8_t i = 0; i < argc && i < 8; i++)
+                    ffi_args[i] = REG(arg_base + i);
+                REG(dst) = ffi_invoke(&vm->mod.extern_funcs[extern_id], ffi_args, argc, &vm->gc);
                 break;
             }
             default:
