@@ -1,0 +1,53 @@
+# Benchmark: String Operations
+# Tests string manipulation functions
+
+def main() -> int:
+    let iterations: int = 10000
+
+    print("=== String Operations Benchmark ===")
+    print("Iterations:", iterations)
+
+    # String concatenation
+    let start: int = clock_ms()
+    let s: str = ""
+    for i in range(0, 1000):
+        s = s + "x"
+    let mid1: int = clock_ms()
+    print("String concat (1000) time (ms):", mid1 - start)
+
+    # String length
+    let test_str: str = str_repeat("hello world ", 100)
+    let len_sum: int = 0
+    for i in range(0, iterations):
+        len_sum = len_sum + len(test_str)
+    let mid2: int = clock_ms()
+    print("String length time (ms):", mid2 - mid1)
+
+    # Substring extraction
+    for i in range(0, iterations):
+        let sub: str = substr(test_str, 10, 50)
+    let mid3: int = clock_ms()
+    print("Substring time (ms):", mid3 - mid2)
+
+    # String search
+    for i in range(0, iterations):
+        let pos: int = str_find(test_str, "world")
+    let mid4: int = clock_ms()
+    print("String find time (ms):", mid4 - mid3)
+
+    # String replace
+    for i in range(0, 1000):
+        let replaced: str = str_replace(test_str, "hello", "HELLO")
+    let mid5: int = clock_ms()
+    print("String replace time (ms):", mid5 - mid4)
+
+    # String split/join
+    let parts: [str] = str_split(test_str, " ")
+    for i in range(0, 1000):
+        let joined: str = str_join(parts, "-")
+    let end: int = clock_ms()
+    print("String split/join time (ms):", end - mid5)
+
+    print("Total time (ms):", end - start)
+
+    return 0

@@ -1,0 +1,64 @@
+# Test: Block-level variable scoping
+# This should NOT produce "duplicate symbol" errors
+
+def test_if_scope() -> int:
+    let x: int = 5
+    if x > 0:
+        let i: int = 10
+        print(i)
+    if x < 10:
+        let i: int = 20
+        print(i)
+    return 0
+
+def test_for_loop_reuse() -> int:
+    for i in range(0, 3):
+        print(i)
+    for i in range(10, 13):
+        print(i)
+    return 0
+
+def test_nested_blocks() -> int:
+    for i in range(0, 2):
+        for j in range(0, 2):
+            let k: int = i + j
+            print(k)
+        let k: int = 99
+        print(k)
+    return 0
+
+def test_while_scope() -> int:
+    let count: int = 0
+    while count < 2:
+        let temp: int = count * 10
+        print(temp)
+        count = count + 1
+    let temp: int = 999
+    print(temp)
+    return 0
+
+def test_float_printing() -> int:
+    let f: float = int_to_float(42)
+    print(f)
+    let pi: float = 3.14159
+    print(pi)
+    return 0
+
+def main() -> int:
+    print("=== Testing If Scope ===")
+    test_if_scope()
+
+    print("=== Testing For Loop Reuse ===")
+    test_for_loop_reuse()
+
+    print("=== Testing Nested Blocks ===")
+    test_nested_blocks()
+
+    print("=== Testing While Scope ===")
+    test_while_scope()
+
+    print("=== Testing Float Printing ===")
+    test_float_printing()
+
+    print("=== All Scope Tests Passed! ===")
+    return 0

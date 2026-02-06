@@ -229,7 +229,7 @@ def main() -> int:
 
 ---
 
-## Standard Library (120+ Functions)
+## Standard Library (125+ Functions)
 
 ### I/O Functions
 - `print(...)` - Print values to stdout
@@ -625,27 +625,28 @@ make clean && make
 - [x] Enum definitions with explicit values
 - [x] Exception handling (try/catch/finally/throw)
 - [x] For/while loops with break/continue
-- [x] 120+ built-in functions
-- [x] Full float support with math library (17 functions)
+- [x] 125+ built-in functions
+- [x] Full float support with math library (20+ functions)
 - [x] Bitwise operations (AND, OR, XOR, NOT, SHL, SHR)
-- [x] String operations (21+ functions)
-- [x] File I/O (7 functions)
-- [x] Regex support
+- [x] String operations (25+ functions)
+- [x] File I/O (8 functions)
+- [x] Regular expressions (match, search, replace, split)
 - [x] FFI (Foreign Function Interface)
 - [x] C transpiler backend
-- [x] Threading primitives
+- [x] Threading primitives (spawn, join, mutex, condition variables)
 - [x] IDE tooling (LSP, formatter, linter)
-- [x] 34 comprehensive tests
+- [x] Module system (import/export)
+- [x] JIT compilation (register-based bytecode)
+- [x] Package manager with security features
+- [x] 39 comprehensive tests
 
 ### v1.1.0 (Planned)
-- [ ] Module system (import/export)
 - [ ] HTTP client
 - [ ] JSON built-in functions
 - [ ] Generic types
-- [ ] Class methods (full OOP)
+- [ ] Database drivers
 
 ### v2.0.0 (Future)
-- [ ] JIT compilation (experimental support exists)
 - [ ] Debugger
 - [ ] Native code generation
 

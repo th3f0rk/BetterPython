@@ -14,6 +14,21 @@ typedef struct {
     size_t cap;
 } Scope;
 
+// Scope marker for block-level scoping
+// When entering a block, we save the current scope length
+// When exiting, we restore to that length (removing block-local variables)
+static size_t scope_mark(Scope *s) {
+    return s->len;
+}
+
+static void scope_restore(Scope *s, size_t mark) {
+    // Free variable names that were added after the mark
+    for (size_t i = mark; i < s->len; i++) {
+        free(s->items[i].name);
+    }
+    s->len = mark;
+}
+
 // Function signature for user-defined functions
 typedef struct {
     char *name;
@@ -118,9 +133,9 @@ static const char *get_module_name(const char *name) {
     return NULL;
 }
 
-static void scope_put(Scope *s, const char *name, Type t) {
+static void scope_put(Scope *s, const char *name, Type t, size_t line) {
     for (size_t i = 0; i < s->len; i++) {
-        if (strcmp(s->items[i].name, name) == 0) bp_fatal("duplicate symbol '%s'", name);
+        if (strcmp(s->items[i].name, name) == 0) bp_fatal_at(line, "duplicate symbol '%s'", name);
     }
     if (s->len + 1 > s->cap) {
         s->cap = s->cap ? s->cap * 2 : 16;
@@ -529,9 +544,9 @@ static bool is_builtin(const char *name) {
     if (strcmp(name, "regex_split") == 0) return true;
     if (strcmp(name, "regex_find_all") == 0) return true;
 
-    // StringBuilder-like operations
-    if (strcmp(name, "str_split_str") == 0 || strcmp(name, "str_split") == 0) return true;
-    if (strcmp(name, "str_join_arr") == 0 || strcmp(name, "str_join") == 0) return true;
+    // String split/join - support both short and long names
+    if (strcmp(name, "str_split") == 0 || strcmp(name, "str_split_str") == 0) return true;
+    if (strcmp(name, "str_join") == 0 || strcmp(name, "str_join_arr") == 0) return true;
     if (strcmp(name, "str_concat_all") == 0) return true;
 
     // Bitwise operations
@@ -558,235 +573,235 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
     if (strcmp(name, "len") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("len expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "len expects 1 arg");
         Type t0 = check_expr(e->as.call.args[0], s);
-        if (t0.kind != TY_STR) bp_fatal("len expects str");
+        if (t0.kind != TY_STR) bp_fatal_at(e->line, "len expects str");
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "substr") == 0) {
-        if (e->as.call.argc != 3) bp_fatal("substr expects 3 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("substr arg0 must be str");
-        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal("substr arg1 must be int");
-        if (check_expr(e->as.call.args[2], s).kind != TY_INT) bp_fatal("substr arg2 must be int");
+        if (e->as.call.argc != 3) bp_fatal_at(e->line, "substr expects 3 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "substr arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal_at(e->line, "substr arg1 must be int");
+        if (check_expr(e->as.call.args[2], s).kind != TY_INT) bp_fatal_at(e->line, "substr arg2 must be int");
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "read_line") == 0) {
-        if (e->as.call.argc != 0) bp_fatal("read_line expects 0 args");
+        if (e->as.call.argc != 0) bp_fatal_at(e->line, "read_line expects 0 args");
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "to_str") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("to_str expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "to_str expects 1 arg");
         check_expr(e->as.call.args[0], s);
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "clock_ms") == 0) {
-        if (e->as.call.argc != 0) bp_fatal("clock_ms expects 0 args");
+        if (e->as.call.argc != 0) bp_fatal_at(e->line, "clock_ms expects 0 args");
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "exit") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("exit expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("exit expects int");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "exit expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal_at(e->line, "exit expects int");
         e->inferred = type_void();
         return e->inferred;
     }
     if (strcmp(name, "file_read") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("file_read expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("file_read expects str path");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "file_read expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "file_read expects str path");
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "file_write") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("file_write expects 2 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("file_write arg0 must be str");
-        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("file_write arg1 must be str");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "file_write expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "file_write arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "file_write arg1 must be str");
         e->inferred = type_bool();
         return e->inferred;
     }
     if (strcmp(name, "base64_encode") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("base64_encode expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("base64_encode expects str");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "base64_encode expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "base64_encode expects str");
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "base64_decode") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("base64_decode expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("base64_decode expects str");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "base64_decode expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "base64_decode expects str");
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "chr") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("chr expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("chr expects int");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "chr expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal_at(e->line, "chr expects int");
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "ord") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("ord expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("ord expects str");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "ord expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "ord expects str");
         e->inferred = type_int();
         return e->inferred;
     }
 
     // Math functions
     if (strcmp(name, "abs") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("abs expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("abs expects int");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "abs expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal_at(e->line, "abs expects int");
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "min") == 0 || strcmp(name, "max") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("%s expects 2 args", name);
-        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("%s arg0 must be int", name);
-        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal("%s arg1 must be int", name);
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "%s expects 2 args", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal_at(e->line, "%s arg0 must be int", name);
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal_at(e->line, "%s arg1 must be int", name);
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "pow") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("pow expects 2 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("pow arg0 must be int");
-        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal("pow arg1 must be int");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "pow expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal_at(e->line, "pow arg0 must be int");
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal_at(e->line, "pow arg1 must be int");
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "sqrt") == 0 || strcmp(name, "floor") == 0 ||
         strcmp(name, "ceil") == 0 || strcmp(name, "round") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("%s expects 1 arg", name);
-        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("%s expects int", name);
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "%s expects 1 arg", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal_at(e->line, "%s expects int", name);
         e->inferred = type_int();
         return e->inferred;
     }
 
     // String functions
     if (strcmp(name, "str_upper") == 0 || strcmp(name, "str_lower") == 0 || strcmp(name, "str_trim") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("%s expects 1 arg", name);
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("%s expects str", name);
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "%s expects 1 arg", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "%s expects str", name);
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "starts_with") == 0 || strcmp(name, "ends_with") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("%s expects 2 args", name);
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("%s arg0 must be str", name);
-        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("%s arg1 must be str", name);
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "%s expects 2 args", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "%s arg0 must be str", name);
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "%s arg1 must be str", name);
         e->inferred = type_bool();
         return e->inferred;
     }
     if (strcmp(name, "str_find") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("str_find expects 2 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("str_find arg0 must be str");
-        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("str_find arg1 must be str");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "str_find expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "str_find arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "str_find arg1 must be str");
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "str_replace") == 0) {
-        if (e->as.call.argc != 3) bp_fatal("str_replace expects 3 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("str_replace arg0 must be str");
-        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("str_replace arg1 must be str");
-        if (check_expr(e->as.call.args[2], s).kind != TY_STR) bp_fatal("str_replace arg2 must be str");
+        if (e->as.call.argc != 3) bp_fatal_at(e->line, "str_replace expects 3 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "str_replace arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "str_replace arg1 must be str");
+        if (check_expr(e->as.call.args[2], s).kind != TY_STR) bp_fatal_at(e->line, "str_replace arg2 must be str");
         e->inferred = type_str();
         return e->inferred;
     }
 
     // Random functions
     if (strcmp(name, "rand") == 0) {
-        if (e->as.call.argc != 0) bp_fatal("rand expects 0 args");
+        if (e->as.call.argc != 0) bp_fatal_at(e->line, "rand expects 0 args");
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "rand_range") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("rand_range expects 2 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("rand_range arg0 must be int");
-        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal("rand_range arg1 must be int");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "rand_range expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal_at(e->line, "rand_range arg0 must be int");
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal_at(e->line, "rand_range arg1 must be int");
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "rand_seed") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("rand_seed expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("rand_seed expects int");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "rand_seed expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal_at(e->line, "rand_seed expects int");
         e->inferred = type_void();
         return e->inferred;
     }
 
     // File functions
     if (strcmp(name, "file_exists") == 0 || strcmp(name, "file_delete") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("%s expects 1 arg", name);
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("%s expects str", name);
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "%s expects 1 arg", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "%s expects str", name);
         e->inferred = type_bool();
         return e->inferred;
     }
     if (strcmp(name, "file_append") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("file_append expects 2 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("file_append arg0 must be str");
-        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("file_append arg1 must be str");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "file_append expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "file_append arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "file_append arg1 must be str");
         e->inferred = type_bool();
         return e->inferred;
     }
 
     // System functions
     if (strcmp(name, "sleep") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("sleep expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("sleep expects int");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "sleep expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal_at(e->line, "sleep expects int");
         e->inferred = type_void();
         return e->inferred;
     }
     if (strcmp(name, "getenv") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("getenv expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("getenv expects str");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "getenv expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "getenv expects str");
         e->inferred = type_str();
         return e->inferred;
     }
 
     // Security functions
     if (strcmp(name, "hash_sha256") == 0 || strcmp(name, "hash_md5") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("%s expects 1 arg", name);
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("%s expects str", name);
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "%s expects 1 arg", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "%s expects str", name);
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "secure_compare") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("secure_compare expects 2 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("secure_compare arg0 must be str");
-        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("secure_compare arg1 must be str");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "secure_compare expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "secure_compare arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "secure_compare arg1 must be str");
         e->inferred = type_bool();
         return e->inferred;
     }
     if (strcmp(name, "random_bytes") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("random_bytes expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("random_bytes expects int");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "random_bytes expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal_at(e->line, "random_bytes expects int");
         e->inferred = type_str();
         return e->inferred;
     }
 
     // String utilities
     if (strcmp(name, "str_reverse") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("str_reverse expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("str_reverse expects str");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "str_reverse expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "str_reverse expects str");
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "str_repeat") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("str_repeat expects 2 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("str_repeat arg0 must be str");
-        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal("str_repeat arg1 must be int");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "str_repeat expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "str_repeat arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal_at(e->line, "str_repeat arg1 must be int");
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "str_pad_left") == 0 || strcmp(name, "str_pad_right") == 0) {
-        if (e->as.call.argc != 3) bp_fatal("%s expects 3 args", name);
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("%s arg0 must be str", name);
-        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal("%s arg1 must be int", name);
-        if (check_expr(e->as.call.args[2], s).kind != TY_STR) bp_fatal("%s arg2 must be str", name);
+        if (e->as.call.argc != 3) bp_fatal_at(e->line, "%s expects 3 args", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "%s arg0 must be str", name);
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal_at(e->line, "%s arg1 must be int", name);
+        if (check_expr(e->as.call.args[2], s).kind != TY_STR) bp_fatal_at(e->line, "%s arg2 must be str", name);
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "str_contains") == 0 || strcmp(name, "str_count") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("%s expects 2 args", name);
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("%s arg0 must be str", name);
-        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("%s arg1 must be str", name);
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "%s expects 2 args", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "%s arg0 must be str", name);
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "%s arg1 must be str", name);
         if (strcmp(name, "str_contains") == 0) {
             e->inferred = type_bool();
         } else {
@@ -795,25 +810,25 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
     if (strcmp(name, "int_to_hex") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("int_to_hex expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("int_to_hex expects int");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "int_to_hex expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal_at(e->line, "int_to_hex expects int");
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "hex_to_int") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("hex_to_int expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("hex_to_int expects str");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "hex_to_int expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "hex_to_int expects str");
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "str_char_at") == 0 || strcmp(name, "str_index_of") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("%s expects 2 args", name);
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("%s arg0 must be str", name);
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "%s expects 2 args", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "%s arg0 must be str", name);
         if (strcmp(name, "str_char_at") == 0) {
-            if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal("str_char_at arg1 must be int");
+            if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal_at(e->line, "str_char_at arg1 must be int");
             e->inferred = type_str();
         } else {
-            if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("str_index_of arg1 must be str");
+            if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "str_index_of arg1 must be str");
             e->inferred = type_int();
         }
         return e->inferred;
@@ -822,39 +837,39 @@ static Type check_builtin_call(Expr *e, Scope *s) {
     // Validation functions
     if (strcmp(name, "is_digit") == 0 || strcmp(name, "is_alpha") == 0 ||
         strcmp(name, "is_alnum") == 0 || strcmp(name, "is_space") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("%s expects 1 arg", name);
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("%s expects str", name);
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "%s expects 1 arg", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "%s expects str", name);
         e->inferred = type_bool();
         return e->inferred;
     }
 
     // Math extensions
     if (strcmp(name, "clamp") == 0) {
-        if (e->as.call.argc != 3) bp_fatal("clamp expects 3 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("clamp arg0 must be int");
-        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal("clamp arg1 must be int");
-        if (check_expr(e->as.call.args[2], s).kind != TY_INT) bp_fatal("clamp arg2 must be int");
+        if (e->as.call.argc != 3) bp_fatal_at(e->line, "clamp expects 3 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal_at(e->line, "clamp arg0 must be int");
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal_at(e->line, "clamp arg1 must be int");
+        if (check_expr(e->as.call.args[2], s).kind != TY_INT) bp_fatal_at(e->line, "clamp arg2 must be int");
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "sign") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("sign expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("sign expects int");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "sign expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal_at(e->line, "sign expects int");
         e->inferred = type_int();
         return e->inferred;
     }
 
     // File utilities
     if (strcmp(name, "file_size") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("file_size expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("file_size expects str");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "file_size expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "file_size expects str");
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "file_copy") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("file_copy expects 2 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("file_copy arg0 must be str");
-        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("file_copy arg1 must be str");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "file_copy expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "file_copy arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "file_copy arg1 must be str");
         e->inferred = type_bool();
         return e->inferred;
     }
@@ -865,67 +880,67 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         strcmp(name, "log") == 0 || strcmp(name, "log10") == 0 || strcmp(name, "log2") == 0 ||
         strcmp(name, "exp") == 0 || strcmp(name, "fabs") == 0 || strcmp(name, "ffloor") == 0 ||
         strcmp(name, "fceil") == 0 || strcmp(name, "fround") == 0 || strcmp(name, "fsqrt") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("%s expects 1 arg", name);
-        if (check_expr(e->as.call.args[0], s).kind != TY_FLOAT) bp_fatal("%s expects float", name);
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "%s expects 1 arg", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_FLOAT) bp_fatal_at(e->line, "%s expects float", name);
         e->inferred = type_float();
         return e->inferred;
     }
 
     // Float math functions (two args, return float)
     if (strcmp(name, "atan2") == 0 || strcmp(name, "fpow") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("%s expects 2 args", name);
-        if (check_expr(e->as.call.args[0], s).kind != TY_FLOAT) bp_fatal("%s arg0 must be float", name);
-        if (check_expr(e->as.call.args[1], s).kind != TY_FLOAT) bp_fatal("%s arg1 must be float", name);
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "%s expects 2 args", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_FLOAT) bp_fatal_at(e->line, "%s arg0 must be float", name);
+        if (check_expr(e->as.call.args[1], s).kind != TY_FLOAT) bp_fatal_at(e->line, "%s arg1 must be float", name);
         e->inferred = type_float();
         return e->inferred;
     }
 
     // Float conversion functions
     if (strcmp(name, "int_to_float") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("int_to_float expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("int_to_float expects int");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "int_to_float expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal_at(e->line, "int_to_float expects int");
         e->inferred = type_float();
         return e->inferred;
     }
     if (strcmp(name, "float_to_int") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("float_to_int expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_FLOAT) bp_fatal("float_to_int expects float");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "float_to_int expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_FLOAT) bp_fatal_at(e->line, "float_to_int expects float");
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "float_to_str") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("float_to_str expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_FLOAT) bp_fatal("float_to_str expects float");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "float_to_str expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_FLOAT) bp_fatal_at(e->line, "float_to_str expects float");
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "str_to_float") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("str_to_float expects 1 arg");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("str_to_float expects str");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "str_to_float expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "str_to_float expects str");
         e->inferred = type_float();
         return e->inferred;
     }
 
     // Float utilities
     if (strcmp(name, "is_nan") == 0 || strcmp(name, "is_inf") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("%s expects 1 arg", name);
-        if (check_expr(e->as.call.args[0], s).kind != TY_FLOAT) bp_fatal("%s expects float", name);
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "%s expects 1 arg", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_FLOAT) bp_fatal_at(e->line, "%s expects float", name);
         e->inferred = type_bool();
         return e->inferred;
     }
 
     // Array functions
     if (strcmp(name, "array_len") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("array_len expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "array_len expects 1 arg");
         Type t = check_expr(e->as.call.args[0], s);
-        if (t.kind != TY_ARRAY) bp_fatal("array_len expects array, got %s", type_name(t));
+        if (t.kind != TY_ARRAY) bp_fatal_at(e->line, "array_len expects array, got %s", type_name(t));
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "array_push") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("array_push expects 2 args");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "array_push expects 2 args");
         Type arr_type = check_expr(e->as.call.args[0], s);
-        if (arr_type.kind != TY_ARRAY) bp_fatal("array_push arg0 must be array");
+        if (arr_type.kind != TY_ARRAY) bp_fatal_at(e->line, "array_push arg0 must be array");
         Type val_type = check_expr(e->as.call.args[1], s);
         if (arr_type.elem_type && !type_eq(val_type, *arr_type.elem_type)) {
             bp_fatal("array_push: element type mismatch: expected %s, got %s",
@@ -935,9 +950,9 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
     if (strcmp(name, "array_pop") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("array_pop expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "array_pop expects 1 arg");
         Type arr_type = check_expr(e->as.call.args[0], s);
-        if (arr_type.kind != TY_ARRAY) bp_fatal("array_pop expects array");
+        if (arr_type.kind != TY_ARRAY) bp_fatal_at(e->line, "array_pop expects array");
         // Return the element type of the array
         if (arr_type.elem_type) {
             e->inferred = *arr_type.elem_type;
@@ -949,16 +964,16 @@ static Type check_builtin_call(Expr *e, Scope *s) {
 
     // Map functions
     if (strcmp(name, "map_len") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("map_len expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "map_len expects 1 arg");
         Type t = check_expr(e->as.call.args[0], s);
-        if (t.kind != TY_MAP) bp_fatal("map_len expects map, got %s", type_name(t));
+        if (t.kind != TY_MAP) bp_fatal_at(e->line, "map_len expects map, got %s", type_name(t));
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "map_keys") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("map_keys expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "map_keys expects 1 arg");
         Type map_type = check_expr(e->as.call.args[0], s);
-        if (map_type.kind != TY_MAP) bp_fatal("map_keys expects map, got %s", type_name(map_type));
+        if (map_type.kind != TY_MAP) bp_fatal_at(e->line, "map_keys expects map, got %s", type_name(map_type));
         // Return array of key type
         Type arr_type;
         arr_type.kind = TY_ARRAY;
@@ -972,9 +987,9 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
     if (strcmp(name, "map_values") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("map_values expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "map_values expects 1 arg");
         Type map_type = check_expr(e->as.call.args[0], s);
-        if (map_type.kind != TY_MAP) bp_fatal("map_values expects map, got %s", type_name(map_type));
+        if (map_type.kind != TY_MAP) bp_fatal_at(e->line, "map_values expects map, got %s", type_name(map_type));
         // Return array of value type
         Type arr_type;
         arr_type.kind = TY_ARRAY;
@@ -988,9 +1003,9 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
     if (strcmp(name, "map_has_key") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("map_has_key expects 2 args");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "map_has_key expects 2 args");
         Type map_type = check_expr(e->as.call.args[0], s);
-        if (map_type.kind != TY_MAP) bp_fatal("map_has_key arg0 must be map");
+        if (map_type.kind != TY_MAP) bp_fatal_at(e->line, "map_has_key arg0 must be map");
         Type key_type = check_expr(e->as.call.args[1], s);
         if (map_type.key_type && !type_eq(key_type, *map_type.key_type)) {
             bp_fatal("map_has_key: key type mismatch: expected %s, got %s",
@@ -1000,9 +1015,9 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
     if (strcmp(name, "map_delete") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("map_delete expects 2 args");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "map_delete expects 2 args");
         Type map_type = check_expr(e->as.call.args[0], s);
-        if (map_type.kind != TY_MAP) bp_fatal("map_delete arg0 must be map");
+        if (map_type.kind != TY_MAP) bp_fatal_at(e->line, "map_delete arg0 must be map");
         Type key_type = check_expr(e->as.call.args[1], s);
         if (map_type.key_type && !type_eq(key_type, *map_type.key_type)) {
             bp_fatal("map_delete: key type mismatch: expected %s, got %s",
@@ -1014,7 +1029,7 @@ static Type check_builtin_call(Expr *e, Scope *s) {
 
     // argv() - returns array of strings
     if (strcmp(name, "argv") == 0) {
-        if (e->as.call.argc != 0) bp_fatal("argv expects 0 args");
+        if (e->as.call.argc != 0) bp_fatal_at(e->line, "argv expects 0 args");
         Type arr_type;
         arr_type.kind = TY_ARRAY;
         arr_type.key_type = NULL;
@@ -1031,7 +1046,7 @@ static Type check_builtin_call(Expr *e, Scope *s) {
 
     // argc() - returns int
     if (strcmp(name, "argc") == 0) {
-        if (e->as.call.argc != 0) bp_fatal("argc expects 0 args");
+        if (e->as.call.argc != 0) bp_fatal_at(e->line, "argc expects 0 args");
         e->inferred = type_int();
         return e->inferred;
     }
@@ -1044,121 +1059,121 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
     if (strcmp(name, "thread_join") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("thread_join expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "thread_join expects 1 arg");
         Type t = check_expr(e->as.call.args[0], s);
-        if (t.kind != TY_PTR) bp_fatal("thread_join expects ptr");
+        if (t.kind != TY_PTR) bp_fatal_at(e->line, "thread_join expects ptr");
         // Returns any value (the thread's result)
         e->inferred = type_int();  // For now, assume int return
         return e->inferred;
     }
     if (strcmp(name, "thread_detach") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("thread_detach expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "thread_detach expects 1 arg");
         Type t = check_expr(e->as.call.args[0], s);
-        if (t.kind != TY_PTR) bp_fatal("thread_detach expects ptr");
+        if (t.kind != TY_PTR) bp_fatal_at(e->line, "thread_detach expects ptr");
         e->inferred = type_bool();
         return e->inferred;
     }
     if (strcmp(name, "thread_current") == 0) {
-        if (e->as.call.argc != 0) bp_fatal("thread_current expects 0 args");
+        if (e->as.call.argc != 0) bp_fatal_at(e->line, "thread_current expects 0 args");
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "thread_yield") == 0) {
-        if (e->as.call.argc != 0) bp_fatal("thread_yield expects 0 args");
+        if (e->as.call.argc != 0) bp_fatal_at(e->line, "thread_yield expects 0 args");
         e->inferred = type_void();
         return e->inferred;
     }
     if (strcmp(name, "thread_sleep") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("thread_sleep expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "thread_sleep expects 1 arg");
         Type t = check_expr(e->as.call.args[0], s);
-        if (t.kind != TY_INT) bp_fatal("thread_sleep expects int");
+        if (t.kind != TY_INT) bp_fatal_at(e->line, "thread_sleep expects int");
         e->inferred = type_void();
         return e->inferred;
     }
     if (strcmp(name, "mutex_new") == 0) {
-        if (e->as.call.argc != 0) bp_fatal("mutex_new expects 0 args");
+        if (e->as.call.argc != 0) bp_fatal_at(e->line, "mutex_new expects 0 args");
         e->inferred.kind = TY_PTR;
         e->inferred.elem_type = NULL;
         return e->inferred;
     }
     if (strcmp(name, "mutex_lock") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("mutex_lock expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "mutex_lock expects 1 arg");
         Type t = check_expr(e->as.call.args[0], s);
-        if (t.kind != TY_PTR) bp_fatal("mutex_lock expects ptr");
+        if (t.kind != TY_PTR) bp_fatal_at(e->line, "mutex_lock expects ptr");
         e->inferred = type_void();
         return e->inferred;
     }
     if (strcmp(name, "mutex_trylock") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("mutex_trylock expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "mutex_trylock expects 1 arg");
         Type t = check_expr(e->as.call.args[0], s);
-        if (t.kind != TY_PTR) bp_fatal("mutex_trylock expects ptr");
+        if (t.kind != TY_PTR) bp_fatal_at(e->line, "mutex_trylock expects ptr");
         e->inferred = type_bool();
         return e->inferred;
     }
     if (strcmp(name, "mutex_unlock") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("mutex_unlock expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "mutex_unlock expects 1 arg");
         Type t = check_expr(e->as.call.args[0], s);
-        if (t.kind != TY_PTR) bp_fatal("mutex_unlock expects ptr");
+        if (t.kind != TY_PTR) bp_fatal_at(e->line, "mutex_unlock expects ptr");
         e->inferred = type_void();
         return e->inferred;
     }
     if (strcmp(name, "cond_new") == 0) {
-        if (e->as.call.argc != 0) bp_fatal("cond_new expects 0 args");
+        if (e->as.call.argc != 0) bp_fatal_at(e->line, "cond_new expects 0 args");
         e->inferred.kind = TY_PTR;
         e->inferred.elem_type = NULL;
         return e->inferred;
     }
     if (strcmp(name, "cond_wait") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("cond_wait expects 2 args");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "cond_wait expects 2 args");
         Type t1 = check_expr(e->as.call.args[0], s);
         Type t2 = check_expr(e->as.call.args[1], s);
-        if (t1.kind != TY_PTR) bp_fatal("cond_wait arg1 expects ptr");
-        if (t2.kind != TY_PTR) bp_fatal("cond_wait arg2 expects ptr");
+        if (t1.kind != TY_PTR) bp_fatal_at(e->line, "cond_wait arg1 expects ptr");
+        if (t2.kind != TY_PTR) bp_fatal_at(e->line, "cond_wait arg2 expects ptr");
         e->inferred = type_void();
         return e->inferred;
     }
     if (strcmp(name, "cond_signal") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("cond_signal expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "cond_signal expects 1 arg");
         Type t = check_expr(e->as.call.args[0], s);
-        if (t.kind != TY_PTR) bp_fatal("cond_signal expects ptr");
+        if (t.kind != TY_PTR) bp_fatal_at(e->line, "cond_signal expects ptr");
         e->inferred = type_void();
         return e->inferred;
     }
     if (strcmp(name, "cond_broadcast") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("cond_broadcast expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "cond_broadcast expects 1 arg");
         Type t = check_expr(e->as.call.args[0], s);
-        if (t.kind != TY_PTR) bp_fatal("cond_broadcast expects ptr");
+        if (t.kind != TY_PTR) bp_fatal_at(e->line, "cond_broadcast expects ptr");
         e->inferred = type_void();
         return e->inferred;
     }
 
     // Regex operations
     if (strcmp(name, "regex_match") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("regex_match expects 2 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("regex_match arg0 must be str");
-        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("regex_match arg1 must be str");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "regex_match expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "regex_match arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "regex_match arg1 must be str");
         e->inferred = type_bool();
         return e->inferred;
     }
     if (strcmp(name, "regex_search") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("regex_search expects 2 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("regex_search arg0 must be str");
-        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("regex_search arg1 must be str");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "regex_search expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "regex_search arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "regex_search arg1 must be str");
         e->inferred = type_int();
         return e->inferred;
     }
     if (strcmp(name, "regex_replace") == 0) {
-        if (e->as.call.argc != 3) bp_fatal("regex_replace expects 3 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("regex_replace arg0 must be str");
-        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("regex_replace arg1 must be str");
-        if (check_expr(e->as.call.args[2], s).kind != TY_STR) bp_fatal("regex_replace arg2 must be str");
+        if (e->as.call.argc != 3) bp_fatal_at(e->line, "regex_replace expects 3 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "regex_replace arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "regex_replace arg1 must be str");
+        if (check_expr(e->as.call.args[2], s).kind != TY_STR) bp_fatal_at(e->line, "regex_replace arg2 must be str");
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "regex_split") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("regex_split expects 2 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("regex_split arg0 must be str");
-        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("regex_split arg1 must be str");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "regex_split expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "regex_split arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "regex_split arg1 must be str");
         Type arr_type;
         arr_type.kind = TY_ARRAY;
         arr_type.key_type = NULL;
@@ -1168,9 +1183,9 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
     if (strcmp(name, "regex_find_all") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("regex_find_all expects 2 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("regex_find_all arg0 must be str");
-        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("regex_find_all arg1 must be str");
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "regex_find_all expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "regex_find_all arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "regex_find_all arg1 must be str");
         Type arr_type;
         arr_type.kind = TY_ARRAY;
         arr_type.key_type = NULL;
@@ -1180,11 +1195,11 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
 
-    // StringBuilder-like operations
-    if (strcmp(name, "str_split_str") == 0 || strcmp(name, "str_split") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("str_split_str expects 2 args");
-        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("str_split_str arg0 must be str");
-        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("str_split_str arg1 must be str");
+    // String split/join - support both short and long names
+    if (strcmp(name, "str_split") == 0 || strcmp(name, "str_split_str") == 0) {
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "str_split expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "str_split arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "str_split arg1 must be str");
         Type arr_type;
         arr_type.kind = TY_ARRAY;
         arr_type.key_type = NULL;
@@ -1193,18 +1208,18 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         e->inferred = arr_type;
         return e->inferred;
     }
-    if (strcmp(name, "str_join_arr") == 0 || strcmp(name, "str_join") == 0) {
-        if (e->as.call.argc != 2) bp_fatal("str_join_arr expects 2 args");
+    if (strcmp(name, "str_join") == 0 || strcmp(name, "str_join_arr") == 0) {
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "str_join expects 2 args");
         Type arr_type = check_expr(e->as.call.args[0], s);
-        if (arr_type.kind != TY_ARRAY) bp_fatal("str_join_arr arg0 must be array");
-        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("str_join_arr arg1 must be str");
+        if (arr_type.kind != TY_ARRAY) bp_fatal_at(e->line, "str_join arg0 must be array");
+        if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal_at(e->line, "str_join arg1 must be str");
         e->inferred = type_str();
         return e->inferred;
     }
     if (strcmp(name, "str_concat_all") == 0) {
-        if (e->as.call.argc != 1) bp_fatal("str_concat_all expects 1 arg");
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "str_concat_all expects 1 arg");
         Type arr_type = check_expr(e->as.call.args[0], s);
-        if (arr_type.kind != TY_ARRAY) bp_fatal("str_concat_all arg0 must be array");
+        if (arr_type.kind != TY_ARRAY) bp_fatal_at(e->line, "str_concat_all arg0 must be array");
         e->inferred = type_str();
         return e->inferred;
     }
@@ -1281,7 +1296,7 @@ static Type check_call(Expr *e, Scope *s) {
 
     // Check argument count
     if (e->as.call.argc != fn->param_count) {
-        bp_fatal("function '%s' expects %zu args, got %zu", name, fn->param_count, e->as.call.argc);
+        bp_fatal_at(e->line, "function '%s' expects %zu args, got %zu", name, fn->param_count, e->as.call.argc);
     }
 
     // Check argument types
@@ -1341,7 +1356,7 @@ static Type check_expr(Expr *e, Scope *s) {
 
             if (container_type.kind == TY_ARRAY) {
                 if (idx_type.kind != TY_INT) {
-                    bp_fatal("array index must be int, got %s", type_name(idx_type));
+                    bp_fatal_at(e->line, "array index must be int, got %s", type_name(idx_type));
                 }
                 if (container_type.elem_type) {
                     e->inferred = *container_type.elem_type;
@@ -1405,7 +1420,7 @@ static Type check_expr(Expr *e, Scope *s) {
                 }
                 Type fval_type = check_expr(e->as.struct_literal.field_values[i], s);
                 if (!type_eq(si->field_types[fidx], fval_type)) {
-                    bp_fatal("struct field '%s.%s' expects %s, got %s",
+                    bp_fatal_at(e->line, "struct field '%s.%s' expects %s, got %s",
                              si->name, fname, type_name(si->field_types[fidx]), type_name(fval_type));
                 }
             }
@@ -1484,10 +1499,10 @@ static Type check_expr(Expr *e, Scope *s) {
             if (e->as.unary.op == UOP_NEG) {
                 if (r.kind == TY_INT) { e->inferred = type_int(); return e->inferred; }
                 if (r.kind == TY_FLOAT) { e->inferred = type_float(); return e->inferred; }
-                bp_fatal("unary - expects int or float");
+                bp_fatal_at(e->line, "unary - expects int or float");
             }
             if (e->as.unary.op == UOP_NOT) {
-                if (r.kind != TY_BOOL) bp_fatal("not expects bool");
+                if (r.kind != TY_BOOL) bp_fatal_at(e->line, "not expects bool");
                 e->inferred = type_bool();
                 return e->inferred;
             }
@@ -1507,7 +1522,7 @@ static Type check_expr(Expr *e, Scope *s) {
                 case BOP_SUB: case BOP_MUL: case BOP_DIV:
                     if (a.kind == TY_INT && b.kind == TY_INT) { e->inferred = type_int(); return e->inferred; }
                     if (a.kind == TY_FLOAT && b.kind == TY_FLOAT) { e->inferred = type_float(); return e->inferred; }
-                    bp_fatal("arithmetic expects int or float");
+                    bp_fatal_at(e->line, "arithmetic expects int or float");
                     break;
                 case BOP_MOD:
                     if (a.kind == TY_FLOAT || b.kind == TY_FLOAT) {
@@ -1515,7 +1530,7 @@ static Type check_expr(Expr *e, Scope *s) {
                     } else if (a.kind == TY_INT && b.kind == TY_INT) {
                         e->inferred = type_int();
                     } else {
-                        bp_fatal("mod expects int or float");
+                        bp_fatal_at(e->line, "mod expects int or float");
                     }
                     return e->inferred;
                 case BOP_EQ: case BOP_NEQ:
@@ -1577,10 +1592,10 @@ static Type check_expr(Expr *e, Scope *s) {
             // Type check the body in a new scope with parameters
             Scope body_scope = {0};
             for (size_t i = 0; i < s->len; i++) {
-                scope_put(&body_scope, s->items[i].name, s->items[i].type);
+                scope_put(&body_scope, s->items[i].name, s->items[i].type, e->line);
             }
             for (size_t i = 0; i < e->as.lambda.paramc; i++) {
-                scope_put(&body_scope, e->as.lambda.params[i].name, e->as.lambda.params[i].type);
+                scope_put(&body_scope, e->as.lambda.params[i].name, e->as.lambda.params[i].type, e->line);
             }
             Type body_type = check_expr(e->as.lambda.body, &body_scope);
             if (!type_eq(body_type, e->as.lambda.return_type)) {
@@ -1740,21 +1755,21 @@ static void check_stmt(Stmt *st, Scope *s, Type ret_type) {
         case ST_LET: {
             Type it = check_expr(st->as.let.init, s);
             if (!type_eq(it, st->as.let.type)) {
-                bp_fatal("type error: let %s: %s initialized with %s", st->as.let.name, type_name(st->as.let.type), type_name(it));
+                bp_fatal_at(st->line, "type error: let %s: %s initialized with %s", st->as.let.name, type_name(st->as.let.type), type_name(it));
             }
             // For TY_FUNC: propagate lambda function name from inferred type
             Type let_type = st->as.let.type;
             if (let_type.kind == TY_FUNC && it.struct_name) {
                 let_type.struct_name = it.struct_name;
             }
-            scope_put(s, st->as.let.name, let_type);
+            scope_put(s, st->as.let.name, let_type, st->line);
             return;
         }
         case ST_ASSIGN: {
             Type vt = type_void();
-            if (!scope_get(s, st->as.assign.name, &vt)) bp_fatal("undefined variable '%s'", st->as.assign.name);
+            if (!scope_get(s, st->as.assign.name, &vt)) bp_fatal_at(st->line, "undefined variable '%s'", st->as.assign.name);
             Type it = check_expr(st->as.assign.value, s);
-            if (!type_eq(vt, it)) bp_fatal("type error: assigning %s to %s", type_name(it), type_name(vt));
+            if (!type_eq(vt, it)) bp_fatal_at(st->line, "type error: assigning %s to %s", type_name(it), type_name(vt));
             return;
         }
         case ST_INDEX_ASSIGN: {
@@ -1764,44 +1779,58 @@ static void check_stmt(Stmt *st, Scope *s, Type ret_type) {
 
             if (container_type.kind == TY_ARRAY) {
                 if (idx_type.kind != TY_INT) {
-                    bp_fatal("array index must be int, got %s", type_name(idx_type));
+                    bp_fatal_at(st->line, "array index must be int, got %s", type_name(idx_type));
                 }
                 if (container_type.elem_type && !type_eq(val_type, *container_type.elem_type)) {
-                    bp_fatal("type error: assigning %s to array of %s",
+                    bp_fatal_at(st->line, "type error: assigning %s to array of %s",
                              type_name(val_type), type_name(*container_type.elem_type));
                 }
             } else if (container_type.kind == TY_MAP) {
                 if (container_type.key_type && !type_eq(idx_type, *container_type.key_type)) {
-                    bp_fatal("map key type mismatch: expected %s, got %s",
+                    bp_fatal_at(st->line, "map key type mismatch: expected %s, got %s",
                              type_name(*container_type.key_type), type_name(idx_type));
                 }
                 if (container_type.elem_type && !type_eq(val_type, *container_type.elem_type)) {
-                    bp_fatal("type error: assigning %s to map with value type %s",
+                    bp_fatal_at(st->line, "type error: assigning %s to map with value type %s",
                              type_name(val_type), type_name(*container_type.elem_type));
                 }
             } else {
-                bp_fatal("cannot index type for assignment: %s", type_name(container_type));
+                bp_fatal_at(st->line, "cannot index type for assignment: %s", type_name(container_type));
             }
             return;
         }
         case ST_EXPR:
             check_expr(st->as.expr.expr, s);
             return;
-        case ST_IF:
-            if (check_expr(st->as.ifs.cond, s).kind != TY_BOOL) bp_fatal("if condition must be bool");
+        case ST_IF: {
+            if (check_expr(st->as.ifs.cond, s).kind != TY_BOOL) bp_fatal_at(st->line, "if condition must be bool");
+            // Create new scope for then-block
+            size_t then_mark = scope_mark(s);
             for (size_t i = 0; i < st->as.ifs.then_len; i++) check_stmt(st->as.ifs.then_stmts[i], s, ret_type);
+            scope_restore(s, then_mark);
+            // Create new scope for else-block
+            size_t else_mark = scope_mark(s);
             for (size_t i = 0; i < st->as.ifs.else_len; i++) check_stmt(st->as.ifs.else_stmts[i], s, ret_type);
+            scope_restore(s, else_mark);
             return;
-        case ST_WHILE:
-            if (check_expr(st->as.wh.cond, s).kind != TY_BOOL) bp_fatal("while condition must be bool");
+        }
+        case ST_WHILE: {
+            if (check_expr(st->as.wh.cond, s).kind != TY_BOOL) bp_fatal_at(st->line, "while condition must be bool");
+            // Create new scope for while body
+            size_t mark = scope_mark(s);
             for (size_t i = 0; i < st->as.wh.body_len; i++) check_stmt(st->as.wh.body[i], s, ret_type);
+            scope_restore(s, mark);
             return;
+        }
         case ST_FOR: {
-            if (check_expr(st->as.forr.start, s).kind != TY_INT) bp_fatal("for range start must be int");
-            if (check_expr(st->as.forr.end, s).kind != TY_INT) bp_fatal("for range end must be int");
-            // Add iterator variable to scope
-            scope_put(s, st->as.forr.var, type_int());
+            if (check_expr(st->as.forr.start, s).kind != TY_INT) bp_fatal_at(st->line, "for range start must be int");
+            if (check_expr(st->as.forr.end, s).kind != TY_INT) bp_fatal_at(st->line, "for range end must be int");
+            // Create new scope for for loop (includes iterator)
+            size_t mark = scope_mark(s);
+            // Add iterator variable to this block's scope
+            scope_put(s, st->as.forr.var, type_int(), st->line);
             for (size_t i = 0; i < st->as.forr.body_len; i++) check_stmt(st->as.forr.body[i], s, ret_type);
+            scope_restore(s, mark);
             return;
         }
         case ST_BREAK:
@@ -1810,36 +1839,43 @@ static void check_stmt(Stmt *st, Scope *s, Type ret_type) {
             return;
         case ST_RETURN:
             if (ret_type.kind == TY_VOID) {
-                if (st->as.ret.value) bp_fatal("return value in void function");
+                if (st->as.ret.value) bp_fatal_at(st->line, "return value in void function");
                 return;
             }
-            if (!st->as.ret.value) bp_fatal("missing return value");
-            if (!type_eq(check_expr(st->as.ret.value, s), ret_type)) bp_fatal("return type mismatch");
+            if (!st->as.ret.value) bp_fatal_at(st->line, "missing return value");
+            if (!type_eq(check_expr(st->as.ret.value, s), ret_type)) bp_fatal_at(st->line, "return type mismatch");
             return;
         case ST_TRY: {
-            // Type check try body
+            // Create new scope for try body
+            size_t try_mark = scope_mark(s);
             for (size_t i = 0; i < st->as.try_catch.try_len; i++) {
                 check_stmt(st->as.try_catch.try_stmts[i], s, ret_type);
             }
-            // If there's a catch variable, add it to scope for catch body
+            scope_restore(s, try_mark);
+
+            // Create new scope for catch body (includes catch variable)
+            size_t catch_mark = scope_mark(s);
             if (st->as.try_catch.catch_var) {
-                scope_put(s, st->as.try_catch.catch_var, type_str());  // Exceptions are strings
+                scope_put(s, st->as.try_catch.catch_var, type_str(), st->line);  // Exceptions are strings
             }
-            // Type check catch body
             for (size_t i = 0; i < st->as.try_catch.catch_len; i++) {
                 check_stmt(st->as.try_catch.catch_stmts[i], s, ret_type);
             }
-            // Type check finally body
+            scope_restore(s, catch_mark);
+
+            // Create new scope for finally body
+            size_t finally_mark = scope_mark(s);
             for (size_t i = 0; i < st->as.try_catch.finally_len; i++) {
                 check_stmt(st->as.try_catch.finally_stmts[i], s, ret_type);
             }
+            scope_restore(s, finally_mark);
             return;
         }
         case ST_THROW: {
             // For now, thrown value must be a string
             Type t = check_expr(st->as.throw.value, s);
             if (t.kind != TY_STR) {
-                bp_fatal("throw value must be string, got %s", type_name(t));
+                bp_fatal_at(st->line, "throw value must be string, got %s", type_name(t));
             }
             return;
         }
@@ -1970,7 +2006,7 @@ void typecheck_module(Module *m) {
         Function *f = &m->fns[i];
 
         Scope s = {0};
-        for (size_t p = 0; p < f->paramc; p++) scope_put(&s, f->params[p].name, f->params[p].type);
+        for (size_t p = 0; p < f->paramc; p++) scope_put(&s, f->params[p].name, f->params[p].type, f->line);
 
         for (size_t j = 0; j < f->body_len; j++) check_stmt(f->body[j], &s, f->ret_type);
 

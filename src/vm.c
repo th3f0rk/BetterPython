@@ -183,7 +183,7 @@ static Value ffi_call_mixed(BpExternFunc *ext, int64_t *iargs, double *fargs,
 }
 
 /* Main FFI entry point: invoke an extern function */
-static Value ffi_invoke(BpExternFunc *ext, Value *args, uint8_t argc, Gc *gc) {
+Value ffi_invoke(BpExternFunc *ext, Value *args, uint8_t argc, Gc *gc) {
     ffi_resolve(ext);
 
     /* Classify args: are they all int-like or all float? */

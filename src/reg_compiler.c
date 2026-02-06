@@ -10,6 +10,7 @@
 
 #include "reg_compiler.h"
 #include "regalloc.h"
+#include "types.h"
 #include "util.h"
 #include <string.h>
 
@@ -206,6 +207,32 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "cond_signal") == 0) return BI_COND_SIGNAL;
     if (strcmp(name, "cond_broadcast") == 0) return BI_COND_BROADCAST;
 
+    // Regex operations
+    if (strcmp(name, "regex_match") == 0) return BI_REGEX_MATCH;
+    if (strcmp(name, "regex_search") == 0) return BI_REGEX_SEARCH;
+    if (strcmp(name, "regex_replace") == 0) return BI_REGEX_REPLACE;
+    if (strcmp(name, "regex_split") == 0) return BI_REGEX_SPLIT;
+    if (strcmp(name, "regex_find_all") == 0) return BI_REGEX_FIND_ALL;
+
+    // StringBuilder-like operations (with aliases)
+    if (strcmp(name, "str_split") == 0) return BI_STR_SPLIT_STR;
+    if (strcmp(name, "str_split_str") == 0) return BI_STR_SPLIT_STR;
+    if (strcmp(name, "str_join") == 0) return BI_STR_JOIN_ARR;
+    if (strcmp(name, "str_join_arr") == 0) return BI_STR_JOIN_ARR;
+    if (strcmp(name, "str_concat_all") == 0) return BI_STR_CONCAT_ALL;
+
+    // Bitwise operations
+    if (strcmp(name, "bit_and") == 0) return BI_BIT_AND;
+    if (strcmp(name, "bit_or") == 0) return BI_BIT_OR;
+    if (strcmp(name, "bit_xor") == 0) return BI_BIT_XOR;
+    if (strcmp(name, "bit_not") == 0) return BI_BIT_NOT;
+    if (strcmp(name, "bit_shl") == 0) return BI_BIT_SHL;
+    if (strcmp(name, "bit_shr") == 0) return BI_BIT_SHR;
+
+    // Byte conversions
+    if (strcmp(name, "bytes_to_str") == 0) return BI_BYTES_TO_STR;
+    if (strcmp(name, "str_to_bytes") == 0) return BI_STR_TO_BYTES;
+
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
 }
@@ -243,6 +270,7 @@ typedef struct {
     size_t str_cap;
     RegAlloc ra;
     StrPool *pool;
+    BpModule *module;   // For lambda compilation
 
     // Loop context stack
     LoopCtx *loops;
@@ -608,6 +636,23 @@ static void reg_emit_stmt(RegFnEmit *fe, const Stmt *s) {
             buf_u8(&fe->code, val_reg);
             return;
         }
+        case ST_FIELD_ASSIGN: {
+            // obj.field = value
+            const Expr *fa = s->as.field_assign.object;
+            uint8_t obj_reg = reg_emit_expr(fe, fa->as.field_access.object);
+            uint8_t val_reg = reg_emit_expr(fe, s->as.field_assign.value);
+            if (fa->as.field_access.object->inferred.kind == TY_CLASS) {
+                buf_u8(&fe->code, R_CLASS_SET);
+            } else {
+                buf_u8(&fe->code, R_STRUCT_SET);
+            }
+            buf_u8(&fe->code, obj_reg);
+            buf_u16(&fe->code, (uint16_t)fa->as.field_access.field_index);
+            buf_u8(&fe->code, val_reg);
+            reg_free_temp(&fe->ra, obj_reg);
+            reg_free_temp(&fe->ra, val_reg);
+            return;
+        }
         default:
             break;
     }
@@ -656,11 +701,8 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             uint8_t arg_base = 0;
 
             if (argc > 0) {
-                // Allocate a block of consecutive temps for args
-                arg_base = reg_alloc_temp(&fe->ra);
-                for (size_t i = 1; i < argc; i++) {
-                    reg_alloc_temp(&fe->ra);
-                }
+                // Allocate a contiguous block of registers for args
+                arg_base = reg_alloc_block(&fe->ra, argc);
 
                 // Evaluate arguments into consecutive registers
                 for (size_t i = 0; i < argc; i++) {
@@ -680,7 +722,15 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             // Result register
             uint8_t dst = reg_alloc_temp(&fe->ra);
 
-            if (e->as.call.fn_index < 0) {
+            if (e->as.call.fn_index <= -100) {
+                // FFI extern function call
+                uint16_t extern_id = (uint16_t)(-(e->as.call.fn_index + 100));
+                buf_u8(&fe->code, R_FFI_CALL);
+                buf_u8(&fe->code, dst);
+                buf_u16(&fe->code, extern_id);
+                buf_u8(&fe->code, arg_base);
+                buf_u8(&fe->code, (uint8_t)argc);
+            } else if (e->as.call.fn_index < 0) {
                 // Builtin call
                 BuiltinId id = builtin_id(e->as.call.name);
                 buf_u8(&fe->code, R_CALL_BUILTIN);
@@ -730,7 +780,9 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             uint8_t rhs = reg_emit_expr(fe, e->as.binary.rhs);
             uint8_t dst = reg_alloc_temp(&fe->ra);
 
-            bool is_float = (e->inferred.kind == TY_FLOAT);
+            bool is_float = (e->inferred.kind == TY_FLOAT) ||
+                             (e->as.binary.lhs->inferred.kind == TY_FLOAT) ||
+                             (e->as.binary.rhs->inferred.kind == TY_FLOAT);
 
             switch (e->as.binary.op) {
                 case BOP_ADD:
@@ -748,7 +800,7 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
                     buf_u8(&fe->code, is_float ? R_DIV_F64 : R_DIV_I64);
                     break;
                 case BOP_MOD:
-                    buf_u8(&fe->code, R_MOD_I64);
+                    buf_u8(&fe->code, is_float ? R_MOD_F64 : R_MOD_I64);
                     break;
                 case BOP_EQ:
                     buf_u8(&fe->code, R_EQ);
@@ -791,10 +843,8 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             uint8_t src_base = 0;
 
             if (count > 0) {
-                src_base = reg_alloc_temp(&fe->ra);
-                for (size_t i = 1; i < count; i++) {
-                    reg_alloc_temp(&fe->ra);
-                }
+                // Allocate a contiguous block of registers
+                src_base = reg_alloc_block(&fe->ra, count);
 
                 // Evaluate elements
                 for (size_t i = 0; i < count; i++) {
@@ -848,10 +898,8 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             uint8_t src_base = 0;
 
             if (total > 0) {
-                src_base = reg_alloc_temp(&fe->ra);
-                for (size_t i = 1; i < total; i++) {
-                    reg_alloc_temp(&fe->ra);
-                }
+                // Allocate a contiguous block of registers for key-value pairs
+                src_base = reg_alloc_block(&fe->ra, total);
 
                 // Evaluate key-value pairs
                 for (size_t i = 0; i < count; i++) {
@@ -895,10 +943,8 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             uint8_t src_base = 0;
 
             if (count > 0) {
-                src_base = reg_alloc_temp(&fe->ra);
-                for (size_t i = 1; i < count; i++) {
-                    reg_alloc_temp(&fe->ra);
-                }
+                // Allocate a contiguous block of registers for struct fields
+                src_base = reg_alloc_block(&fe->ra, count);
 
                 for (size_t i = 0; i < count; i++) {
                     uint8_t val = reg_emit_expr(fe, e->as.struct_literal.field_values[i]);
@@ -947,10 +993,8 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             uint8_t arg_base = 0;
 
             if (argc > 0) {
-                arg_base = reg_alloc_temp(&fe->ra);
-                for (size_t i = 1; i < argc; i++) {
-                    reg_alloc_temp(&fe->ra);
-                }
+                // Allocate a contiguous block of registers for constructor args
+                arg_base = reg_alloc_block(&fe->ra, argc);
 
                 for (size_t i = 0; i < argc; i++) {
                     uint8_t val = reg_emit_expr(fe, e->as.new_expr.args[i]);
@@ -983,10 +1027,8 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             uint8_t arg_base = 0;
 
             if (argc > 0) {
-                arg_base = reg_alloc_temp(&fe->ra);
-                for (size_t i = 1; i < argc; i++) {
-                    reg_alloc_temp(&fe->ra);
-                }
+                // Allocate a contiguous block of registers for super call args
+                arg_base = reg_alloc_block(&fe->ra, argc);
 
                 for (size_t i = 0; i < argc; i++) {
                     uint8_t val = reg_emit_expr(fe, e->as.super_call.args[i]);
@@ -1014,6 +1056,96 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
 
             return dst;
         }
+        case EX_ENUM_MEMBER: {
+            // Enum members are integer constants
+            uint8_t dst = reg_alloc_temp(&fe->ra);
+            buf_u8(&fe->code, R_CONST_I64);
+            buf_u8(&fe->code, dst);
+            buf_i64(&fe->code, (int64_t)e->as.enum_member.member_value);
+            return dst;
+        }
+        case EX_TUPLE: {
+            // Tuples compile as arrays
+            size_t count = e->as.tuple.len;
+            uint8_t src_base = 0;
+            if (count > 0) {
+                src_base = reg_alloc_block(&fe->ra, count);
+                for (size_t i = 0; i < count; i++) {
+                    uint8_t val = reg_emit_expr(fe, e->as.tuple.elements[i]);
+                    if (val != src_base + i) {
+                        buf_u8(&fe->code, R_MOV);
+                        buf_u8(&fe->code, src_base + (uint8_t)i);
+                        buf_u8(&fe->code, val);
+                        if (val >= src_base + count || val < src_base) {
+                            reg_free_temp(&fe->ra, val);
+                        }
+                    }
+                }
+            }
+            uint8_t dst = reg_alloc_temp(&fe->ra);
+            buf_u8(&fe->code, R_ARRAY_NEW);
+            buf_u8(&fe->code, dst);
+            buf_u8(&fe->code, src_base);
+            buf_u16(&fe->code, (uint16_t)count);
+            for (size_t i = 0; i < count; i++) {
+                reg_free_temp(&fe->ra, src_base + (uint8_t)i);
+            }
+            return dst;
+        }
+        case EX_LAMBDA: {
+            // Lambda compiles to its function index as an integer
+            // The type checker assigned a name like __lambda_N
+            const char *lname = e->inferred.struct_name;
+            size_t lambda_num = 0;
+            if (!lname || sscanf(lname, "__lambda_%zu", &lambda_num) != 1) {
+                bp_fatal("lambda missing function name from type checker");
+            }
+            size_t fn_idx = fe->module->fn_len - typecheck_lambda_count() + lambda_num;
+
+            // Compile the lambda body as a function in the module
+            RegFnEmit lfe;
+            memset(&lfe, 0, sizeof(lfe));
+            lfe.pool = fe->pool;
+            lfe.module = fe->module;
+            reg_alloc_init(&lfe.ra, e->as.lambda.paramc);
+            for (size_t p = 0; p < e->as.lambda.paramc; p++) {
+                reg_alloc_param(&lfe.ra, e->as.lambda.params[p].name, (uint8_t)p);
+            }
+            uint8_t body_result = reg_emit_expr(&lfe, e->as.lambda.body);
+            buf_u8(&lfe.code, R_RET);
+            buf_u8(&lfe.code, body_result);
+
+            BpFunc *lfn = &fe->module->funcs[fn_idx];
+            if (lfn->name) free(lfn->name);
+            lfn->name = bp_xstrdup(lname);
+            lfn->arity = (uint16_t)e->as.lambda.paramc;
+            lfn->locals = 0;
+            lfn->code = lfe.code.data;
+            lfn->code_len = lfe.code.len;
+            lfn->str_const_ids = lfe.str_ids;
+            lfn->str_const_len = lfe.str_len;
+            lfn->format = BC_FORMAT_REGISTER;
+            lfn->reg_count = reg_max_used(&lfe.ra) + 1;
+            reg_alloc_free(&lfe.ra);
+
+            // Push function index as integer
+            uint8_t dst = reg_alloc_temp(&fe->ra);
+            buf_u8(&fe->code, R_CONST_I64);
+            buf_u8(&fe->code, dst);
+            buf_i64(&fe->code, (int64_t)fn_idx);
+            return dst;
+        }
+        case EX_FSTRING: {
+            // F-strings: emit raw template string (interpolation not implemented)
+            const char *tmpl = e->as.fstring.template_str;
+            uint32_t sid = strpool_add(fe->pool, tmpl);
+            uint32_t local_id = fn_str_index(fe, sid);
+            uint8_t dst = reg_alloc_temp(&fe->ra);
+            buf_u8(&fe->code, R_CONST_STR);
+            buf_u8(&fe->code, dst);
+            buf_u32(&fe->code, local_id);
+            return dst;
+        }
         default:
             break;
     }
@@ -1031,7 +1163,13 @@ BpModule reg_compile_module(const Module *m) {
 
     StrPool pool = {0};
 
-    out.fn_len = m->fnc;
+    // Count total functions: module functions + class methods + lambdas
+    size_t total_methods = 0;
+    for (size_t i = 0; i < m->classc; i++)
+        total_methods += m->classes[i].method_count;
+    size_t lambda_count = typecheck_lambda_count();
+
+    out.fn_len = m->fnc + total_methods + lambda_count;
     out.funcs = bp_xmalloc(out.fn_len * sizeof(*out.funcs));
     memset(out.funcs, 0, out.fn_len * sizeof(*out.funcs));
 
@@ -1046,6 +1184,7 @@ BpModule reg_compile_module(const Module *m) {
         RegFnEmit fe;
         memset(&fe, 0, sizeof(fe));
         fe.pool = &pool;
+        fe.module = &out;
 
         // Initialize register allocator with parameter count
         reg_alloc_init(&fe.ra, f->paramc);
@@ -1082,7 +1221,8 @@ BpModule reg_compile_module(const Module *m) {
         free(fe.loops);
     }
 
-    // Compile class definitions (same as stack compiler)
+    // Compile class definitions and their methods
+    size_t method_fn_idx = m->fnc; // methods start after module functions
     out.class_type_len = m->classc;
     if (m->classc > 0) {
         out.class_types = bp_xmalloc(m->classc * sizeof(*out.class_types));
@@ -1103,8 +1243,40 @@ BpModule reg_compile_module(const Module *m) {
                 out.class_types[i].method_ids = bp_xmalloc(cd->method_count * sizeof(uint16_t));
                 out.class_types[i].method_names = bp_xmalloc(cd->method_count * sizeof(char *));
                 for (size_t j = 0; j < cd->method_count; j++) {
-                    out.class_types[i].method_names[j] = bp_xstrdup(cd->methods[j].name);
-                    out.class_types[i].method_ids[j] = 0;
+                    const MethodDef *md = &cd->methods[j];
+                    out.class_types[i].method_names[j] = bp_xstrdup(md->name);
+                    out.class_types[i].method_ids[j] = (uint16_t)method_fn_idx;
+
+                    // Compile the method as a function
+                    RegFnEmit fe;
+                    memset(&fe, 0, sizeof(fe));
+                    fe.pool = &pool;
+                    fe.module = &out;
+                    reg_alloc_init(&fe.ra, md->paramc);
+                    for (size_t p = 0; p < md->paramc; p++)
+                        reg_alloc_param(&fe.ra, md->params[p].name, (uint8_t)p);
+                    for (size_t s = 0; s < md->body_len; s++)
+                        reg_emit_stmt(&fe, md->body[s]);
+                    uint8_t tmp = reg_alloc_temp(&fe.ra);
+                    buf_u8(&fe.code, R_CONST_I64);
+                    buf_u8(&fe.code, tmp);
+                    buf_i64(&fe.code, 0);
+                    buf_u8(&fe.code, R_RET);
+                    buf_u8(&fe.code, tmp);
+
+                    char mname[256];
+                    snprintf(mname, sizeof(mname), "%s$%s", cd->name, md->name);
+                    out.funcs[method_fn_idx].name = bp_xstrdup(mname);
+                    out.funcs[method_fn_idx].arity = (uint16_t)md->paramc;
+                    out.funcs[method_fn_idx].locals = 0;
+                    out.funcs[method_fn_idx].code = fe.code.data;
+                    out.funcs[method_fn_idx].code_len = fe.code.len;
+                    out.funcs[method_fn_idx].str_const_ids = fe.str_ids;
+                    out.funcs[method_fn_idx].str_const_len = fe.str_len;
+                    out.funcs[method_fn_idx].format = BC_FORMAT_REGISTER;
+                    out.funcs[method_fn_idx].reg_count = reg_max_used(&fe.ra) + 1;
+                    reg_alloc_free(&fe.ra);
+                    method_fn_idx++;
                 }
             }
         }
@@ -1124,6 +1296,26 @@ BpModule reg_compile_module(const Module *m) {
             out.extern_funcs[i].is_variadic = ed->is_variadic;
             out.extern_funcs[i].handle = NULL;
             out.extern_funcs[i].fn_ptr = NULL;
+            // Map parameter types to FFI type codes
+            if (ed->paramc > 0) {
+                out.extern_funcs[i].param_types = bp_xmalloc(ed->paramc * sizeof(uint8_t));
+                for (size_t p = 0; p < ed->paramc; p++) {
+                    switch (ed->params[p].type.kind) {
+                        case TY_FLOAT: out.extern_funcs[i].param_types[p] = FFI_TC_FLOAT; break;
+                        case TY_STR:   out.extern_funcs[i].param_types[p] = FFI_TC_STR; break;
+                        case TY_PTR:   out.extern_funcs[i].param_types[p] = FFI_TC_PTR; break;
+                        default:       out.extern_funcs[i].param_types[p] = FFI_TC_INT; break;
+                    }
+                }
+            }
+            // Map return type
+            switch (ed->ret_type.kind) {
+                case TY_FLOAT: out.extern_funcs[i].ret_type = FFI_TC_FLOAT; break;
+                case TY_STR:   out.extern_funcs[i].ret_type = FFI_TC_STR; break;
+                case TY_PTR:   out.extern_funcs[i].ret_type = FFI_TC_PTR; break;
+                case TY_VOID:  out.extern_funcs[i].ret_type = FFI_TC_VOID; break;
+                default:       out.extern_funcs[i].ret_type = FFI_TC_INT; break;
+            }
         }
     }
 

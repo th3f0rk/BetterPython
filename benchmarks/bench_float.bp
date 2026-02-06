@@ -1,0 +1,49 @@
+# Benchmark: Float Math Operations
+# Tests trigonometric and mathematical functions
+
+def main() -> int:
+    let iterations: int = 100000
+
+    print("=== Float Math Benchmark ===")
+    print("Iterations:", iterations)
+
+    # Trigonometry benchmark
+    let start: int = clock_ms()
+    let trig_sum: float = 0.0
+    for i in range(0, iterations):
+        let x: float = int_to_float(i) / 1000.0
+        trig_sum = trig_sum + sin(x) + cos(x)
+
+    let mid1: int = clock_ms()
+    print("Trig (sin+cos) time (ms):", mid1 - start)
+
+    # Logarithm benchmark
+    let log_sum: float = 0.0
+    for i in range(1, iterations + 1):
+        let x: float = int_to_float(i)
+        log_sum = log_sum + log(x)
+
+    let mid2: int = clock_ms()
+    print("Logarithm time (ms):", mid2 - mid1)
+
+    # Square root benchmark
+    let sqrt_sum: float = 0.0
+    for i in range(0, iterations):
+        let x: float = int_to_float(i) + 1.0
+        sqrt_sum = sqrt_sum + fsqrt(x)
+
+    let mid3: int = clock_ms()
+    print("Square root time (ms):", mid3 - mid2)
+
+    # Power function benchmark
+    let pow_sum: float = 0.0
+    for i in range(0, iterations):
+        let base: float = 1.001
+        let exp: float = int_to_float(i % 100)
+        pow_sum = pow_sum + fpow(base, exp)
+
+    let end: int = clock_ms()
+    print("Power function time (ms):", end - mid3)
+    print("Total time (ms):", end - start)
+
+    return 0

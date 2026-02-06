@@ -17,10 +17,11 @@ betterpython/
 │   ├── types.c/.h         # Type checking
 │   ├── compiler.c/.h      # Code generation
 │   ├── bytecode.c/.h      # Bytecode definitions
-│   ├── vm.c/.h            # Virtual machine
+│   ├── vm.c/.h            # Stack-based virtual machine
+│   ├── reg_vm.c/.h        # Register-based virtual machine
 │   ├── gc.c/.h            # Garbage collector
-│   ├── stdlib.c/.h        # Standard library (42 functions)
-│   ├── extended.c/.h      # Security and utilities module
+│   ├── stdlib.c/.h        # Standard library (115 functions)
+│   ├── jit/               # JIT compiler for hot functions
 │   ├── util.c/.h          # Utilities
 │   └── bp_main.c          # Main entry point
 ├── bin/                    # Compiled binaries

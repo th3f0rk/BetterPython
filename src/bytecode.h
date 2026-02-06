@@ -117,6 +117,7 @@ typedef enum {
     R_SUB_F64,          // dst, src1, src2: r[dst] = r[src1] - r[src2]
     R_MUL_F64,          // dst, src1, src2: r[dst] = r[src1] * r[src2]
     R_DIV_F64,          // dst, src1, src2: r[dst] = r[src1] / r[src2]
+    R_MOD_F64,          // dst, src1, src2: r[dst] = fmod(r[src1], r[src2])
     R_NEG_F64,          // dst, src: r[dst] = -r[src]
 
     // String Operations
