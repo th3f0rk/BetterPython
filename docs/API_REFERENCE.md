@@ -6,7 +6,7 @@ Complete Function Reference
 OVERVIEW
 ================================================================================
 
-This document provides comprehensive API documentation for all 42 built-in
+This document provides comprehensive API documentation for the 120+ built-in
 functions available in BetterPython. Each function includes:
 - Function signature with types
 - Detailed parameter descriptions
@@ -660,5 +660,112 @@ Notes:
     - old and new can be any length
 
 ================================================================================
-Continued in next section...
+BITWISE OPERATIONS (6 functions)
+================================================================================
+
+bit_and(a: int, b: int) -> int
+    Bitwise AND of two integers.
+    Example: bit_and(255, 15) => 15
+
+bit_or(a: int, b: int) -> int
+    Bitwise OR of two integers.
+    Example: bit_or(240, 15) => 255
+
+bit_xor(a: int, b: int) -> int
+    Bitwise XOR of two integers.
+    Example: bit_xor(255, 15) => 240
+
+bit_not(a: int) -> int
+    Bitwise NOT (complement) of an integer.
+    Example: bit_not(0) => -1
+
+bit_shl(a: int, n: int) -> int
+    Shift left by n bits.
+    Example: bit_shl(1, 4) => 16
+
+bit_shr(a: int, n: int) -> int
+    Shift right by n bits.
+    Example: bit_shr(255, 4) => 15
+
+Common Patterns:
+    # Set a flag
+    let flags: int = bit_or(flags, 4)
+
+    # Check a flag
+    let has_flag: bool = bit_and(flags, 4) != 0
+
+    # Clear a flag
+    flags = bit_and(flags, bit_not(4))
+
+================================================================================
+FLOAT MATH FUNCTIONS (17 functions)
+================================================================================
+
+sin(x: float) -> float     Sine of x (radians)
+cos(x: float) -> float     Cosine of x (radians)
+tan(x: float) -> float     Tangent of x (radians)
+asin(x: float) -> float    Arcsine (-1 to 1)
+acos(x: float) -> float    Arccosine (-1 to 1)
+atan(x: float) -> float    Arctangent
+atan2(y: float, x: float) -> float   Two-argument arctangent
+log(x: float) -> float     Natural logarithm
+log10(x: float) -> float   Base-10 logarithm
+log2(x: float) -> float    Base-2 logarithm
+exp(x: float) -> float     e^x
+fabs(x: float) -> float    Absolute value
+ffloor(x: float) -> float  Floor (round down)
+fceil(x: float) -> float   Ceiling (round up)
+fround(x: float) -> float  Round to nearest
+fsqrt(x: float) -> float   Square root
+fpow(base: float, exp: float) -> float  Exponentiation
+
+================================================================================
+TYPE CONVERSION FUNCTIONS
+================================================================================
+
+to_str(value: any) -> str           Convert any value to string
+int_to_float(n: int) -> float       Integer to float
+float_to_int(f: float) -> int       Float to integer (truncates)
+float_to_str(f: float) -> str       Float to string
+str_to_float(s: str) -> float       String to float
+int_to_hex(n: int) -> str           Integer to hexadecimal string
+hex_to_int(s: str) -> int           Hexadecimal string to integer
+
+================================================================================
+ENUM TYPES
+================================================================================
+
+Enums define named integer constants:
+
+    enum Color:
+        RED        # 0 (auto-incremented)
+        GREEN      # 1
+        BLUE       # 2
+
+    enum HttpStatus:
+        OK = 200
+        NOT_FOUND = 404
+        SERVER_ERROR = 500
+
+Access: Color.RED => 0, HttpStatus.NOT_FOUND => 404
+
+================================================================================
+STRUCT FIELD MUTATION
+================================================================================
+
+Struct fields can be mutated after creation:
+
+    struct Point:
+        x: int
+        y: int
+
+    def main() -> int:
+        let p: Point = Point{x: 10, y: 20}
+        p.x = 42          # Mutate field
+        p.y = p.x + 1     # Expression assignment
+        print(p.x)         # 42
+        return 0
+
+================================================================================
+END OF API REFERENCE
 ================================================================================

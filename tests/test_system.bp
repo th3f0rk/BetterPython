@@ -1,0 +1,148 @@
+# Test system built-in functions
+
+def test_clock_ms() -> int:
+    let t1: int = clock_ms()
+    if t1 <= 0:
+        print("FAIL: clock_ms should be positive")
+        return 1
+    let t2: int = clock_ms()
+    if t2 < t1:
+        print("FAIL: time should not go backwards")
+        return 1
+    print("  clock_ms: PASS")
+    return 0
+
+def test_getenv() -> int:
+    let path: str = getenv("PATH")
+    if len(path) == 0:
+        print("FAIL: PATH env should not be empty")
+        return 1
+    let missing: str = getenv("BP_NONEXISTENT_VAR_12345")
+    if len(missing) != 0:
+        print("FAIL: non-existent env should be empty")
+        return 1
+    print("  getenv: PASS")
+    return 0
+
+def test_to_str() -> int:
+    let s1: str = to_str(42)
+    if s1 != "42":
+        print("FAIL: to_str(42)")
+        return 1
+    let s2: str = to_str(-5)
+    if s2 != "-5":
+        print("FAIL: to_str(-5)")
+        return 1
+    let s3: str = to_str(0)
+    if s3 != "0":
+        print("FAIL: to_str(0)")
+        return 1
+    print("  to_str: PASS")
+    return 0
+
+def test_rand() -> int:
+    rand_seed(42)
+    let r1: int = rand()
+    let r2: int = rand()
+    if r1 < 0:
+        print("FAIL: rand should be non-negative")
+        return 1
+    rand_seed(42)
+    let r3: int = rand()
+    if r3 != r1:
+        print("FAIL: same seed should produce same value")
+        return 1
+    print("  rand: PASS")
+    return 0
+
+def test_rand_range() -> int:
+    rand_seed(100)
+    let in_range: bool = true
+    for i in range(0, 50):
+        let r: int = rand_range(10, 20)
+        if r < 10 or r > 20:
+            in_range = false
+    if not in_range:
+        print("FAIL: rand_range out of bounds")
+        return 1
+    print("  rand_range: PASS")
+    return 0
+
+def test_hex_conversions() -> int:
+    if int_to_hex(0) != "0":
+        print("FAIL: int_to_hex(0)")
+        return 1
+    if int_to_hex(255) != "ff":
+        print("FAIL: int_to_hex(255)")
+        return 1
+    if int_to_hex(16) != "10":
+        print("FAIL: int_to_hex(16)")
+        return 1
+    if hex_to_int("ff") != 255:
+        print("FAIL: hex_to_int(ff)")
+        return 1
+    if hex_to_int("0") != 0:
+        print("FAIL: hex_to_int(0)")
+        return 1
+    if hex_to_int("10") != 16:
+        print("FAIL: hex_to_int(10)")
+        return 1
+    print("  Hex conversions: PASS")
+    return 0
+
+def test_string_operations() -> int:
+    let parts: [str] = str_split_str("a,b,c", ",")
+    if array_len(parts) != 3:
+        print("FAIL: split length")
+        return 1
+    let joined: str = str_join_arr(parts, "-")
+    if joined != "a-b-c":
+        print("FAIL: join result")
+        return 1
+    print("  String split/join: PASS")
+    return 0
+
+def test_str_find_replace() -> int:
+    let s: str = "hello world"
+    let idx: int = str_find(s, "world")
+    if idx != 6:
+        print("FAIL: str_find")
+        return 1
+    let replaced: str = str_replace(s, "world", "BetterPython")
+    if replaced != "hello BetterPython":
+        print("FAIL: str_replace")
+        return 1
+    let not_found: int = str_find(s, "xyz")
+    if not_found != -1:
+        print("FAIL: str_find not found")
+        return 1
+    print("  str_find/replace: PASS")
+    return 0
+
+def test_str_pad() -> int:
+    let padded_l: str = str_pad_left("42", 5, "0")
+    if padded_l != "00042":
+        print("FAIL: str_pad_left")
+        return 1
+    let padded_r: str = str_pad_right("hi", 5, ".")
+    if padded_r != "hi...":
+        print("FAIL: str_pad_right")
+        return 1
+    print("  str_pad: PASS")
+    return 0
+
+def main() -> int:
+    print("Testing system builtins...")
+    let failures: int = 0
+    failures = failures + test_clock_ms()
+    failures = failures + test_getenv()
+    failures = failures + test_to_str()
+    failures = failures + test_rand()
+    failures = failures + test_rand_range()
+    failures = failures + test_hex_conversions()
+    failures = failures + test_string_operations()
+    failures = failures + test_str_find_replace()
+    failures = failures + test_str_pad()
+    if failures == 0:
+        print("All system builtin tests passed!")
+    return failures

@@ -1,0 +1,141 @@
+def test_inverse_trig() -> int:
+    let pi: float = 3.14159265358979
+    let half_pi: float = pi / 2.0
+    let result: float = asin(1.0)
+    if result < 1.57 or result > 1.58:
+        print("FAIL: asin(1.0)")
+        return 1
+    let r2: float = acos(1.0)
+    if r2 < -0.01 or r2 > 0.01:
+        print("FAIL: acos(1.0) should be ~0")
+        return 1
+    let r3: float = atan(1.0)
+    if r3 < 0.78 or r3 > 0.79:
+        print("FAIL: atan(1.0) should be ~0.785")
+        return 1
+    let r4: float = atan2(1.0, 1.0)
+    if r4 < 0.78 or r4 > 0.79:
+        print("FAIL: atan2(1,1) should be ~0.785")
+        return 1
+    print("  Inverse trig: PASS")
+    return 0
+
+def test_logarithms() -> int:
+    let r1: float = log10(100.0)
+    if r1 < 1.99 or r1 > 2.01:
+        print("FAIL: log10(100)")
+        return 1
+    let r2: float = log10(1000.0)
+    if r2 < 2.99 or r2 > 3.01:
+        print("FAIL: log10(1000)")
+        return 1
+    let r3: float = log2(8.0)
+    if r3 < 2.99 or r3 > 3.01:
+        print("FAIL: log2(8)")
+        return 1
+    let r4: float = log2(1024.0)
+    if r4 < 9.99 or r4 > 10.01:
+        print("FAIL: log2(1024)")
+        return 1
+    print("  Logarithms: PASS")
+    return 0
+
+def test_floor_ceil_round() -> int:
+    let f1: float = ffloor(3.7)
+    if f1 < 2.99 or f1 > 3.01:
+        print("FAIL: ffloor(3.7)")
+        return 1
+    let f2: float = ffloor(-2.3)
+    if f2 < -3.01 or f2 > -2.99:
+        print("FAIL: ffloor(-2.3)")
+        return 1
+    let c1: float = fceil(3.2)
+    if c1 < 3.99 or c1 > 4.01:
+        print("FAIL: fceil(3.2)")
+        return 1
+    let c2: float = fceil(-2.7)
+    if c2 < -2.01 or c2 > -1.99:
+        print("FAIL: fceil(-2.7)")
+        return 1
+    let r1: float = fround(3.5)
+    if r1 < 3.99 or r1 > 4.01:
+        print("FAIL: fround(3.5)")
+        return 1
+    let r2: float = fround(3.4)
+    if r2 < 2.99 or r2 > 3.01:
+        print("FAIL: fround(3.4)")
+        return 1
+    print("  Floor/ceil/round: PASS")
+    return 0
+
+def test_log_exp() -> int:
+    let r1: float = log(1.0)
+    if r1 < -0.01 or r1 > 0.01:
+        print("FAIL: log(1) should be 0")
+        return 1
+    let e: float = exp(1.0)
+    if e < 2.71 or e > 2.72:
+        print("FAIL: exp(1) should be ~2.718")
+        return 1
+    let r2: float = log(e)
+    if r2 < 0.99 or r2 > 1.01:
+        print("FAIL: log(e) should be ~1")
+        return 1
+    print("  Log/exp: PASS")
+    return 0
+
+def test_float_arithmetic() -> int:
+    let a: float = 10.5
+    let b: float = 3.2
+    let sum: float = a + b
+    if sum < 13.69 or sum > 13.71:
+        print("FAIL: float addition")
+        return 1
+    let diff: float = a - b
+    if diff < 7.29 or diff > 7.31:
+        print("FAIL: float subtraction")
+        return 1
+    let prod: float = a * b
+    if prod < 33.59 or prod > 33.61:
+        print("FAIL: float multiplication")
+        return 1
+    let quot: float = a / b
+    if quot < 3.28 or quot > 3.29:
+        print("FAIL: float division")
+        return 1
+    print("  Float arithmetic: PASS")
+    return 0
+
+def test_trig_basic() -> int:
+    let pi: float = 3.14159265358979
+    let s: float = sin(0.0)
+    if s < -0.01 or s > 0.01:
+        print("FAIL: sin(0)")
+        return 1
+    let c: float = cos(0.0)
+    if c < 0.99 or c > 1.01:
+        print("FAIL: cos(0)")
+        return 1
+    let t: float = tan(0.0)
+    if t < -0.01 or t > 0.01:
+        print("FAIL: tan(0)")
+        return 1
+    let s2: float = sin(pi / 2.0)
+    if s2 < 0.99 or s2 > 1.01:
+        print("FAIL: sin(pi/2)")
+        return 1
+    print("  Trig basic: PASS")
+    return 0
+
+def main() -> int:
+    print("Testing advanced math functions...")
+    let failures: int = 0
+    failures = failures + test_inverse_trig()
+    failures = failures + test_logarithms()
+    failures = failures + test_floor_ceil_round()
+    failures = failures + test_log_exp()
+    failures = failures + test_float_arithmetic()
+    failures = failures + test_trig_basic()
+    if failures == 0:
+        print("All advanced math tests passed!")
+    return failures

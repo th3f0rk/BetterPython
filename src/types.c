@@ -60,10 +60,25 @@ typedef struct {
     size_t cap;
 } ClassTable;
 
+// Enum type info for type checking
+typedef struct {
+    char *name;
+    char **variant_names;
+    int64_t *variant_values;
+    size_t variant_count;
+} EnumInfo;
+
+typedef struct {
+    EnumInfo *items;
+    size_t len;
+    size_t cap;
+} EnumTable;
+
 static Module *g_module = NULL;  // Global reference for function lookup
 static FnTable g_fntable = {0};
 static StructTable g_structtable = {0};
 static ClassTable g_classtable = {0};
+static EnumTable g_enumtable = {0};
 
 // Import tracking for module system
 typedef struct {
@@ -197,6 +212,33 @@ static void structtable_free(StructTable *st) {
     }
     free(st->items);
     memset(st, 0, sizeof(*st));
+}
+
+static void enumtable_add(EnumTable *et, const char *name, char **variant_names, int64_t *variant_values, size_t vc) {
+    if (et->len + 1 > et->cap) {
+        et->cap = et->cap ? et->cap * 2 : 16;
+        et->items = bp_xrealloc(et->items, et->cap * sizeof(*et->items));
+    }
+    et->items[et->len].name = bp_xstrdup(name);
+    et->items[et->len].variant_names = variant_names;
+    et->items[et->len].variant_values = variant_values;
+    et->items[et->len].variant_count = vc;
+    et->len++;
+}
+
+static EnumInfo *enumtable_get(EnumTable *et, const char *name) {
+    for (size_t i = 0; i < et->len; i++) {
+        if (strcmp(et->items[i].name, name) == 0) return &et->items[i];
+    }
+    return NULL;
+}
+
+static void enumtable_free(EnumTable *et) {
+    for (size_t i = 0; i < et->len; i++) {
+        free(et->items[i].name);
+    }
+    free(et->items);
+    memset(et, 0, sizeof(*et));
 }
 
 static void classtable_add(ClassTable *ct, const char *name, const char *parent_name,
@@ -487,6 +529,14 @@ static bool is_builtin(const char *name) {
     if (strcmp(name, "str_split_str") == 0) return true;
     if (strcmp(name, "str_join_arr") == 0) return true;
     if (strcmp(name, "str_concat_all") == 0) return true;
+
+    // Bitwise operations
+    if (strcmp(name, "bit_and") == 0) return true;
+    if (strcmp(name, "bit_or") == 0) return true;
+    if (strcmp(name, "bit_xor") == 0) return true;
+    if (strcmp(name, "bit_not") == 0) return true;
+    if (strcmp(name, "bit_shl") == 0) return true;
+    if (strcmp(name, "bit_shr") == 0) return true;
 
     return false;
 }
@@ -1151,6 +1201,30 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
 
+    // Bitwise operations: bit_and(a,b), bit_or(a,b), bit_xor(a,b) -> int
+    if (strcmp(name, "bit_and") == 0 || strcmp(name, "bit_or") == 0 || strcmp(name, "bit_xor") == 0) {
+        if (e->as.call.argc != 2) bp_fatal("%s expects 2 args", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("%s arg0 must be int", name);
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal("%s arg1 must be int", name);
+        e->inferred = type_int();
+        return e->inferred;
+    }
+    // bit_not(a) -> int
+    if (strcmp(name, "bit_not") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("bit_not expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("bit_not arg must be int");
+        e->inferred = type_int();
+        return e->inferred;
+    }
+    // bit_shl(a, shift), bit_shr(a, shift) -> int
+    if (strcmp(name, "bit_shl") == 0 || strcmp(name, "bit_shr") == 0) {
+        if (e->as.call.argc != 2) bp_fatal("%s expects 2 args", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("%s arg0 must be int", name);
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal("%s arg1 must be int", name);
+        e->inferred = type_int();
+        return e->inferred;
+    }
+
     bp_fatal("unknown builtin '%s'", name);
     return type_void();
 }
@@ -1314,6 +1388,31 @@ static Type check_expr(Expr *e, Scope *s) {
             return e->inferred;
         }
         case EX_FIELD_ACCESS: {
+            // Check if this is an enum member access (e.g., Color.RED)
+            if (e->as.field_access.object->kind == EX_VAR) {
+                const char *name = e->as.field_access.object->as.var_name;
+                EnumInfo *ei = enumtable_get(&g_enumtable, name);
+                if (ei) {
+                    // Transform to EX_ENUM_MEMBER
+                    const char *member = e->as.field_access.field_name;
+                    int64_t val = 0;
+                    bool found = false;
+                    for (size_t i = 0; i < ei->variant_count; i++) {
+                        if (strcmp(ei->variant_names[i], member) == 0) {
+                            val = ei->variant_values[i];
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) bp_fatal("enum '%s' has no member '%s'", name, member);
+                    e->kind = EX_ENUM_MEMBER;
+                    e->as.enum_member.enum_name = bp_xstrdup(name);
+                    e->as.enum_member.member_name = bp_xstrdup(member);
+                    e->as.enum_member.member_value = (int)val;
+                    e->inferred = type_int();
+                    return e->inferred;
+                }
+            }
             Type obj_type = check_expr(e->as.field_access.object, s);
             if (obj_type.kind == TY_STRUCT) {
                 StructInfo *si = structtable_get(&g_structtable, obj_type.struct_name);
@@ -1509,8 +1608,19 @@ static Type check_expr(Expr *e, Scope *s) {
             return e->inferred;
         }
         case EX_ENUM_MEMBER: {
-            // TODO: Implement enum lookup
-            e->inferred = type_int();  // Enum values are integers
+            // Look up enum and validate member
+            EnumInfo *ei = enumtable_get(&g_enumtable, e->as.enum_member.enum_name);
+            if (!ei) bp_fatal("unknown enum '%s'", e->as.enum_member.enum_name);
+            bool found = false;
+            for (size_t i = 0; i < ei->variant_count; i++) {
+                if (strcmp(ei->variant_names[i], e->as.enum_member.member_name) == 0) {
+                    e->as.enum_member.member_value = (int)ei->variant_values[i];
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) bp_fatal("enum '%s' has no member '%s'", ei->name, e->as.enum_member.member_name);
+            e->inferred = type_int();
             return e->inferred;
         }
         case EX_NEW: {
@@ -1659,6 +1769,18 @@ static void check_stmt(Stmt *st, Scope *s, Type ret_type) {
             }
             return;
         }
+        case ST_FIELD_ASSIGN: {
+            // Type check the field access (object.field)
+            Expr *fa = st->as.field_assign.object;
+            if (fa->kind != EX_FIELD_ACCESS) bp_fatal("invalid field assignment target");
+            Type obj_type = check_expr(fa, s);
+            Type val_type = check_expr(st->as.field_assign.value, s);
+            if (!type_eq(obj_type, val_type)) {
+                bp_fatal("type error: assigning %s to field of type %s",
+                         type_name(val_type), type_name(obj_type));
+            }
+            return;
+        }
         default: break;
     }
     bp_fatal("unknown stmt");
@@ -1675,6 +1797,7 @@ void typecheck_module(Module *m) {
     }
     structtable_free(&g_structtable);  // Clean any previous state
     classtable_free(&g_classtable);  // Clean any previous state
+    enumtable_free(&g_enumtable);  // Clean any previous state
 
     // Clear and rebuild import table
     for (size_t i = 0; i < g_import_count; i++) {
@@ -1716,6 +1839,12 @@ void typecheck_module(Module *m) {
         StructDef *sd = &m->structs[i];
         // Note: we don't copy field names/types, just reference them
         structtable_add(&g_structtable, sd->name, sd->field_names, sd->field_types, sd->field_count, i);
+    }
+
+    // Build enum table
+    for (size_t i = 0; i < m->enumc; i++) {
+        EnumDef *ed = &m->enums[i];
+        enumtable_add(&g_enumtable, ed->name, ed->variant_names, ed->variant_values, ed->variant_count);
     }
 
     // Build class table (classes must be defined before use)

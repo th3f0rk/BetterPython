@@ -1,0 +1,70 @@
+def test_int_to_float() -> int:
+    let i: int = 42
+    let f: float = int_to_float(i)
+    if f < 41.99 or f > 42.01:
+        print("FAIL: int_to_float(42)")
+        return 1
+    let neg: float = int_to_float(-10)
+    if neg < -10.01 or neg > -9.99:
+        print("FAIL: int_to_float(-10)")
+        return 1
+    print("  int_to_float: PASS")
+    return 0
+
+def test_float_to_int() -> int:
+    let f: float = 3.14
+    let i: int = float_to_int(f)
+    if i != 3:
+        print("FAIL: float_to_int(3.14)")
+        return 1
+    let neg: int = float_to_int(-2.9)
+    if neg != -2:
+        print("FAIL: float_to_int(-2.9)")
+        return 1
+    print("  float_to_int: PASS")
+    return 0
+
+def test_to_str_conversions() -> int:
+    let s1: str = to_str(42)
+    if s1 != "42":
+        print("FAIL: to_str(42)")
+        return 1
+    let s2: str = to_str(0)
+    if s2 != "0":
+        print("FAIL: to_str(0)")
+        return 1
+    let s3: str = to_str(-100)
+    if s3 != "-100":
+        print("FAIL: to_str(-100)")
+        return 1
+    print("  to_str: PASS")
+    return 0
+
+def test_bool_operations() -> int:
+    let a: bool = true
+    let b: bool = false
+    if a and b:
+        print("FAIL: true and false")
+        return 1
+    if not (a or b):
+        print("FAIL: true or false")
+        return 1
+    if not a:
+        print("FAIL: not true")
+        return 1
+    if b:
+        print("FAIL: false is truthy")
+        return 1
+    print("  Bool operations: PASS")
+    return 0
+
+def main() -> int:
+    print("Testing type coercion and conversions...")
+    let failures: int = 0
+    failures = failures + test_int_to_float()
+    failures = failures + test_float_to_int()
+    failures = failures + test_to_str_conversions()
+    failures = failures + test_bool_operations()
+    if failures == 0:
+        print("All type coercion tests passed!")
+    return failures

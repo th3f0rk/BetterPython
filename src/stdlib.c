@@ -40,6 +40,10 @@ static BpStr *val_to_str(Value v, Gc *gc) {
     if (v.type == VAL_NULL) {
         return gc_new_str(gc, "null", 4);
     }
+    if (v.type == VAL_FLOAT) {
+        snprintf(buf, sizeof(buf), "%g", v.as.f);
+        return gc_new_str(gc, buf, strlen(buf));
+    }
     if (v.type == VAL_STR) return v.as.s;
     return gc_new_str(gc, "<?>", 3);
 }
@@ -1741,6 +1745,14 @@ Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_co
         case BI_STR_SPLIT_STR: return bi_str_split_str(args, argc, gc);
         case BI_STR_JOIN_ARR: return bi_str_join_arr(args, argc, gc);
         case BI_STR_CONCAT_ALL: return bi_str_concat_all(args, argc, gc);
+
+        // Bitwise operations
+        case BI_BIT_AND: return v_int(args[0].as.i & args[1].as.i);
+        case BI_BIT_OR:  return v_int(args[0].as.i | args[1].as.i);
+        case BI_BIT_XOR: return v_int(args[0].as.i ^ args[1].as.i);
+        case BI_BIT_NOT: return v_int(~args[0].as.i);
+        case BI_BIT_SHL: return v_int(args[0].as.i << args[1].as.i);
+        case BI_BIT_SHR: return v_int(args[0].as.i >> args[1].as.i);
 
         default: break;
     }

@@ -1,0 +1,96 @@
+# Test variable scoping and shadowing
+
+def test_basic_scope() -> int:
+    let x: int = 10
+    if x != 10:
+        print("FAIL: basic scope")
+        return 1
+    print("  Basic scope: PASS")
+    return 0
+
+def test_if_scope() -> int:
+    let x: int = 5
+    if true:
+        let y: int = 10
+        x = x + y
+    if x != 15:
+        print("FAIL: if scope modification")
+        return 1
+    print("  If scope: PASS")
+    return 0
+
+def test_loop_scope() -> int:
+    let sum: int = 0
+    for i in range(0, 5):
+        let temp: int = i * 2
+        sum = sum + temp
+    if sum != 20:
+        print("FAIL: loop scope")
+        return 1
+    print("  Loop scope: PASS")
+    return 0
+
+def test_nested_loops() -> int:
+    let total: int = 0
+    for i in range(0, 3):
+        for j in range(0, 3):
+            total = total + 1
+    if total != 9:
+        print("FAIL: nested loops")
+        return 1
+    print("  Nested loops: PASS")
+    return 0
+
+def helper_fn(x: int) -> int:
+    let local: int = x * 2
+    return local + 1
+
+def test_function_scope() -> int:
+    let x: int = 5
+    let result: int = helper_fn(x)
+    if result != 11:
+        print("FAIL: function scope")
+        return 1
+    if x != 5:
+        print("FAIL: outer variable unchanged")
+        return 1
+    print("  Function scope: PASS")
+    return 0
+
+def test_while_scope() -> int:
+    let i: int = 0
+    let sum: int = 0
+    while i < 10:
+        let squared: int = i * i
+        sum = sum + squared
+        i = i + 1
+    if sum != 285:
+        print("FAIL: while scope sum")
+        return 1
+    print("  While scope: PASS")
+    return 0
+
+def test_reassignment() -> int:
+    let x: int = 1
+    x = 2
+    x = 3
+    x = x + x
+    if x != 6:
+        print("FAIL: reassignment chain")
+        return 1
+    print("  Reassignment: PASS")
+    return 0
+
+def main() -> int:
+    print("Testing variable scoping...")
+    let failures: int = 0
+    failures = failures + test_basic_scope()
+    failures = failures + test_if_scope()
+    failures = failures + test_loop_scope()
+    failures = failures + test_nested_loops()
+    failures = failures + test_function_scope()
+    failures = failures + test_while_scope()
+    failures = failures + test_reassignment()
+    if failures == 0:
+        print("All scoping tests passed!")
+    return failures

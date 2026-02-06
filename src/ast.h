@@ -244,7 +244,8 @@ typedef enum {
     ST_CONTINUE,
     ST_RETURN,
     ST_TRY,
-    ST_THROW
+    ST_THROW,
+    ST_FIELD_ASSIGN     // obj.field = value
 } StmtKind;
 
 struct Stmt {
@@ -312,6 +313,11 @@ struct Stmt {
         struct {
             Expr *value;   // Exception value to throw
         } throw;
+
+        struct {
+            Expr *object;  // The field access expression (EX_FIELD_ACCESS)
+            Expr *value;   // Value to assign
+        } field_assign;
     } as;
 };
 
@@ -433,6 +439,7 @@ Expr *expr_new_super_call(char *method_name, Expr **args, size_t argc, size_t li
 Stmt *stmt_new_let(char *name, Type t, Expr *init, size_t line);
 Stmt *stmt_new_assign(char *name, Expr *value, size_t line);
 Stmt *stmt_new_index_assign(Expr *array, Expr *index, Expr *value, size_t line);
+Stmt *stmt_new_field_assign(Expr *object, Expr *value, size_t line);
 Stmt *stmt_new_expr(Expr *e, size_t line);
 Stmt *stmt_new_if(Expr *cond, Stmt **then_s, size_t then_len, Stmt **else_s, size_t else_len, size_t line);
 Stmt *stmt_new_while(Expr *cond, Stmt **body, size_t body_len, size_t line);

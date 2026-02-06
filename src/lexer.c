@@ -177,11 +177,19 @@ static void handle_indentation(Lexer *lx) {
     int spaces = 0;
     while (cur(lx) == ' ') { spaces++; adv(lx); }
 
-    if (cur(lx) == '\n' || cur(lx) == '\0' || (cur(lx) == '#' )) {
+    if (cur(lx) == '\n' || cur(lx) == '\0') {
         return;
     }
 
+    /* Comment-only lines: still need to emit INDENT/DEDENT so block
+       parsing works when the first line of a block is a comment. */
     int current = lx->indent_stack[lx->indent_top];
+
+    if (cur(lx) == '#' && spaces == current) {
+        /* Same indentation level - no token needed, skip the line. */
+        return;
+    }
+
     if (spaces > current) {
         lx->indent_top++;
         lx->indent_stack[lx->indent_top] = spaces;

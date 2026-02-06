@@ -879,6 +879,14 @@ static void emit_stmt(CGen *cg, const Stmt *s) {
             fputs(");\n", cg->out);
             return;
         }
+        case ST_FIELD_ASSIGN: {
+            cg_indent(cg);
+            emit_expr(cg, s->as.field_assign.object->as.field_access.object);
+            fprintf(cg->out, ".%s = ", s->as.field_assign.object->as.field_access.field_name);
+            emit_expr(cg, s->as.field_assign.value);
+            fputs(";\n", cg->out);
+            return;
+        }
     }
 }
 

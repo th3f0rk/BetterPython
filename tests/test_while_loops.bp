@@ -1,0 +1,102 @@
+def test_basic_while() -> int:
+    let count: int = 0
+    while count < 10:
+        count = count + 1
+    if count != 10:
+        print("FAIL: basic while")
+        return 1
+    print("  Basic while: PASS")
+    return 0
+
+def test_while_break() -> int:
+    let i: int = 0
+    while true:
+        if i >= 5:
+            break
+        i = i + 1
+    if i != 5:
+        print("FAIL: while break")
+        return 1
+    print("  While break: PASS")
+    return 0
+
+def test_while_continue() -> int:
+    let sum: int = 0
+    let i: int = 0
+    while i < 10:
+        i = i + 1
+        if i % 2 == 0:
+            continue
+        sum = sum + i
+    if sum != 25:
+        print("FAIL: while continue")
+        return 1
+    print("  While continue: PASS")
+    return 0
+
+def test_nested_while() -> int:
+    let total: int = 0
+    let i: int = 0
+    while i < 5:
+        let j: int = 0
+        while j < 5:
+            total = total + 1
+            j = j + 1
+        i = i + 1
+    if total != 25:
+        print("FAIL: nested while")
+        return 1
+    print("  Nested while: PASS")
+    return 0
+
+def fibonacci(n: int) -> int:
+    if n <= 1:
+        return n
+    return fibonacci(n - 1) + fibonacci(n - 2)
+
+def test_recursion() -> int:
+    if fibonacci(0) != 0:
+        print("FAIL: fib(0)")
+        return 1
+    if fibonacci(1) != 1:
+        print("FAIL: fib(1)")
+        return 1
+    if fibonacci(10) != 55:
+        print("FAIL: fib(10)")
+        return 1
+    if fibonacci(15) != 610:
+        print("FAIL: fib(15)")
+        return 1
+    print("  Recursion (fibonacci): PASS")
+    return 0
+
+def power(base: int, exp: int) -> int:
+    if exp == 0:
+        return 1
+    return base * power(base, exp - 1)
+
+def test_recursive_power() -> int:
+    if power(2, 0) != 1:
+        print("FAIL: 2^0")
+        return 1
+    if power(2, 10) != 1024:
+        print("FAIL: 2^10")
+        return 1
+    if power(3, 5) != 243:
+        print("FAIL: 3^5")
+        return 1
+    print("  Recursive power: PASS")
+    return 0
+
+def main() -> int:
+    print("Testing while loops and recursion...")
+    let failures: int = 0
+    failures = failures + test_basic_while()
+    failures = failures + test_while_break()
+    failures = failures + test_while_continue()
+    failures = failures + test_nested_while()
+    failures = failures + test_recursion()
+    failures = failures + test_recursive_power()
+    if failures == 0:
+        print("All while loop and recursion tests passed!")
+    return failures

@@ -136,10 +136,10 @@ static void patch_function_calls(BpFunc *func, size_t *fn_remap, size_t fn_count
                 break;
             case OP_ARRAY_NEW:
             case OP_MAP_NEW:
-                i += 3;  // opcode + count (2)
+                i += 5;  // opcode + count (u32 = 4)
                 break;
             case OP_STRUCT_NEW:
-                i += 3;  // opcode + type_id (2)
+                i += 5;  // opcode + type_id (u16) + field_count (u16) = 4
                 break;
             case OP_STRUCT_GET:
             case OP_STRUCT_SET:
@@ -565,8 +565,8 @@ bool multi_compile(ModuleGraph *g, BpModule *out) {
                                 case OP_LOAD_LOCAL: case OP_STORE_LOCAL: ip += 2; break;
                                 case OP_JMP: case OP_JMP_IF_FALSE: ip += 4; break;
                                 case OP_CALL: case OP_CALL_BUILTIN: ip += 3; break;
-                                case OP_ARRAY_NEW: case OP_MAP_NEW: ip += 2; break;
-                                case OP_STRUCT_NEW: ip += 2; break;
+                                case OP_ARRAY_NEW: case OP_MAP_NEW: ip += 4; break;
+                                case OP_STRUCT_NEW: ip += 4; break;
                                 case OP_STRUCT_GET: case OP_STRUCT_SET: ip += 2; break;
                                 case OP_CLASS_NEW: case OP_METHOD_CALL: case OP_SUPER_CALL: ip += 3; break;
                                 case OP_CLASS_GET: case OP_CLASS_SET: ip += 2; break;

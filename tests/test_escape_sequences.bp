@@ -1,0 +1,112 @@
+# Test string escape sequences and edge cases
+
+def test_newline_escape() -> int:
+    let s: str = "hello\nworld"
+    if len(s) != 11:
+        print("FAIL: newline escape length")
+        return 1
+    print("  Newline escape: PASS")
+    return 0
+
+def test_tab_escape() -> int:
+    let s: str = "col1\tcol2"
+    if len(s) != 9:
+        print("FAIL: tab escape length")
+        return 1
+    print("  Tab escape: PASS")
+    return 0
+
+def test_quote_escape() -> int:
+    let s: str = "say \"hello\""
+    if len(s) != 11:
+        print("FAIL: quote escape length, got:")
+        print(len(s))
+        return 1
+    print("  Quote escape: PASS")
+    return 0
+
+def test_backslash_escape() -> int:
+    let s: str = "path\\file"
+    if len(s) != 9:
+        print("FAIL: backslash escape length")
+        return 1
+    print("  Backslash escape: PASS")
+    return 0
+
+def test_empty_string() -> int:
+    let s: str = ""
+    if len(s) != 0:
+        print("FAIL: empty string length")
+        return 1
+    let s2: str = s + "hello"
+    if s2 != "hello":
+        print("FAIL: empty string concat")
+        return 1
+    print("  Empty string: PASS")
+    return 0
+
+def test_string_equality() -> int:
+    let a: str = "hello"
+    let b: str = "hello"
+    let c: str = "world"
+    if a != b:
+        print("FAIL: equal strings")
+        return 1
+    if a == c:
+        print("FAIL: unequal strings")
+        return 1
+    print("  String equality: PASS")
+    return 0
+
+def test_single_char() -> int:
+    let s: str = "x"
+    if len(s) != 1:
+        print("FAIL: single char length")
+        return 1
+    if str_char_at(s, 0) != "x":
+        print("FAIL: single char access")
+        return 1
+    print("  Single char: PASS")
+    return 0
+
+def test_chr_ord_roundtrip() -> int:
+    let c: str = chr(65)
+    if c != "A":
+        print("FAIL: chr(65) should be 'A'")
+        return 1
+    let code: int = ord("A")
+    if code != 65:
+        print("FAIL: ord('A') should be 65")
+        return 1
+    let roundtrip: str = chr(ord("Z"))
+    if roundtrip != "Z":
+        print("FAIL: chr/ord roundtrip")
+        return 1
+    print("  Chr/ord roundtrip: PASS")
+    return 0
+
+def test_base64_roundtrip() -> int:
+    let original: str = "Hello, BetterPython!"
+    let encoded: str = base64_encode(original)
+    let decoded: str = base64_decode(encoded)
+    if decoded != original:
+        print("FAIL: base64 roundtrip")
+        return 1
+    print("  Base64 roundtrip: PASS")
+    return 0
+
+def main() -> int:
+    print("Testing escape sequences and strings...")
+    let failures: int = 0
+    failures = failures + test_newline_escape()
+    failures = failures + test_tab_escape()
+    failures = failures + test_quote_escape()
+    failures = failures + test_backslash_escape()
+    failures = failures + test_empty_string()
+    failures = failures + test_string_equality()
+    failures = failures + test_single_char()
+    failures = failures + test_chr_ord_roundtrip()
+    failures = failures + test_base64_roundtrip()
+    if failures == 0:
+        print("All escape sequence tests passed!")
+    return failures

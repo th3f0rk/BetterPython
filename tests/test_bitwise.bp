@@ -1,0 +1,113 @@
+def test_bitwise_and() -> int:
+    let a: int = 255
+    let b: int = 15
+    let result: int = bit_and(a, b)
+    if result != 15:
+        print("FAIL: bit_and(255, 15)")
+        return 1
+    let r2: int = bit_and(12, 10)
+    if r2 != 8:
+        print("FAIL: bit_and(12, 10)")
+        return 1
+    print("  Bitwise AND: PASS")
+    return 0
+
+def test_bitwise_or() -> int:
+    let a: int = 240
+    let b: int = 15
+    let result: int = bit_or(a, b)
+    if result != 255:
+        print("FAIL: bit_or(240, 15)")
+        return 1
+    let r2: int = bit_or(12, 3)
+    if r2 != 15:
+        print("FAIL: bit_or(12, 3)")
+        return 1
+    print("  Bitwise OR: PASS")
+    return 0
+
+def test_bitwise_xor() -> int:
+    let a: int = 255
+    let b: int = 15
+    let result: int = bit_xor(a, b)
+    if result != 240:
+        print("FAIL: bit_xor(255, 15)")
+        return 1
+    let r2: int = bit_xor(5, 3)
+    if r2 != 6:
+        print("FAIL: bit_xor(5, 3)")
+        return 1
+    print("  Bitwise XOR: PASS")
+    return 0
+
+def test_bitwise_not() -> int:
+    let a: int = 0
+    let result: int = bit_not(a)
+    if result != -1:
+        print("FAIL: bit_not(0)")
+        return 1
+    print("  Bitwise NOT: PASS")
+    return 0
+
+def test_shift_left() -> int:
+    let a: int = 1
+    let result: int = bit_shl(a, 4)
+    if result != 16:
+        print("FAIL: bit_shl(1, 4)")
+        return 1
+    let r2: int = bit_shl(3, 2)
+    if r2 != 12:
+        print("FAIL: bit_shl(3, 2)")
+        return 1
+    print("  Shift left: PASS")
+    return 0
+
+def test_shift_right() -> int:
+    let a: int = 16
+    let result: int = bit_shr(a, 4)
+    if result != 1:
+        print("FAIL: bit_shr(16, 4)")
+        return 1
+    let r2: int = bit_shr(255, 4)
+    if r2 != 15:
+        print("FAIL: bit_shr(255, 4)")
+        return 1
+    print("  Shift right: PASS")
+    return 0
+
+def test_combined_bitwise() -> int:
+    let flags: int = 0
+    flags = bit_or(flags, 1)
+    flags = bit_or(flags, 4)
+    flags = bit_or(flags, 16)
+    if flags != 21:
+        print("FAIL: set flags")
+        return 1
+    let has_flag_1: bool = bit_and(flags, 1) != 0
+    if not has_flag_1:
+        print("FAIL: check flag 1")
+        return 1
+    let has_flag_2: bool = bit_and(flags, 2) != 0
+    if has_flag_2:
+        print("FAIL: flag 2 should not be set")
+        return 1
+    flags = bit_and(flags, bit_not(4))
+    if flags != 17:
+        print("FAIL: clear flag 4")
+        return 1
+    print("  Combined bitwise: PASS")
+    return 0
+
+def main() -> int:
+    print("Testing bitwise operations...")
+    let failures: int = 0
+    failures = failures + test_bitwise_and()
+    failures = failures + test_bitwise_or()
+    failures = failures + test_bitwise_xor()
+    failures = failures + test_bitwise_not()
+    failures = failures + test_shift_left()
+    failures = failures + test_shift_right()
+    failures = failures + test_combined_bitwise()
+    if failures == 0:
+        print("All bitwise tests passed!")
+    return failures

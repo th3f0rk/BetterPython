@@ -246,6 +246,14 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "str_join_arr") == 0) return BI_STR_JOIN_ARR;
     if (strcmp(name, "str_concat_all") == 0) return BI_STR_CONCAT_ALL;
 
+    // Bitwise operations
+    if (strcmp(name, "bit_and") == 0) return BI_BIT_AND;
+    if (strcmp(name, "bit_or") == 0) return BI_BIT_OR;
+    if (strcmp(name, "bit_xor") == 0) return BI_BIT_XOR;
+    if (strcmp(name, "bit_not") == 0) return BI_BIT_NOT;
+    if (strcmp(name, "bit_shl") == 0) return BI_BIT_SHL;
+    if (strcmp(name, "bit_shr") == 0) return BI_BIT_SHR;
+
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
 }
@@ -578,6 +586,19 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             buf_u8(&fe->code, OP_THROW);
             return;
         }
+        case ST_FIELD_ASSIGN: {
+            // obj.field = value -> stack: [obj, value] then STRUCT_SET/CLASS_SET field_idx
+            const Expr *fa = s->as.field_assign.object;
+            emit_expr(fe, fa->as.field_access.object);  // push object
+            emit_expr(fe, s->as.field_assign.value);     // push value
+            if (fa->as.field_access.object->inferred.kind == TY_CLASS) {
+                buf_u8(&fe->code, OP_CLASS_SET);
+            } else {
+                buf_u8(&fe->code, OP_STRUCT_SET);
+            }
+            buf_u16(&fe->code, (uint16_t)fa->as.field_access.field_index);
+            return;
+        }
         default: break;
     }
     bp_fatal("unknown stmt");
@@ -653,7 +674,9 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
             }
             emit_expr(fe, e->as.binary.lhs);
             emit_expr(fe, e->as.binary.rhs);
-            bool is_float = (e->inferred.kind == TY_FLOAT);
+            bool is_float = (e->inferred.kind == TY_FLOAT) ||
+                             (e->as.binary.lhs->inferred.kind == TY_FLOAT) ||
+                             (e->as.binary.rhs->inferred.kind == TY_FLOAT);
             switch (e->as.binary.op) {
                 case BOP_ADD:
                     if (e->inferred.kind == TY_STR) buf_u8(&fe->code, OP_ADD_STR);
@@ -764,6 +787,32 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
             buf_u8(&fe->code, (uint8_t)e->as.super_call.argc);
             return;
         }
+        case EX_ENUM_MEMBER: {
+            // Enum members are integer constants
+            buf_u8(&fe->code, OP_CONST_I64);
+            buf_i64(&fe->code, (int64_t)e->as.enum_member.member_value);
+            return;
+        }
+        case EX_METHOD_CALL: {
+            // Method calls: push object (self) as first arg, then other args, then CALL
+            // The type checker transforms module method calls to EX_CALL, so if we get
+            // here it's a real method call on a struct/class instance
+            emit_expr(fe, e->as.method_call.object);  // push self
+            for (size_t i = 0; i < e->as.method_call.argc; i++) {
+                emit_expr(fe, e->as.method_call.args[i]);
+            }
+            buf_u8(&fe->code, OP_METHOD_CALL);
+            buf_u16(&fe->code, (uint16_t)e->as.method_call.method_index);
+            buf_u8(&fe->code, (uint8_t)(e->as.method_call.argc + 1));  // +1 for self
+            return;
+        }
+        case EX_LAMBDA:
+        case EX_TUPLE:
+        case EX_FSTRING:
+            bp_fatal("feature not yet fully implemented: %s",
+                     e->kind == EX_LAMBDA ? "lambda" :
+                     e->kind == EX_TUPLE ? "tuple" : "f-string");
+            return;
         default: break;
     }
     bp_fatal("unknown expr");

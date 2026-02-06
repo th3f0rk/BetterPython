@@ -339,7 +339,15 @@ typedef enum {
     // StringBuilder-like operations
     BI_STR_SPLIT_STR,
     BI_STR_JOIN_ARR,
-    BI_STR_CONCAT_ALL
+    BI_STR_CONCAT_ALL,
+
+    // Bitwise operations
+    BI_BIT_AND,
+    BI_BIT_OR,
+    BI_BIT_XOR,
+    BI_BIT_NOT,
+    BI_BIT_SHL,
+    BI_BIT_SHR
 } BuiltinId;
 
 typedef struct {
