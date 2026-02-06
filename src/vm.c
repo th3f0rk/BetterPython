@@ -11,6 +11,7 @@
 #include "stdlib.h"
 #include "util.h"
 #include <string.h>
+#include <math.h>
 #include <dlfcn.h>
 
 #define MAX_CALL_FRAMES 256
@@ -434,6 +435,7 @@ int vm_run(Vm *vm) {
         [OP_SUB_F64] = &&L_OP_SUB_F64,
         [OP_MUL_F64] = &&L_OP_MUL_F64,
         [OP_DIV_F64] = &&L_OP_DIV_F64,
+        [OP_MOD_F64] = &&L_OP_MOD_F64,
         [OP_NEG_F64] = &&L_OP_NEG_F64,
         [OP_ADD_STR] = &&L_OP_ADD_STR,
         [OP_EQ] = &&L_OP_EQ,
@@ -588,6 +590,7 @@ L_OP_ADD_F64: { Value b = POP(), a = POP(); PUSH(v_float(a.as.f + b.as.f)); VM_D
 L_OP_SUB_F64: { Value b = POP(), a = POP(); PUSH(v_float(a.as.f - b.as.f)); VM_DISPATCH(); }
 L_OP_MUL_F64: { Value b = POP(), a = POP(); PUSH(v_float(a.as.f * b.as.f)); VM_DISPATCH(); }
 L_OP_DIV_F64: { Value b = POP(), a = POP(); PUSH(v_float(a.as.f / b.as.f)); VM_DISPATCH(); }
+L_OP_MOD_F64: { Value b = POP(), a = POP(); PUSH(v_float(fmod(a.as.f, b.as.f))); VM_DISPATCH(); }
 L_OP_NEG_F64: { Value a = POP(); PUSH(v_float(-a.as.f)); VM_DISPATCH(); }
 L_OP_ADD_STR: { Value b = POP(), a = POP(); PUSH(add_str(vm, a, b)); VM_DISPATCH(); }
 L_OP_EQ: { Value b = POP(), a = POP(); PUSH(op_eq(a, b)); VM_DISPATCH(); }
@@ -837,13 +840,64 @@ L_OP_CLASS_NEW: {
     uint16_t class_id = rd_u16(code, &ip);
     uint8_t argc = code[ip++];
     size_t field_count = 0;
+    BpClassType *ct_new = NULL;
     if (class_id < vm->mod.class_type_len) {
-        field_count = vm->mod.class_types[class_id].field_count;
+        ct_new = &vm->mod.class_types[class_id];
+        field_count = ct_new->field_count;
     }
     BpClass *cls = gc_new_class(&vm->gc, class_id, field_count);
     if (argc > vm->sp) bp_fatal("stack underflow in class creation");
-    vm->sp -= argc;
-    PUSH(v_class(cls));
+
+    /* Look for __init__ method */
+    int init_method = -1;
+    if (ct_new) {
+        for (size_t mi = 0; mi < ct_new->method_count; mi++) {
+            if (strcmp(ct_new->method_names[mi], "__init__") == 0) {
+                init_method = (int)mi;
+                break;
+            }
+        }
+    }
+
+    if (init_method >= 0 && ct_new->method_ids[init_method] < vm->mod.fn_len) {
+        /* Call __init__(self, arg0, arg1, ...) */
+        BpFunc *init_fn = &vm->mod.funcs[ct_new->method_ids[init_method]];
+        if (frame_count >= MAX_CALL_FRAMES) bp_fatal("call stack overflow");
+        frames[frame_count - 1].ip = ip;
+        size_t new_locals_base = locals_top;
+        size_t needed = new_locals_base + init_fn->locals;
+        if (needed > total_locals_cap) {
+            while (needed > total_locals_cap) total_locals_cap *= 2;
+            vm->locals = bp_xrealloc(vm->locals, total_locals_cap * sizeof(Value));
+            for (size_t ii = locals_top; ii < total_locals_cap; ii++) vm->locals[ii] = v_null();
+        }
+        /* local[0] = self, local[1..argc] = constructor args */
+        vm->locals[new_locals_base] = v_class(cls);
+        for (uint8_t ii = 0; ii < argc; ii++) {
+            vm->locals[new_locals_base + 1 + ii] = vm->stack[vm->sp - argc + ii];
+        }
+        vm->sp -= argc;
+        for (size_t ii = 1 + argc; ii < init_fn->locals; ii++) {
+            vm->locals[new_locals_base + ii] = v_null();
+        }
+        /* Push the class instance onto the stack so it's the return value
+           after __init__ returns (which returns void/null, we'll swap) */
+        PUSH(v_class(cls));
+        frames[frame_count].fn = init_fn;
+        frames[frame_count].code = init_fn->code;
+        frames[frame_count].ip = 0;
+        frames[frame_count].locals_base = new_locals_base;
+        frame_count++;
+        fn = init_fn;
+        code = init_fn->code;
+        ip = 0;
+        locals_base = new_locals_base;
+        locals_top = new_locals_base + init_fn->locals;
+    } else {
+        /* No __init__, just consume args and push instance */
+        vm->sp -= argc;
+        PUSH(v_class(cls));
+    }
     VM_DISPATCH();
 }
 L_OP_CLASS_GET: {
@@ -868,20 +922,54 @@ L_OP_CLASS_SET: {
     VM_DISPATCH();
 }
 L_OP_METHOD_CALL: {
-    uint16_t method_id = rd_u16(code, &ip);
+    uint16_t method_idx = rd_u16(code, &ip);
     uint8_t argc = code[ip++];
-    BP_UNUSED(method_id);
     if (argc > vm->sp) bp_fatal("stack underflow in method call");
+    /* Stack layout: [self, arg0, arg1, ...] with self at bottom */
+    Value self_val = vm->stack[vm->sp - argc];
+    if (self_val.type != VAL_CLASS) bp_fatal("cannot call method on non-class");
+    uint16_t cid = self_val.as.cls->class_id;
+    if (cid >= vm->mod.class_type_len) bp_fatal("invalid class id in method call");
+    BpClassType *ct = &vm->mod.class_types[cid];
+    if (method_idx >= ct->method_count) bp_fatal("method index out of range");
+    uint32_t fn_idx = ct->method_ids[method_idx];
+    if (fn_idx >= vm->mod.fn_len) bp_fatal("bad method function index");
+    BpFunc *callee = &vm->mod.funcs[fn_idx];
+    if (frame_count >= MAX_CALL_FRAMES) bp_fatal("call stack overflow");
+    frames[frame_count - 1].ip = ip;
+    size_t new_locals_base = locals_top;
+    size_t needed = new_locals_base + callee->locals;
+    if (needed > total_locals_cap) {
+        while (needed > total_locals_cap) total_locals_cap *= 2;
+        vm->locals = bp_xrealloc(vm->locals, total_locals_cap * sizeof(Value));
+        for (size_t ii = locals_top; ii < total_locals_cap; ii++) vm->locals[ii] = v_null();
+    }
+    for (uint8_t ii = 0; ii < argc; ii++) {
+        vm->locals[new_locals_base + ii] = vm->stack[vm->sp - argc + ii];
+    }
     vm->sp -= argc;
-    (void)POP();
-    PUSH(v_null());
+    for (size_t ii = argc; ii < callee->locals; ii++) {
+        vm->locals[new_locals_base + ii] = v_null();
+    }
+    frames[frame_count].fn = callee;
+    frames[frame_count].code = callee->code;
+    frames[frame_count].ip = 0;
+    frames[frame_count].locals_base = new_locals_base;
+    frame_count++;
+    fn = callee;
+    code = callee->code;
+    ip = 0;
+    locals_base = new_locals_base;
+    locals_top = new_locals_base + callee->locals;
     VM_DISPATCH();
 }
 L_OP_SUPER_CALL: {
-    uint16_t method_id = rd_u16(code, &ip);
+    uint16_t method_idx = rd_u16(code, &ip);
     uint8_t argc = code[ip++];
-    BP_UNUSED(method_id);
     if (argc > vm->sp) bp_fatal("stack underflow in super call");
+    /* For super calls, look up parent class type and find method there.
+       For now, push null - full inheritance chain lookup is a future feature. */
+    BP_UNUSED(method_idx);
     vm->sp -= argc;
     PUSH(v_null());
     VM_DISPATCH();
@@ -1005,6 +1093,11 @@ vm_exit:
             case OP_DIV_F64: {
                 Value b = pop(vm), a = pop(vm);
                 push(vm, v_float(a.as.f / b.as.f));
+                break;
+            }
+            case OP_MOD_F64: {
+                Value b = pop(vm), a = pop(vm);
+                push(vm, v_float(fmod(a.as.f, b.as.f)));
                 break;
             }
             case OP_NEG_F64: {
@@ -1355,16 +1448,52 @@ vm_exit:
             case OP_CLASS_NEW: {
                 uint16_t class_id = rd_u16(code, &ip);
                 uint8_t argc = code[ip++];
-                // Get field count from class type info
                 size_t field_count = 0;
+                BpClassType *ct_n = NULL;
                 if (class_id < vm->mod.class_type_len) {
-                    field_count = vm->mod.class_types[class_id].field_count;
+                    ct_n = &vm->mod.class_types[class_id];
+                    field_count = ct_n->field_count;
                 }
                 BpClass *cls = gc_new_class(&vm->gc, class_id, field_count);
-                // For now, consume the constructor arguments (TODO: call __init__)
                 if (argc > vm->sp) bp_fatal("stack underflow in class creation");
-                vm->sp -= argc;
-                push(vm, v_class(cls));
+                /* Look for __init__ */
+                int init_m = -1;
+                if (ct_n) {
+                    for (size_t mi = 0; mi < ct_n->method_count; mi++) {
+                        if (strcmp(ct_n->method_names[mi], "__init__") == 0) { init_m = (int)mi; break; }
+                    }
+                }
+                if (init_m >= 0 && ct_n->method_ids[init_m] < vm->mod.fn_len) {
+                    BpFunc *init_fn = &vm->mod.funcs[ct_n->method_ids[init_m]];
+                    if (frame_count >= MAX_CALL_FRAMES) bp_fatal("call stack overflow");
+                    frames[frame_count - 1].ip = ip;
+                    size_t nlb = locals_top;
+                    size_t need = nlb + init_fn->locals;
+                    if (need > total_locals_cap) {
+                        while (need > total_locals_cap) total_locals_cap *= 2;
+                        vm->locals = bp_xrealloc(vm->locals, total_locals_cap * sizeof(Value));
+                        for (size_t x = locals_top; x < total_locals_cap; x++) vm->locals[x] = v_null();
+                    }
+                    vm->locals[nlb] = v_class(cls);
+                    for (uint8_t x = 0; x < argc; x++)
+                        vm->locals[nlb + 1 + x] = vm->stack[vm->sp - argc + x];
+                    vm->sp -= argc;
+                    for (size_t x = 1 + argc; x < init_fn->locals; x++) vm->locals[nlb + x] = v_null();
+                    push(vm, v_class(cls));
+                    frames[frame_count].fn = init_fn;
+                    frames[frame_count].code = init_fn->code;
+                    frames[frame_count].ip = 0;
+                    frames[frame_count].locals_base = nlb;
+                    frame_count++;
+                    fn = init_fn;
+                    code = init_fn->code;
+                    ip = 0;
+                    locals_base = nlb;
+                    locals_top = nlb + init_fn->locals;
+                } else {
+                    vm->sp -= argc;
+                    push(vm, v_class(cls));
+                }
                 break;
             }
             case OP_CLASS_GET: {
@@ -1389,25 +1518,51 @@ vm_exit:
                 break;
             }
             case OP_METHOD_CALL: {
-                uint16_t method_id = rd_u16(code, &ip);
+                uint16_t method_idx = rd_u16(code, &ip);
                 uint8_t argc = code[ip++];
-                BP_UNUSED(method_id);
-                // TODO: Implement method lookup and call
                 if (argc > vm->sp) bp_fatal("stack underflow in method call");
+                Value self_val = vm->stack[vm->sp - argc];
+                if (self_val.type != VAL_CLASS) bp_fatal("cannot call method on non-class");
+                uint16_t cid = self_val.as.cls->class_id;
+                if (cid >= vm->mod.class_type_len) bp_fatal("invalid class id");
+                BpClassType *ct = &vm->mod.class_types[cid];
+                if (method_idx >= ct->method_count) bp_fatal("method index out of range");
+                uint32_t fn_idx2 = ct->method_ids[method_idx];
+                if (fn_idx2 >= vm->mod.fn_len) bp_fatal("bad method function index");
+                BpFunc *callee2 = &vm->mod.funcs[fn_idx2];
+                if (frame_count >= MAX_CALL_FRAMES) bp_fatal("call stack overflow");
+                frames[frame_count - 1].ip = ip;
+                size_t nlb = locals_top;
+                size_t need = nlb + callee2->locals;
+                if (need > total_locals_cap) {
+                    while (need > total_locals_cap) total_locals_cap *= 2;
+                    vm->locals = bp_xrealloc(vm->locals, total_locals_cap * sizeof(Value));
+                    for (size_t x = locals_top; x < total_locals_cap; x++) vm->locals[x] = v_null();
+                }
+                for (uint8_t x = 0; x < argc; x++) {
+                    vm->locals[nlb + x] = vm->stack[vm->sp - argc + x];
+                }
                 vm->sp -= argc;
-                // Pop the object (self)
-                (void)pop(vm);
-                push(vm, v_null());  // Placeholder return
+                for (size_t x = argc; x < callee2->locals; x++) vm->locals[nlb + x] = v_null();
+                frames[frame_count].fn = callee2;
+                frames[frame_count].code = callee2->code;
+                frames[frame_count].ip = 0;
+                frames[frame_count].locals_base = nlb;
+                frame_count++;
+                fn = callee2;
+                code = callee2->code;
+                ip = 0;
+                locals_base = nlb;
+                locals_top = nlb + callee2->locals;
                 break;
             }
             case OP_SUPER_CALL: {
-                uint16_t method_id = rd_u16(code, &ip);
+                uint16_t method_idx = rd_u16(code, &ip);
                 uint8_t argc = code[ip++];
-                BP_UNUSED(method_id);
-                // TODO: Implement super call
+                BP_UNUSED(method_idx);
                 if (argc > vm->sp) bp_fatal("stack underflow in super call");
                 vm->sp -= argc;
-                push(vm, v_null());  // Placeholder return
+                push(vm, v_null());
                 break;
             }
             case OP_FFI_CALL: {

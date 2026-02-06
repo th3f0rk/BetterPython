@@ -1,4 +1,5 @@
 #include "compiler.h"
+#include "types.h"
 #include "util.h"
 #include <string.h>
 
@@ -242,8 +243,8 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "regex_find_all") == 0) return BI_REGEX_FIND_ALL;
 
     // StringBuilder-like operations
-    if (strcmp(name, "str_split_str") == 0) return BI_STR_SPLIT_STR;
-    if (strcmp(name, "str_join_arr") == 0) return BI_STR_JOIN_ARR;
+    if (strcmp(name, "str_split_str") == 0 || strcmp(name, "str_split") == 0) return BI_STR_SPLIT_STR;
+    if (strcmp(name, "str_join_arr") == 0 || strcmp(name, "str_join") == 0) return BI_STR_JOIN_ARR;
     if (strcmp(name, "str_concat_all") == 0) return BI_STR_CONCAT_ALL;
 
     // Bitwise operations
@@ -253,6 +254,10 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "bit_not") == 0) return BI_BIT_NOT;
     if (strcmp(name, "bit_shl") == 0) return BI_BIT_SHL;
     if (strcmp(name, "bit_shr") == 0) return BI_BIT_SHR;
+
+    // Byte conversion
+    if (strcmp(name, "bytes_to_str") == 0) return BI_BYTES_TO_STR;
+    if (strcmp(name, "str_to_bytes") == 0) return BI_STR_TO_BYTES;
 
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
@@ -280,6 +285,7 @@ typedef struct {
     size_t str_cap;
     Locals locals;
     StrPool *pool;
+    BpModule *module;   // For lambda compilation (adding anonymous functions)
 
     // Loop context stack for break/continue
     LoopCtx *loops;
@@ -693,7 +699,7 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
                     buf_u8(&fe->code, is_float ? OP_DIV_F64 : OP_DIV_I64);
                     return;
                 case BOP_MOD:
-                    buf_u8(&fe->code, OP_MOD_I64);
+                    buf_u8(&fe->code, is_float ? OP_MOD_F64 : OP_MOD_I64);
                     return;
                 case BOP_EQ: buf_u8(&fe->code, OP_EQ); return;
                 case BOP_NEQ: buf_u8(&fe->code, OP_NEQ); return;
@@ -806,13 +812,67 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
             buf_u8(&fe->code, (uint8_t)(e->as.method_call.argc + 1));  // +1 for self
             return;
         }
-        case EX_LAMBDA:
-        case EX_TUPLE:
-        case EX_FSTRING:
-            bp_fatal("feature not yet fully implemented: %s",
-                     e->kind == EX_LAMBDA ? "lambda" :
-                     e->kind == EX_TUPLE ? "tuple" : "f-string");
+        case EX_TUPLE: {
+            // Compile tuples as arrays
+            for (size_t i = 0; i < e->as.tuple.len; i++) {
+                emit_expr(fe, e->as.tuple.elements[i]);
+            }
+            buf_u8(&fe->code, OP_ARRAY_NEW);
+            buf_u32(&fe->code, (uint32_t)e->as.tuple.len);
             return;
+        }
+        case EX_FSTRING: {
+            // F-strings: Since the parser stores the raw template (without
+            // parsing interpolations), treat as a plain string for now.
+            const char *tmpl = e->as.fstring.template_str;
+            uint32_t sid = strpool_add(fe->pool, tmpl);
+            uint32_t local_id = fn_str_index(fe, sid);
+            buf_u8(&fe->code, OP_CONST_STR);
+            buf_u32(&fe->code, local_id);
+            return;
+        }
+        case EX_LAMBDA: {
+            // Compile lambda body as anonymous function
+            // The type checker assigned this lambda an fn_index via struct_name
+            const char *lname = e->inferred.struct_name;
+            if (!lname) bp_fatal("lambda missing function name from type checker");
+
+            FnEmit lfe;
+            memset(&lfe, 0, sizeof(lfe));
+            lfe.pool = fe->pool;
+            lfe.module = fe->module;
+
+            // Add parameters as locals
+            for (size_t p = 0; p < e->as.lambda.paramc; p++)
+                locals_add(&lfe.locals, e->as.lambda.params[p].name);
+
+            // Compile body expression and return its result
+            emit_expr(&lfe, e->as.lambda.body);
+            buf_u8(&lfe.code, OP_RET);
+
+            // Find the function slot - parse lambda index from name
+            size_t lambda_num = 0;
+            if (sscanf(lname, "__lambda_%zu", &lambda_num) != 1) {
+                bp_fatal("bad lambda name: %s", lname);
+            }
+            size_t fn_idx = fe->module->fn_len - typecheck_lambda_count() + lambda_num;
+
+            BpFunc *lfn = &fe->module->funcs[fn_idx];
+            if (lfn->name) free(lfn->name);
+            lfn->name = bp_xstrdup(lname);
+            lfn->arity = (uint16_t)e->as.lambda.paramc;
+            lfn->locals = (uint16_t)lfe.locals.len;
+            lfn->code = lfe.code.data;
+            lfn->code_len = lfe.code.len;
+            lfn->str_const_ids = lfe.str_ids;
+            lfn->str_const_len = lfe.str_len;
+            locals_free(&lfe.locals);
+
+            // Push the function index as integer (stored in variable slot)
+            buf_u8(&fe->code, OP_CONST_I64);
+            buf_i64(&fe->code, (int64_t)fn_idx);
+            return;
+        }
         default: break;
     }
     bp_fatal("unknown expr");
@@ -824,7 +884,14 @@ BpModule compile_module(const Module *m) {
 
     StrPool pool = {0};
 
-    out.fn_len = m->fnc;
+    // Count total functions: module functions + all class methods + lambdas
+    size_t total_methods = 0;
+    for (size_t i = 0; i < m->classc; i++) {
+        total_methods += m->classes[i].method_count;
+    }
+    size_t lambda_count = typecheck_lambda_count();
+
+    out.fn_len = m->fnc + total_methods + lambda_count;
     out.funcs = bp_xmalloc(out.fn_len * sizeof(*out.funcs));
     memset(out.funcs, 0, out.fn_len * sizeof(*out.funcs));
 
@@ -839,6 +906,7 @@ BpModule compile_module(const Module *m) {
         FnEmit fe;
         memset(&fe, 0, sizeof(fe));
         fe.pool = &pool;
+        fe.module = &out;
 
         // params occupy first locals
         for (size_t p = 0; p < f->paramc; p++) locals_add(&fe.locals, f->params[p].name);
@@ -861,7 +929,8 @@ BpModule compile_module(const Module *m) {
         locals_free(&fe.locals);
     }
 
-    // Compile class definitions
+    // Compile class definitions and their methods
+    size_t method_fn_idx = m->fnc; // methods start after module functions
     out.class_type_len = m->classc;
     if (m->classc > 0) {
         out.class_types = bp_xmalloc(m->classc * sizeof(*out.class_types));
@@ -877,15 +946,39 @@ BpModule compile_module(const Module *m) {
                     out.class_types[i].field_names[j] = bp_xstrdup(cd->field_names[j]);
                 }
             }
-            // Methods will be compiled later
             out.class_types[i].method_count = cd->method_count;
             if (cd->method_count > 0) {
                 out.class_types[i].method_ids = bp_xmalloc(cd->method_count * sizeof(uint16_t));
                 out.class_types[i].method_names = bp_xmalloc(cd->method_count * sizeof(char *));
                 for (size_t j = 0; j < cd->method_count; j++) {
-                    out.class_types[i].method_names[j] = bp_xstrdup(cd->methods[j].name);
-                    // Method function IDs will be resolved later
-                    out.class_types[i].method_ids[j] = 0;
+                    const MethodDef *md = &cd->methods[j];
+                    out.class_types[i].method_names[j] = bp_xstrdup(md->name);
+                    out.class_types[i].method_ids[j] = (uint16_t)method_fn_idx;
+
+                    // Compile the method as a function
+                    FnEmit fe;
+                    memset(&fe, 0, sizeof(fe));
+                    fe.pool = &pool;
+                    fe.module = &out;
+                    for (size_t p = 0; p < md->paramc; p++)
+                        locals_add(&fe.locals, md->params[p].name);
+                    for (size_t s = 0; s < md->body_len; s++)
+                        emit_stmt(&fe, md->body[s]);
+                    buf_u8(&fe.code, OP_CONST_I64);
+                    buf_i64(&fe.code, 0);
+                    buf_u8(&fe.code, OP_RET);
+
+                    char mname[256];
+                    snprintf(mname, sizeof(mname), "%s$%s", cd->name, md->name);
+                    out.funcs[method_fn_idx].name = bp_xstrdup(mname);
+                    out.funcs[method_fn_idx].arity = (uint16_t)md->paramc;
+                    out.funcs[method_fn_idx].locals = (uint16_t)fe.locals.len;
+                    out.funcs[method_fn_idx].code = fe.code.data;
+                    out.funcs[method_fn_idx].code_len = fe.code.len;
+                    out.funcs[method_fn_idx].str_const_ids = fe.str_ids;
+                    out.funcs[method_fn_idx].str_const_len = fe.str_len;
+                    locals_free(&fe.locals);
+                    method_fn_idx++;
                 }
             }
         }

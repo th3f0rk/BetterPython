@@ -1,0 +1,29 @@
+def main() -> int:
+    let s: str = "hello world foo"
+    let parts: [str] = str_split(s, " ")
+    if array_len(parts) != 3:
+        print("FAIL: split should produce 3 parts")
+        return 1
+    if parts[0] != "hello":
+        print("FAIL: parts[0] should be hello")
+        return 1
+    if parts[1] != "world":
+        print("FAIL: parts[1] should be world")
+        return 1
+    if parts[2] != "foo":
+        print("FAIL: parts[2] should be foo")
+        return 1
+
+    let joined: str = str_join(parts, "-")
+    if joined != "hello-world-foo":
+        print("FAIL: join should produce hello-world-foo")
+        return 1
+
+    let csv: str = "a,b,c,d"
+    let fields: [str] = str_split(csv, ",")
+    if array_len(fields) != 4:
+        print("FAIL: csv split should produce 4 fields")
+        return 1
+
+    print("ALL PASSED")
+    return 0

@@ -34,6 +34,7 @@ typedef enum {
     OP_SUB_F64,
     OP_MUL_F64,
     OP_DIV_F64,
+    OP_MOD_F64,
     OP_NEG_F64,
 
     OP_ADD_STR,

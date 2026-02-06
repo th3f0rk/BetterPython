@@ -80,6 +80,10 @@ static StructTable g_structtable = {0};
 static ClassTable g_classtable = {0};
 static EnumTable g_enumtable = {0};
 
+// Lambda tracking
+static size_t g_lambda_counter = 0;
+static size_t g_lambda_base_index = 0; // fn_index for first lambda
+
 // Import tracking for module system
 typedef struct {
     char *module_name;      // Original module name
@@ -526,8 +530,8 @@ static bool is_builtin(const char *name) {
     if (strcmp(name, "regex_find_all") == 0) return true;
 
     // StringBuilder-like operations
-    if (strcmp(name, "str_split_str") == 0) return true;
-    if (strcmp(name, "str_join_arr") == 0) return true;
+    if (strcmp(name, "str_split_str") == 0 || strcmp(name, "str_split") == 0) return true;
+    if (strcmp(name, "str_join_arr") == 0 || strcmp(name, "str_join") == 0) return true;
     if (strcmp(name, "str_concat_all") == 0) return true;
 
     // Bitwise operations
@@ -537,6 +541,10 @@ static bool is_builtin(const char *name) {
     if (strcmp(name, "bit_not") == 0) return true;
     if (strcmp(name, "bit_shl") == 0) return true;
     if (strcmp(name, "bit_shr") == 0) return true;
+
+    // Byte conversion
+    if (strcmp(name, "bytes_to_str") == 0) return true;
+    if (strcmp(name, "str_to_bytes") == 0) return true;
 
     return false;
 }
@@ -1173,7 +1181,7 @@ static Type check_builtin_call(Expr *e, Scope *s) {
     }
 
     // StringBuilder-like operations
-    if (strcmp(name, "str_split_str") == 0) {
+    if (strcmp(name, "str_split_str") == 0 || strcmp(name, "str_split") == 0) {
         if (e->as.call.argc != 2) bp_fatal("str_split_str expects 2 args");
         if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("str_split_str arg0 must be str");
         if (check_expr(e->as.call.args[1], s).kind != TY_STR) bp_fatal("str_split_str arg1 must be str");
@@ -1185,7 +1193,7 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         e->inferred = arr_type;
         return e->inferred;
     }
-    if (strcmp(name, "str_join_arr") == 0) {
+    if (strcmp(name, "str_join_arr") == 0 || strcmp(name, "str_join") == 0) {
         if (e->as.call.argc != 2) bp_fatal("str_join_arr expects 2 args");
         Type arr_type = check_expr(e->as.call.args[0], s);
         if (arr_type.kind != TY_ARRAY) bp_fatal("str_join_arr arg0 must be array");
@@ -1225,6 +1233,26 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
 
+    // bytes_to_str(bytes) -> str
+    if (strcmp(name, "bytes_to_str") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("bytes_to_str expects 1 arg");
+        check_expr(e->as.call.args[0], s);
+        e->inferred = type_str();
+        return e->inferred;
+    }
+    // str_to_bytes(str) -> [int]  (byte array represented as int array)
+    if (strcmp(name, "str_to_bytes") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("str_to_bytes expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("str_to_bytes arg must be str");
+        Type arr_type;
+        arr_type.kind = TY_ARRAY;
+        arr_type.key_type = NULL;
+        arr_type.elem_type = type_new(TY_INT);
+        arr_type.struct_name = NULL;
+        e->inferred = arr_type;
+        return e->inferred;
+    }
+
     bp_fatal("unknown builtin '%s'", name);
     return type_void();
 }
@@ -1241,7 +1269,14 @@ static Type check_call(Expr *e, Scope *s) {
     // Look up user-defined function
     FnSig *fn = fntable_get(&g_fntable, name);
     if (!fn) {
-        bp_fatal("unknown function '%s'", name);
+        // Check if it's a variable with TY_FUNC type (lambda stored in variable)
+        Type var_type = type_void();
+        if (scope_get(s, name, &var_type) && var_type.kind == TY_FUNC && var_type.struct_name) {
+            fn = fntable_get(&g_fntable, var_type.struct_name);
+        }
+        if (!fn) {
+            bp_fatal("unknown function '%s'", name);
+        }
     }
 
     // Check argument count
@@ -1475,8 +1510,13 @@ static Type check_expr(Expr *e, Scope *s) {
                     bp_fatal("arithmetic expects int or float");
                     break;
                 case BOP_MOD:
-                    if (a.kind != TY_INT || b.kind != TY_INT) bp_fatal("mod expects int");
-                    e->inferred = type_int();
+                    if (a.kind == TY_FLOAT || b.kind == TY_FLOAT) {
+                        e->inferred = type_float();
+                    } else if (a.kind == TY_INT && b.kind == TY_INT) {
+                        e->inferred = type_int();
+                    } else {
+                        bp_fatal("mod expects int or float");
+                    }
                     return e->inferred;
                 case BOP_EQ: case BOP_NEQ:
                     if (!type_eq(a, b)) bp_fatal("==/!= requires same types");
@@ -1497,17 +1537,28 @@ static Type check_expr(Expr *e, Scope *s) {
             return type_void();
         }
         case EX_TUPLE: {
-            // Type check all elements and build tuple type
-            Type **elem_types = NULL;
-            if (e->as.tuple.len > 0) {
-                elem_types = bp_xmalloc(e->as.tuple.len * sizeof(*elem_types));
-                for (size_t i = 0; i < e->as.tuple.len; i++) {
-                    Type et = check_expr(e->as.tuple.elements[i], s);
-                    elem_types[i] = type_new(et.kind);
-                    *elem_types[i] = et;
-                }
+            // Tuples are compiled as arrays. Check element types and infer
+            // as array type when all elements have the same type.
+            if (e->as.tuple.len == 0) {
+                Type arr_type;
+                arr_type.kind = TY_ARRAY;
+                arr_type.key_type = NULL;
+                arr_type.elem_type = type_new(TY_INT);
+                arr_type.struct_name = NULL;
+                e->inferred = arr_type;
+                return e->inferred;
             }
-            e->inferred = *type_tuple(elem_types, e->as.tuple.len);
+            Type first = check_expr(e->as.tuple.elements[0], s);
+            for (size_t i = 1; i < e->as.tuple.len; i++) {
+                check_expr(e->as.tuple.elements[i], s);
+            }
+            Type arr_type;
+            arr_type.kind = TY_ARRAY;
+            arr_type.key_type = NULL;
+            arr_type.elem_type = type_new(first.kind);
+            *arr_type.elem_type = first;
+            arr_type.struct_name = NULL;
+            e->inferred = arr_type;
             return e->inferred;
         }
         case EX_LAMBDA: {
@@ -1539,7 +1590,25 @@ static Type check_expr(Expr *e, Scope *s) {
             for (size_t i = 0; i < body_scope.len; i++) free(body_scope.items[i].name);
             free(body_scope.items);
 
+            // Register lambda as anonymous function for compilation
+            size_t fn_idx = g_lambda_base_index + g_lambda_counter;
+            char lname[64];
+            snprintf(lname, sizeof(lname), "__lambda_%zu", g_lambda_counter);
+            g_lambda_counter++;
+
+            // Register in function table so calls can resolve to it
+            Type *pt_copy = NULL;
+            if (e->as.lambda.paramc > 0) {
+                pt_copy = bp_xmalloc(e->as.lambda.paramc * sizeof(Type));
+                for (size_t i = 0; i < e->as.lambda.paramc; i++)
+                    pt_copy[i] = e->as.lambda.params[i].type;
+            }
+            fntable_add(&g_fntable, lname, pt_copy, e->as.lambda.paramc,
+                        e->as.lambda.return_type, fn_idx);
+
             e->inferred = *type_func(param_types, e->as.lambda.paramc, ret_type);
+            // Store lambda name in struct_name for resolving calls through variables
+            e->inferred.struct_name = bp_xstrdup(lname);
             return e->inferred;
         }
         case EX_FSTRING: {
@@ -1673,7 +1742,12 @@ static void check_stmt(Stmt *st, Scope *s, Type ret_type) {
             if (!type_eq(it, st->as.let.type)) {
                 bp_fatal("type error: let %s: %s initialized with %s", st->as.let.name, type_name(st->as.let.type), type_name(it));
             }
-            scope_put(s, st->as.let.name, st->as.let.type);
+            // For TY_FUNC: propagate lambda function name from inferred type
+            Type let_type = st->as.let.type;
+            if (let_type.kind == TY_FUNC && it.struct_name) {
+                let_type.struct_name = it.struct_name;
+            }
+            scope_put(s, st->as.let.name, let_type);
             return;
         }
         case ST_ASSIGN: {
@@ -1882,6 +1956,15 @@ void typecheck_module(Module *m) {
         fntable_add(&g_fntable, ed->name, param_types, ed->paramc, ed->ret_type, (size_t)(int)(-(100 + (int)i)));
     }
 
+    // Initialize lambda counter - lambdas get indices after functions + methods
+    g_lambda_counter = 0;
+    {
+        size_t total_methods = 0;
+        for (size_t i = 0; i < m->classc; i++)
+            total_methods += m->classes[i].method_count;
+        g_lambda_base_index = m->fnc + total_methods;
+    }
+
     // Now type-check all function bodies
     for (size_t i = 0; i < m->fnc; i++) {
         Function *f = &m->fns[i];
@@ -1896,4 +1979,8 @@ void typecheck_module(Module *m) {
     }
 
     // Keep function/struct tables around for compiler (don't free yet)
+}
+
+size_t typecheck_lambda_count(void) {
+    return g_lambda_counter;
 }

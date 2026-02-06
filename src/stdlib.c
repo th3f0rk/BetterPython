@@ -1754,6 +1754,21 @@ Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_co
         case BI_BIT_SHL: return v_int(args[0].as.i << args[1].as.i);
         case BI_BIT_SHR: return v_int(args[0].as.i >> args[1].as.i);
 
+        // Byte conversion
+        case BI_BYTES_TO_STR: {
+            if (argc != 1 || args[0].type != VAL_STR) bp_fatal("bytes_to_str expects (str)");
+            return args[0]; // identity - strings are already byte arrays in this impl
+        }
+        case BI_STR_TO_BYTES: {
+            if (argc != 1 || args[0].type != VAL_STR) bp_fatal("str_to_bytes expects (str)");
+            BpStr *s = args[0].as.s;
+            BpArray *arr = gc_new_array(gc, s->len);
+            for (size_t i = 0; i < s->len; i++) {
+                gc_array_push(gc, arr, v_int((int64_t)(unsigned char)s->data[i]));
+            }
+            return v_array(arr);
+        }
+
         default: break;
     }
     bp_fatal("unknown builtin id");
