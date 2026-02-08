@@ -1136,15 +1136,51 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             return dst;
         }
         case EX_FSTRING: {
-            // F-strings: emit raw template string (interpolation not implemented)
-            const char *tmpl = e->as.fstring.template_str;
-            uint32_t sid = strpool_add(fe->pool, tmpl);
-            uint32_t local_id = fn_str_index(fe, sid);
-            uint8_t dst = reg_alloc_temp(&fe->ra);
-            buf_u8(&fe->code, R_CONST_STR);
-            buf_u8(&fe->code, dst);
-            buf_u32(&fe->code, local_id);
-            return dst;
+            // F-string interpolation: emit parts, convert to str, concatenate
+            if (e->as.fstring.partc == 0) {
+                uint32_t sid = strpool_add(fe->pool, "");
+                uint32_t local_id = fn_str_index(fe, sid);
+                uint8_t dst = reg_alloc_temp(&fe->ra);
+                buf_u8(&fe->code, R_CONST_STR);
+                buf_u8(&fe->code, dst);
+                buf_u32(&fe->code, local_id);
+                return dst;
+            }
+            // Emit first part (convert to string if needed)
+            uint8_t result = reg_emit_expr(fe, e->as.fstring.parts[0]);
+            if (e->as.fstring.parts[0]->inferred.kind != TY_STR) {
+                uint8_t str_reg = reg_alloc_temp(&fe->ra);
+                buf_u8(&fe->code, R_CALL_BUILTIN);
+                buf_u8(&fe->code, str_reg);
+                buf_u16(&fe->code, (uint16_t)BI_TO_STR);
+                buf_u8(&fe->code, result);
+                buf_u8(&fe->code, 1);
+                reg_free_temp(&fe->ra, result);
+                result = str_reg;
+            }
+            // Emit remaining parts and chain R_ADD_STR
+            for (size_t i = 1; i < e->as.fstring.partc; i++) {
+                uint8_t part = reg_emit_expr(fe, e->as.fstring.parts[i]);
+                if (e->as.fstring.parts[i]->inferred.kind != TY_STR) {
+                    uint8_t str_reg = reg_alloc_temp(&fe->ra);
+                    buf_u8(&fe->code, R_CALL_BUILTIN);
+                    buf_u8(&fe->code, str_reg);
+                    buf_u16(&fe->code, (uint16_t)BI_TO_STR);
+                    buf_u8(&fe->code, part);
+                    buf_u8(&fe->code, 1);
+                    reg_free_temp(&fe->ra, part);
+                    part = str_reg;
+                }
+                uint8_t cat = reg_alloc_temp(&fe->ra);
+                buf_u8(&fe->code, R_ADD_STR);
+                buf_u8(&fe->code, cat);
+                buf_u8(&fe->code, result);
+                buf_u8(&fe->code, part);
+                reg_free_temp(&fe->ra, result);
+                reg_free_temp(&fe->ra, part);
+                result = cat;
+            }
+            return result;
         }
         default:
             break;

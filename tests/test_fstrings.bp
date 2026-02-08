@@ -1,0 +1,55 @@
+# Test f-string interpolation
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+def main() -> int:
+    # Basic variable interpolation
+    let name: str = "World"
+    let msg: str = f"Hello, {name}!"
+    if msg != "Hello, World!":
+        print("FAIL: basic var")
+        return 1
+
+    # Integer interpolation
+    let x: int = 42
+    let msg2: str = f"The answer is {x}"
+    if msg2 != "The answer is 42":
+        print("FAIL: int interp")
+        return 1
+
+    # Expression interpolation
+    let a: int = 3
+    let b: int = 7
+    let msg3: str = f"Sum: {a + b}"
+    if msg3 != "Sum: 10":
+        print("FAIL: expr interp")
+        return 1
+
+    # Multiple interpolations
+    let first: str = "John"
+    let age: int = 30
+    let msg4: str = f"{first} is {age} years old"
+    if msg4 != "John is 30 years old":
+        print("FAIL: multi interp")
+        return 1
+
+    # Function call in f-string
+    let msg5: str = greet("BetterPython")
+    if msg5 != "Hello, BetterPython!":
+        print("FAIL: fn call interp")
+        return 1
+
+    # Float interpolation
+    let pi: float = 3.14
+    let msg6: str = f"Pi is {pi}"
+    print(msg6)
+
+    # Empty literal parts
+    let val: int = 99
+    let msg7: str = f"{val}"
+    if msg7 != "99":
+        print("FAIL: solo interp")
+        return 1
+
+    print("All f-string tests passed!")
+    return 0

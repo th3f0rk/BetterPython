@@ -244,12 +244,88 @@ static Expr *parse_primary(Parser *p) {
         bp_fatal("expected '.' or '()' after 'super' at %zu:%zu", p->cur.line, p->cur.col);
     }
 
-    // F-string: f"Hello {name}!"
+    // F-string: f"Hello {name}!" - parse with expression interpolation
     if (p->cur.kind == TOK_FSTRING) {
-        char *str = bp_xstrdup(p->cur.str_val);
+        char *raw = bp_xstrdup(p->cur.str_val);
         free((void *)p->cur.str_val);
         next(p);
-        return parse_postfix(p, expr_new_fstring(str, line));
+
+        Expr **parts = NULL;
+        size_t partc = 0, cap = 0;
+        char *s = raw;
+
+        while (*s) {
+            // Find next '{'
+            char *brace = NULL;
+            for (char *c = s; *c; c++) {
+                if (*c == '{') { brace = c; break; }
+            }
+
+            if (!brace) {
+                // Rest is literal string
+                if (partc + 1 > cap) { cap = cap ? cap * 2 : 8; parts = bp_xrealloc(parts, cap * sizeof(Expr*)); }
+                parts[partc++] = expr_new_str(bp_xstrdup(s), line);
+                break;
+            }
+
+            // Add literal part before '{'
+            if (brace > s) {
+                char saved = *brace;
+                *brace = '\0';
+                if (partc + 1 > cap) { cap = cap ? cap * 2 : 8; parts = bp_xrealloc(parts, cap * sizeof(Expr*)); }
+                parts[partc++] = expr_new_str(bp_xstrdup(s), line);
+                *brace = saved;
+            }
+
+            // Find matching '}' (handle nested braces for dict literals etc.)
+            int depth = 1;
+            char *end = brace + 1;
+            while (*end && depth > 0) {
+                if (*end == '{') depth++;
+                else if (*end == '}') depth--;
+                if (depth > 0) end++;
+            }
+            if (depth != 0) bp_fatal("unterminated {} in f-string at line %zu", line);
+
+            // Extract expression text between { and }
+            size_t expr_len = (size_t)(end - (brace + 1));
+            char *expr_text = bp_xmalloc(expr_len + 1);
+            memcpy(expr_text, brace + 1, expr_len);
+            expr_text[expr_len] = '\0';
+
+            // Parse expression with a sub-lexer
+            Lexer *saved_lx = p->lx;
+            Token saved_cur = p->cur;
+
+            Lexer *sub_lx = lexer_new(expr_text);
+            p->lx = sub_lx;
+            next(p);  // load first token from sub-lexer
+
+            Expr *expr = parse_expr(p);
+
+            lexer_free(sub_lx);
+            free(expr_text);
+
+            // Restore parser state
+            p->lx = saved_lx;
+            p->cur = saved_cur;
+
+            if (partc + 1 > cap) { cap = cap ? cap * 2 : 8; parts = bp_xrealloc(parts, cap * sizeof(Expr*)); }
+            parts[partc++] = expr;
+
+            s = end + 1;
+        }
+
+        free(raw);
+
+        // Handle empty f-string
+        if (partc == 0) {
+            parts = bp_xmalloc(sizeof(Expr*));
+            parts[0] = expr_new_str(bp_xstrdup(""), line);
+            partc = 1;
+        }
+
+        return parse_postfix(p, expr_new_fstring(parts, partc, line));
     }
 
     // Lambda: fn(x: int) -> int: x + 1

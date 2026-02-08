@@ -115,13 +115,14 @@ static int cmd_bpvm(int argc, char **argv) {
     // Initialize JIT for register-based bytecode
     JitContext jit;
     jit_init(&jit, m.fn_len);
+    jit.debug = (getenv("BP_JIT_DEBUG") != NULL);
     vm.jit = &jit;
 
     // Always use register-based VM
     int code = reg_vm_run(&vm);
 
-    // Print JIT stats if any compilations happened
-    if (jit.total_compilations > 0) {
+    // Print JIT stats when debug enabled
+    if (jit.debug && jit.total_compilations > 0) {
         jit_print_stats(&jit);
     }
 

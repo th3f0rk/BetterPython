@@ -201,9 +201,10 @@ struct Expr {
             int member_value;  // Set by type checker
         } enum_member;
 
-        // f-string (format string for interpolation)
+        // f-string (format string with interpolated expressions)
         struct {
-            char *template_str;  // Raw string with {expr} placeholders
+            Expr **parts;   // Alternating string literals and expressions
+            size_t partc;   // Number of parts
         } fstring;
 
         // Method call: obj.method(args)
@@ -431,7 +432,7 @@ Expr *expr_new_field_access(Expr *object, char *field_name, size_t line);
 Expr *expr_new_tuple(Expr **elements, size_t len, size_t line);
 Expr *expr_new_lambda(Param *params, size_t paramc, Expr *body, Type ret_type, size_t line);
 Expr *expr_new_enum_member(char *enum_name, char *member_name, size_t line);
-Expr *expr_new_fstring(char *template_str, size_t line);
+Expr *expr_new_fstring(Expr **parts, size_t partc, size_t line);
 Expr *expr_new_method_call(Expr *object, char *method_name, Expr **args, size_t argc, size_t line);
 Expr *expr_new_new(char *class_name, Expr **args, size_t argc, size_t line);
 Expr *expr_new_super_call(char *method_name, Expr **args, size_t argc, size_t line);

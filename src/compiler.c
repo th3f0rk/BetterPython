@@ -908,13 +908,31 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
             return;
         }
         case EX_FSTRING: {
-            // F-strings: Since the parser stores the raw template (without
-            // parsing interpolations), treat as a plain string for now.
-            const char *tmpl = e->as.fstring.template_str;
-            uint32_t sid = strpool_add(fe->pool, tmpl);
-            uint32_t local_id = fn_str_index(fe, sid);
-            buf_u8(&fe->code, OP_CONST_STR);
-            buf_u32(&fe->code, local_id);
+            // F-string interpolation: emit parts and concatenate
+            if (e->as.fstring.partc == 0) {
+                uint32_t sid = strpool_add(fe->pool, "");
+                uint32_t local_id = fn_str_index(fe, sid);
+                buf_u8(&fe->code, OP_CONST_STR);
+                buf_u32(&fe->code, local_id);
+                return;
+            }
+            // Emit first part
+            emit_expr(fe, e->as.fstring.parts[0]);
+            if (e->as.fstring.parts[0]->inferred.kind != TY_STR) {
+                buf_u8(&fe->code, OP_CALL_BUILTIN);
+                buf_u16(&fe->code, (uint16_t)BI_TO_STR);
+                buf_u8(&fe->code, 1);
+            }
+            // Emit remaining parts and concatenate
+            for (size_t i = 1; i < e->as.fstring.partc; i++) {
+                emit_expr(fe, e->as.fstring.parts[i]);
+                if (e->as.fstring.parts[i]->inferred.kind != TY_STR) {
+                    buf_u8(&fe->code, OP_CALL_BUILTIN);
+                    buf_u16(&fe->code, (uint16_t)BI_TO_STR);
+                    buf_u8(&fe->code, 1);
+                }
+                buf_u8(&fe->code, OP_ADD_STR);
+            }
             return;
         }
         case EX_LAMBDA: {
