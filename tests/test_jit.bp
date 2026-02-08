@@ -1,0 +1,36 @@
+# Test JIT compilation with a hot pure-integer function
+# The JIT compiles leaf functions with integer-only operations
+
+# This function will be called many times, triggering JIT compilation
+def is_prime(n: int) -> int:
+    if n < 2:
+        return 0
+    let i: int = 2
+    while i * i <= n:
+        if n % i == 0:
+            return 0
+        i = i + 1
+    return 1
+
+def count_primes(limit: int) -> int:
+    let count: int = 0
+    let n: int = 2
+    while n < limit:
+        if is_prime(n) == 1:
+            count = count + 1
+        n = n + 1
+    return count
+
+def main() -> int:
+    # Call is_prime enough times to trigger JIT (threshold = 100)
+    let result: int = count_primes(1000)
+
+    # There are 168 primes below 1000
+    if result == 168:
+        print("JIT test: PASS")
+        print(result)
+        return 0
+    else:
+        print("JIT test: FAIL")
+        print(result)
+        return 1

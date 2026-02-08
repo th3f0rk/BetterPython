@@ -1627,7 +1627,10 @@ static Type check_expr(Expr *e, Scope *s) {
             return e->inferred;
         }
         case EX_FSTRING: {
-            // F-strings always result in str type
+            // Type-check all sub-expressions in the f-string
+            for (size_t i = 0; i < e->as.fstring.partc; i++) {
+                check_expr(e->as.fstring.parts[i], s);
+            }
             e->inferred = type_str();
             return e->inferred;
         }

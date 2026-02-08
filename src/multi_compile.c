@@ -8,6 +8,7 @@
 
 #include "multi_compile.h"
 #include "compiler.h"
+#include "reg_compiler.h"
 #include "types.h"
 #include "util.h"
 #include <string.h>
@@ -228,8 +229,9 @@ static void resolve_calls_in_expr(Expr *e, SymbolTable *symbols, const char *cur
                 // For within-module calls (fn_index >= 0), construct qualified name
                 const char *lookup_name = e->as.call.name;
                 char *qualified_name = NULL;
+                bool is_cross_module = (e->as.call.fn_index == -2);
 
-                if (e->as.call.fn_index == -2) {
+                if (is_cross_module) {
                     // Cross-module call - name is already qualified
                     lookup_name = e->as.call.name;
                 } else {
@@ -243,12 +245,23 @@ static void resolve_calls_in_expr(Expr *e, SymbolTable *symbols, const char *cur
                 }
 
                 // Find in symbol table
+                bool found = false;
                 for (size_t i = 0; i < symbols->count; i++) {
                     if (strcmp(symbols->entries[i].qualified_name, lookup_name) == 0) {
+                        // Enforce export visibility for cross-module calls
+                        if (is_cross_module && !symbols->entries[i].is_exported) {
+                            fprintf(stderr, "error: function '%s' is not exported from module '%s'\n",
+                                    symbols->entries[i].short_name, symbols->entries[i].module_name);
+                            e->as.call.fn_index = 0;  // Prevent crash, but error is fatal
+                            found = true;
+                            break;
+                        }
                         e->as.call.fn_index = (int)symbols->entries[i].fn_index;
+                        found = true;
                         break;
                     }
                 }
+                (void)found;
 
                 if (qualified_name) free(qualified_name);
             }
@@ -280,6 +293,10 @@ static void resolve_calls_in_expr(Expr *e, SymbolTable *symbols, const char *cur
         case EX_STRUCT_LITERAL:
             for (size_t i = 0; i < e->as.struct_literal.field_count; i++)
                 resolve_calls_in_expr(e->as.struct_literal.field_values[i], symbols, current_module);
+            break;
+        case EX_FSTRING:
+            for (size_t i = 0; i < e->as.fstring.partc; i++)
+                resolve_calls_in_expr(e->as.fstring.parts[i], symbols, current_module);
             break;
         case EX_FIELD_ACCESS:
             resolve_calls_in_expr(e->as.field_access.object, symbols, current_module);
@@ -399,13 +416,24 @@ bool multi_compile(ModuleGraph *g, BpModule *out) {
         }
     }
 
-    // Fifth pass: compile each module
-    // We'll compile each module separately and merge them
+    // Fifth pass: compile each module with register-based compiler
+    // First compile all modules, then merge (reg_compile_module may produce
+    // more functions than fnc due to class methods and lambdas)
 
-    // Allocate output arrays
-    out->fn_len = total_funcs;
-    out->funcs = bp_xmalloc(total_funcs * sizeof(*out->funcs));
-    memset(out->funcs, 0, total_funcs * sizeof(*out->funcs));
+    BpModule *compiled_modules = bp_xmalloc(order_count * sizeof(BpModule));
+    size_t *compiled_fn_lens = bp_xmalloc(order_count * sizeof(size_t));
+    size_t actual_total_funcs = 0;
+    for (size_t i = 0; i < order_count; i++) {
+        ModuleInfo *mi = module_graph_get(g, order[i]);
+        compiled_modules[i] = reg_compile_module(&mi->ast);
+        compiled_fn_lens[i] = compiled_modules[i].fn_len;
+        actual_total_funcs += compiled_modules[i].fn_len;
+    }
+
+    // Allocate output arrays based on actual compiled sizes
+    out->fn_len = actual_total_funcs;
+    out->funcs = bp_xmalloc(actual_total_funcs * sizeof(*out->funcs));
+    memset(out->funcs, 0, actual_total_funcs * sizeof(*out->funcs));
     out->entry = 0;
 
     // Collect all strings
@@ -416,13 +444,11 @@ bool multi_compile(ModuleGraph *g, BpModule *out) {
     size_t fn_offset = 0;
     for (size_t i = 0; i < order_count; i++) {
         ModuleInfo *mi = module_graph_get(g, order[i]);
-
-        // Compile this module
-        BpModule compiled = compile_module(&mi->ast);
+        BpModule *compiled = &compiled_modules[i];
 
         // Copy functions with updated indices
-        for (size_t f = 0; f < compiled.fn_len; f++) {
-            BpFunc *src = &compiled.funcs[f];
+        for (size_t f = 0; f < compiled->fn_len; f++) {
+            BpFunc *src = &compiled->funcs[f];
             BpFunc *dst = &out->funcs[fn_offset + f];
 
             dst->name = src->name;  // Take ownership
@@ -442,7 +468,7 @@ bool multi_compile(ModuleGraph *g, BpModule *out) {
                 for (size_t s = 0; s < src->str_const_len; s++) {
                     // Add string to merged pool and get new ID
                     uint32_t old_id = src->str_const_ids[s];
-                    const char *str = compiled.strings[old_id];
+                    const char *str = compiled->strings[old_id];
 
                     // Find or add string to merged pool
                     uint32_t new_id = (uint32_t)-1;
@@ -467,26 +493,41 @@ bool multi_compile(ModuleGraph *g, BpModule *out) {
                 src->str_const_ids = NULL;
             }
 
-            // Note: Function call indices are already resolved to global indices
-            // by resolve_module_calls() in the AST before compilation.
-            // No bytecode patching needed here.
-            (void)fn_maps;  // Suppress unused warning
+            (void)fn_maps;
 
             // Find main function
-            if (strcmp(mi->name, "__main__") == 0 && strcmp(dst->name, "main") == 0) {
+            if (strcmp(mi->name, "__main__") == 0 && dst->name && strcmp(dst->name, "main") == 0) {
                 out->entry = (uint32_t)(fn_offset + f);
             }
         }
 
-        fn_offset += compiled.fn_len;
+        // Merge class types
+        if (compiled->class_type_len > 0) {
+            size_t old_len = out->class_type_len;
+            size_t new_len = old_len + compiled->class_type_len;
+            out->class_types = bp_xrealloc(out->class_types, new_len * sizeof(*out->class_types));
+            for (size_t c = 0; c < compiled->class_type_len; c++) {
+                out->class_types[old_len + c] = compiled->class_types[c];
+                // Update method_ids to global function indices
+                for (size_t m = 0; m < compiled->class_types[c].method_count; m++) {
+                    out->class_types[old_len + c].method_ids[m] += (uint16_t)fn_offset;
+                }
+            }
+            out->class_type_len = new_len;
+            free(compiled->class_types);
+            compiled->class_types = NULL;
+        }
+
+        fn_offset += compiled->fn_len;
 
         // Free compiled module (but not the transferred data)
-        for (size_t s = 0; s < compiled.str_len; s++) {
-            free(compiled.strings[s]);
+        for (size_t s = 0; s < compiled->str_len; s++) {
+            free(compiled->strings[s]);
         }
-        free(compiled.strings);
-        free(compiled.funcs);
+        free(compiled->strings);
+        free(compiled->funcs);
     }
+    free(compiled_modules);
 
     // Set merged string pool
     out->strings = all_strings;
@@ -540,45 +581,61 @@ bool multi_compile(ModuleGraph *g, BpModule *out) {
                 }
             }
 
-            // Patch OP_FFI_CALL instructions in this module's functions
+            // Patch R_FFI_CALL instructions in this module's register bytecode
             if (extern_offsets[i] > 0) {
-                for (size_t f = 0; f < mi->ast.fnc; f++) {
+                for (size_t f = 0; f < compiled_fn_lens[i]; f++) {
                     BpFunc *func = &out->funcs[fn_off + f];
                     uint8_t *code = func->code;
                     size_t ip = 0;
                     while (ip < func->code_len) {
                         uint8_t op = code[ip++];
-                        if (op == OP_FFI_CALL) {
-                            // Patch the extern_id by adding the module's offset
+                        if (op == R_FFI_CALL) {
+                            ip += 1; // dst
                             uint16_t old_id;
                             memcpy(&old_id, &code[ip], 2);
                             uint16_t new_id = old_id + (uint16_t)extern_offsets[i];
                             memcpy(&code[ip], &new_id, 2);
                             ip += 2; // extern_id
+                            ip += 1; // arg_base
                             ip += 1; // argc
                         } else {
-                            // Skip instruction operands based on opcode
+                            // Skip register bytecode operands
                             switch (op) {
-                                case OP_CONST_I64: case OP_CONST_F64: ip += 8; break;
-                                case OP_CONST_BOOL: ip += 1; break;
-                                case OP_CONST_STR: ip += 4; break;
-                                case OP_LOAD_LOCAL: case OP_STORE_LOCAL: ip += 2; break;
-                                case OP_JMP: case OP_JMP_IF_FALSE: ip += 4; break;
-                                case OP_CALL: case OP_CALL_BUILTIN: ip += 3; break;
-                                case OP_ARRAY_NEW: case OP_MAP_NEW: ip += 4; break;
-                                case OP_STRUCT_NEW: ip += 4; break;
-                                case OP_STRUCT_GET: case OP_STRUCT_SET: ip += 2; break;
-                                case OP_CLASS_NEW: case OP_METHOD_CALL: case OP_SUPER_CALL: ip += 3; break;
-                                case OP_CLASS_GET: case OP_CLASS_SET: ip += 2; break;
-                                case OP_TRY_BEGIN: ip += 10; break;
-                                default: break; /* All other opcodes have no operands */
+                                case R_CONST_I64: case R_CONST_F64: ip += 1 + 8; break;
+                                case R_CONST_BOOL: ip += 1 + 1; break;
+                                case R_CONST_STR: ip += 1 + 4; break;
+                                case R_CONST_NULL: ip += 1; break;
+                                case R_MOV: case R_NEG_I64: case R_NEG_F64: case R_NOT: ip += 2; break;
+                                case R_ADD_I64: case R_SUB_I64: case R_MUL_I64: case R_DIV_I64:
+                                case R_MOD_I64: case R_MOD_F64:
+                                case R_ADD_F64: case R_SUB_F64: case R_MUL_F64: case R_DIV_F64:
+                                case R_ADD_STR:
+                                case R_EQ: case R_NEQ: case R_LT: case R_LTE: case R_GT: case R_GTE:
+                                case R_LT_F64: case R_LTE_F64: case R_GT_F64: case R_GTE_F64:
+                                case R_AND: case R_OR:
+                                case R_ARRAY_GET: case R_ARRAY_SET:
+                                case R_MAP_GET: case R_MAP_SET:
+                                case R_STRUCT_GET: case R_STRUCT_SET:
+                                case R_CLASS_GET: case R_CLASS_SET:
+                                    ip += 3; break;
+                                case R_JMP: ip += 4; break;
+                                case R_JMP_IF_FALSE: case R_JMP_IF_TRUE: ip += 1 + 4; break;
+                                case R_RET: case R_TRY_END: case R_THROW: ip += 1; break;
+                                case R_CALL: ip += 1 + 4 + 1 + 1; break;
+                                case R_CALL_BUILTIN: ip += 1 + 2 + 1 + 1; break;
+                                case R_ARRAY_NEW: case R_MAP_NEW: ip += 4; break;
+                                case R_STRUCT_NEW: case R_CLASS_NEW: ip += 1 + 2 + 1 + 1; break;
+                                case R_METHOD_CALL: case R_SUPER_CALL: ip += 1 + 1 + 2 + 1 + 1; break;
+                                case R_FFI_CALL: ip += 1 + 2 + 1 + 1; break;
+                                case R_TRY_BEGIN: ip += 4 + 4 + 1; break;
+                                default: break;
                             }
                         }
                     }
                 }
             }
 
-            fn_off += mi->ast.fnc;
+            fn_off += compiled_fn_lens[i];
         }
 
         out->extern_funcs = all_externs;
@@ -587,6 +644,7 @@ bool multi_compile(ModuleGraph *g, BpModule *out) {
     }
 
     // Cleanup
+    free(compiled_fn_lens);
     for (size_t i = 0; i < order_count; i++) {
         free(fn_maps[i].local_to_global);
     }

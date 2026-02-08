@@ -640,10 +640,33 @@ static void emit_expr(CGen *cg, const Expr *e) {
             fprintf(cg->out, "BP_ENUM_%s_%s", e->as.enum_member.enum_name, e->as.enum_member.member_name);
             return;
         case EX_FSTRING:
-            /* Simple: treat as string for now */
-            fputs("bp_str_from_cstr(", cg->out);
-            emit_c_string_literal(cg, e->as.fstring.template_str);
-            fputc(')', cg->out);
+            /* F-string interpolation: concatenate parts */
+            if (e->as.fstring.partc == 0) {
+                fputs("bp_str_from_cstr(\"\")", cg->out);
+            } else if (e->as.fstring.partc == 1) {
+                if (e->as.fstring.parts[0]->inferred.kind == TY_STR) {
+                    emit_expr(cg, e->as.fstring.parts[0]);
+                } else {
+                    fputs("bp_to_str(", cg->out);
+                    emit_expr(cg, e->as.fstring.parts[0]);
+                    fputc(')', cg->out);
+                }
+            } else {
+                /* Chain bp_str_concat calls */
+                for (size_t i = 0; i < e->as.fstring.partc - 1; i++)
+                    fputs("bp_str_concat(", cg->out);
+                for (size_t i = 0; i < e->as.fstring.partc; i++) {
+                    if (i > 0) fputs(", ", cg->out);
+                    if (e->as.fstring.parts[i]->inferred.kind != TY_STR) {
+                        fputs("bp_to_str(", cg->out);
+                        emit_expr(cg, e->as.fstring.parts[i]);
+                        fputc(')', cg->out);
+                    } else {
+                        emit_expr(cg, e->as.fstring.parts[i]);
+                    }
+                    if (i > 0) fputc(')', cg->out);
+                }
+            }
             return;
         case EX_METHOD_CALL:
             /* Emit as: structname_methodname(obj, args...) */

@@ -491,24 +491,19 @@ L_R_CALL: {
 
         // Execute native code if available
         if (jit_has_native(vm->jit, fn_idx)) {
-            // Set up arguments in temporary register space
-            size_t new_reg_base = regs_top;
-            size_t needed = new_reg_base + callee->reg_count;
-            if (UNLIKELY(needed > total_regs_cap)) {
-                while (needed > total_regs_cap) total_regs_cap *= 2;
-                regs = bp_xrealloc(regs, total_regs_cap * sizeof(Value));
-                for (size_t i = regs_top; i < total_regs_cap; i++) regs[i] = v_null();
-            }
+            // Allocate int64_t register file for the callee
+            int64_t iregs[256];
+            memset(iregs, 0, (size_t)callee->reg_count * sizeof(int64_t));
 
-            // Copy arguments
+            // Copy arguments (params at iregs[0..argc-1])
             for (uint8_t i = 0; i < argc; i++) {
-                regs[new_reg_base + i] = REG(arg_base + i);
+                iregs[i] = REG(arg_base + i).as.i;
             }
 
-            // Get native function pointer and call it
-            typedef int64_t (*NativeFunc)(void);
-            NativeFunc native = (NativeFunc)jit_get_native(vm->jit, fn_idx);
-            int64_t result = native();
+            // Call JIT function: int64_t jit_fn(int64_t *iregs)
+            typedef int64_t (*JitFunc)(int64_t *);
+            JitFunc jit_fn = (JitFunc)jit_get_native(vm->jit, fn_idx);
+            int64_t result = jit_fn(iregs);
 
             // Store result in destination register
             REG(dst) = v_int(result);

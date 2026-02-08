@@ -208,9 +208,10 @@ Expr *expr_new_enum_member(char *enum_name, char *member_name, size_t line) {
     return e;
 }
 
-Expr *expr_new_fstring(char *template_str, size_t line) {
+Expr *expr_new_fstring(Expr **parts, size_t partc, size_t line) {
     Expr *e = expr_alloc(EX_FSTRING, line);
-    e->as.fstring.template_str = template_str;
+    e->as.fstring.parts = parts;
+    e->as.fstring.partc = partc;
     return e;
 }
 
@@ -404,7 +405,9 @@ static void expr_free(Expr *e) {
             free(e->as.enum_member.member_name);
             break;
         case EX_FSTRING:
-            free(e->as.fstring.template_str);
+            for (size_t i = 0; i < e->as.fstring.partc; i++)
+                expr_free(e->as.fstring.parts[i]);
+            free(e->as.fstring.parts);
             break;
         case EX_METHOD_CALL:
             expr_free(e->as.method_call.object);
