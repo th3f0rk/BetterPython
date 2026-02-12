@@ -188,6 +188,11 @@ static const char *binop_str(BinaryOp op) {
         case BOP_GTE: return ">=";
         case BOP_AND: return "&&";
         case BOP_OR:  return "||";
+        case BOP_BIT_AND: return "&";
+        case BOP_BIT_OR:  return "|";
+        case BOP_BIT_XOR: return "^";
+        case BOP_BIT_SHL: return "<<";
+        case BOP_BIT_SHR: return ">>";
     }
     return "?";
 }
@@ -496,6 +501,7 @@ static void emit_expr(CGen *cg, const Expr *e) {
         case EX_UNARY:
             fputc('(', cg->out);
             if (e->as.unary.op == UOP_NEG) fputc('-', cg->out);
+            else if (e->as.unary.op == UOP_BIT_NOT) fputc('~', cg->out);
             else fputs("!", cg->out);
             emit_expr(cg, e->as.unary.rhs);
             fputc(')', cg->out);

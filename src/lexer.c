@@ -282,6 +282,8 @@ static Token lex_one(Lexer *lx) {
 
     if (c == '=' && nxt(lx) == '=') { adv(lx); adv(lx); return tok_make(TOK_EQ, NULL, 0, line, col); }
     if (c == '!' && nxt(lx) == '=') { adv(lx); adv(lx); return tok_make(TOK_NEQ, NULL, 0, line, col); }
+    if (c == '<' && nxt(lx) == '<') { adv(lx); adv(lx); return tok_make(TOK_SHL, NULL, 0, line, col); }
+    if (c == '>' && nxt(lx) == '>') { adv(lx); adv(lx); return tok_make(TOK_SHR, NULL, 0, line, col); }
     if (c == '<' && nxt(lx) == '=') { adv(lx); adv(lx); return tok_make(TOK_LTE, NULL, 0, line, col); }
     if (c == '>' && nxt(lx) == '=') { adv(lx); adv(lx); return tok_make(TOK_GTE, NULL, 0, line, col); }
 
@@ -291,6 +293,10 @@ static Token lex_one(Lexer *lx) {
     if (c == '*') { adv(lx); return tok_make(TOK_STAR, NULL, 0, line, col); }
     if (c == '/') { adv(lx); return tok_make(TOK_SLASH, NULL, 0, line, col); }
     if (c == '%') { adv(lx); return tok_make(TOK_PCT, NULL, 0, line, col); }
+    if (c == '&') { adv(lx); return tok_make(TOK_AMP, NULL, 0, line, col); }
+    if (c == '|') { adv(lx); return tok_make(TOK_PIPE, NULL, 0, line, col); }
+    if (c == '^') { adv(lx); return tok_make(TOK_CARET, NULL, 0, line, col); }
+    if (c == '~') { adv(lx); return tok_make(TOK_TILDE, NULL, 0, line, col); }
     if (c == '<') { adv(lx); return tok_make(TOK_LT, NULL, 0, line, col); }
     if (c == '>') { adv(lx); return tok_make(TOK_GT, NULL, 0, line, col); }
 
@@ -375,6 +381,12 @@ const char *token_kind_name(TokenKind k) {
         case TOK_LTE: return "LTE";
         case TOK_GT: return "GT";
         case TOK_GTE: return "GTE";
+        case TOK_AMP: return "AMP";
+        case TOK_PIPE: return "PIPE";
+        case TOK_CARET: return "CARET";
+        case TOK_TILDE: return "TILDE";
+        case TOK_SHL: return "SHL";
+        case TOK_SHR: return "SHR";
         default: return "UNKNOWN";
     }
 }

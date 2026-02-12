@@ -561,6 +561,17 @@ static bool is_builtin(const char *name) {
     if (strcmp(name, "bytes_to_str") == 0) return true;
     if (strcmp(name, "str_to_bytes") == 0) return true;
 
+    // Type conversion
+    if (strcmp(name, "parse_int") == 0) return true;
+
+    // JSON
+    if (strcmp(name, "json_stringify") == 0) return true;
+
+    // Byte arrays
+    if (strcmp(name, "bytes_new") == 0) return true;
+    if (strcmp(name, "bytes_get") == 0) return true;
+    if (strcmp(name, "bytes_set") == 0) return true;
+
     return false;
 }
 
@@ -1268,6 +1279,52 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
 
+    // parse_int(str) -> int
+    if (strcmp(name, "parse_int") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("parse_int expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal("parse_int arg must be str");
+        e->inferred = type_int();
+        return e->inferred;
+    }
+
+    // json_stringify(value) -> str
+    if (strcmp(name, "json_stringify") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("json_stringify expects 1 arg");
+        check_expr(e->as.call.args[0], s);
+        e->inferred = type_str();
+        return e->inferred;
+    }
+
+    // bytes_new(size: int) -> [int]
+    if (strcmp(name, "bytes_new") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("bytes_new expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("bytes_new arg must be int");
+        Type arr_type;
+        arr_type.kind = TY_ARRAY;
+        arr_type.key_type = NULL;
+        arr_type.elem_type = type_new(TY_INT);
+        arr_type.struct_name = NULL;
+        e->inferred = arr_type;
+        return e->inferred;
+    }
+    // bytes_get(arr, idx) -> int
+    if (strcmp(name, "bytes_get") == 0) {
+        if (e->as.call.argc != 2) bp_fatal("bytes_get expects 2 args");
+        check_expr(e->as.call.args[0], s);
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal("bytes_get idx must be int");
+        e->inferred = type_int();
+        return e->inferred;
+    }
+    // bytes_set(arr, idx, val) -> void
+    if (strcmp(name, "bytes_set") == 0) {
+        if (e->as.call.argc != 3) bp_fatal("bytes_set expects 3 args");
+        check_expr(e->as.call.args[0], s);
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal("bytes_set idx must be int");
+        if (check_expr(e->as.call.args[2], s).kind != TY_INT) bp_fatal("bytes_set val must be int");
+        e->inferred = type_void();
+        return e->inferred;
+    }
+
     bp_fatal("unknown builtin '%s'", name);
     return type_void();
 }
@@ -1506,6 +1563,11 @@ static Type check_expr(Expr *e, Scope *s) {
                 e->inferred = type_bool();
                 return e->inferred;
             }
+            if (e->as.unary.op == UOP_BIT_NOT) {
+                if (r.kind != TY_INT) bp_fatal_at(e->line, "~ expects int");
+                e->inferred = type_int();
+                return e->inferred;
+            }
             bp_fatal("unknown unary op");
             return type_void();
         }
@@ -1545,6 +1607,11 @@ static Type check_expr(Expr *e, Scope *s) {
                 case BOP_AND: case BOP_OR:
                     if (a.kind != TY_BOOL || b.kind != TY_BOOL) bp_fatal("and/or expect bool");
                     e->inferred = type_bool();
+                    return e->inferred;
+                case BOP_BIT_AND: case BOP_BIT_OR: case BOP_BIT_XOR:
+                case BOP_BIT_SHL: case BOP_BIT_SHR:
+                    if (a.kind != TY_INT || b.kind != TY_INT) bp_fatal("bitwise ops expect int");
+                    e->inferred = type_int();
                     return e->inferred;
                 default: break;
             }

@@ -233,6 +233,17 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "bytes_to_str") == 0) return BI_BYTES_TO_STR;
     if (strcmp(name, "str_to_bytes") == 0) return BI_STR_TO_BYTES;
 
+    // Type conversion
+    if (strcmp(name, "parse_int") == 0) return BI_PARSE_INT;
+
+    // JSON
+    if (strcmp(name, "json_stringify") == 0) return BI_JSON_STRINGIFY;
+
+    // Byte arrays
+    if (strcmp(name, "bytes_new") == 0) return BI_BYTES_NEW;
+    if (strcmp(name, "bytes_get") == 0) return BI_BYTES_GET;
+    if (strcmp(name, "bytes_set") == 0) return BI_BYTES_SET;
+
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
 }
@@ -764,6 +775,8 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
                 } else {
                     buf_u8(&fe->code, R_NEG_I64);
                 }
+            } else if (e->as.unary.op == UOP_BIT_NOT) {
+                buf_u8(&fe->code, R_BIT_NOT);
             } else {
                 buf_u8(&fe->code, R_NOT);
             }
@@ -826,6 +839,11 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
                 case BOP_OR:
                     buf_u8(&fe->code, R_OR);
                     break;
+                case BOP_BIT_AND: buf_u8(&fe->code, R_BIT_AND); break;
+                case BOP_BIT_OR:  buf_u8(&fe->code, R_BIT_OR); break;
+                case BOP_BIT_XOR: buf_u8(&fe->code, R_BIT_XOR); break;
+                case BOP_BIT_SHL: buf_u8(&fe->code, R_BIT_SHL); break;
+                case BOP_BIT_SHR: buf_u8(&fe->code, R_BIT_SHR); break;
                 default:
                     bp_fatal("unsupported binary op");
             }

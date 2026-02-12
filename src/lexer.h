@@ -78,7 +78,15 @@ typedef enum {
     TOK_LT,
     TOK_LTE,
     TOK_GT,
-    TOK_GTE
+    TOK_GTE,
+
+    // Bitwise operators
+    TOK_AMP,        // &
+    TOK_PIPE,       // |
+    TOK_CARET,      // ^
+    TOK_TILDE,      // ~
+    TOK_SHL,        // <<
+    TOK_SHR         // >>
 } TokenKind;
 
 typedef struct {

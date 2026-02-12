@@ -628,6 +628,9 @@ bool multi_compile(ModuleGraph *g, BpModule *out) {
                                 case R_METHOD_CALL: case R_SUPER_CALL: ip += 1 + 1 + 2 + 1 + 1; break;
                                 case R_FFI_CALL: ip += 1 + 2 + 1 + 1; break;
                                 case R_TRY_BEGIN: ip += 4 + 4 + 1; break;
+                                case R_BIT_AND: case R_BIT_OR: case R_BIT_XOR:
+                                case R_BIT_SHL: case R_BIT_SHR: ip += 3; break;
+                                case R_BIT_NOT: ip += 2; break;
                                 default: break;
                             }
                         }

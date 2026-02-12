@@ -310,6 +310,17 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "bytes_to_str") == 0) return BI_BYTES_TO_STR;
     if (strcmp(name, "str_to_bytes") == 0) return BI_STR_TO_BYTES;
 
+    // Type conversion
+    if (strcmp(name, "parse_int") == 0) return BI_PARSE_INT;
+
+    // JSON
+    if (strcmp(name, "json_stringify") == 0) return BI_JSON_STRINGIFY;
+
+    // Byte arrays
+    if (strcmp(name, "bytes_new") == 0) return BI_BYTES_NEW;
+    if (strcmp(name, "bytes_get") == 0) return BI_BYTES_GET;
+    if (strcmp(name, "bytes_set") == 0) return BI_BYTES_SET;
+
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
 }

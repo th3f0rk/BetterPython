@@ -101,13 +101,15 @@ typedef enum {
 
 typedef enum {
     UOP_NEG,
-    UOP_NOT
+    UOP_NOT,
+    UOP_BIT_NOT
 } UnaryOp;
 
 typedef enum {
     BOP_ADD, BOP_SUB, BOP_MUL, BOP_DIV, BOP_MOD,
     BOP_EQ, BOP_NEQ, BOP_LT, BOP_LTE, BOP_GT, BOP_GTE,
-    BOP_AND, BOP_OR
+    BOP_AND, BOP_OR,
+    BOP_BIT_AND, BOP_BIT_OR, BOP_BIT_XOR, BOP_BIT_SHL, BOP_BIT_SHR
 } BinaryOp;
 
 typedef struct Expr Expr;

@@ -1774,6 +1774,81 @@ Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_co
             return v_array(arr);
         }
 
+        case BI_PARSE_INT: {
+            if (argc != 1 || args[0].type != VAL_STR) bp_fatal("parse_int expects (str)");
+            char *end = NULL;
+            long long val = strtoll(args[0].as.s->data, &end, 10);
+            if (end == args[0].as.s->data) return v_int(0); // parse failure
+            return v_int((int64_t)val);
+        }
+        case BI_JSON_STRINGIFY: {
+            if (argc != 1) bp_fatal("json_stringify expects 1 arg");
+            Value v = args[0];
+            if (v.type == VAL_NULL) return v_str(gc_new_str(gc, "null", 4));
+            if (v.type == VAL_BOOL) {
+                const char *s = v.as.b ? "true" : "false";
+                return v_str(gc_new_str(gc, s, strlen(s)));
+            }
+            if (v.type == VAL_INT) {
+                char buf[32]; snprintf(buf, sizeof(buf), "%lld", (long long)v.as.i);
+                return v_str(gc_new_str(gc, buf, strlen(buf)));
+            }
+            if (v.type == VAL_FLOAT) {
+                char buf[64]; snprintf(buf, sizeof(buf), "%g", v.as.f);
+                return v_str(gc_new_str(gc, buf, strlen(buf)));
+            }
+            if (v.type == VAL_STR) {
+                // Wrap string in quotes with escaping
+                BpStr *src = v.as.s;
+                size_t cap = src->len * 2 + 3;
+                char *buf = bp_xmalloc(cap);
+                size_t o = 0;
+                buf[o++] = '"';
+                for (size_t i = 0; i < src->len; i++) {
+                    char c = src->data[i];
+                    if (c == '"' || c == '\\') { buf[o++] = '\\'; buf[o++] = c; }
+                    else if (c == '\n') { buf[o++] = '\\'; buf[o++] = 'n'; }
+                    else if (c == '\t') { buf[o++] = '\\'; buf[o++] = 't'; }
+                    else if (c == '\r') { buf[o++] = '\\'; buf[o++] = 'r'; }
+                    else buf[o++] = c;
+                }
+                buf[o++] = '"'; buf[o] = '\0';
+                BpStr *res = gc_new_str(gc, buf, o);
+                free(buf);
+                return v_str(res);
+            }
+            // For arrays and maps, fall back to simple representation
+            BpStr *s = val_to_str(v, gc);
+            return v_str(s);
+        }
+        case BI_BYTES_NEW: {
+            if (argc != 1 || args[0].type != VAL_INT) bp_fatal("bytes_new expects (int)");
+            int64_t n = args[0].as.i;
+            if (n < 0) n = 0;
+            BpArray *arr = gc_new_array(gc, (size_t)n);
+            for (int64_t i = 0; i < n; i++) {
+                gc_array_push(gc, arr, v_int(0));
+            }
+            return v_array(arr);
+        }
+        case BI_BYTES_GET: {
+            if (argc != 2 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT)
+                bp_fatal("bytes_get expects (array, int)");
+            int64_t idx = args[1].as.i;
+            BpArray *arr = args[0].as.arr;
+            if (idx < 0 || (size_t)idx >= arr->len) bp_fatal("bytes_get: index out of bounds");
+            return v_int(arr->data[idx].as.i & 0xFF);
+        }
+        case BI_BYTES_SET: {
+            if (argc != 3 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT || args[2].type != VAL_INT)
+                bp_fatal("bytes_set expects (array, int, int)");
+            int64_t idx = args[1].as.i;
+            BpArray *arr = args[0].as.arr;
+            if (idx < 0 || (size_t)idx >= arr->len) bp_fatal("bytes_set: index out of bounds");
+            arr->data[idx] = v_int(args[2].as.i & 0xFF);
+            return v_null();
+        }
+
         default: break;
     }
     bp_fatal("unknown builtin id");

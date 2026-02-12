@@ -181,7 +181,15 @@ typedef enum {
     R_SUPER_CALL,       // dst, method_id, arg_base, argc
 
     // FFI
-    R_FFI_CALL          // dst, extern_id, arg_base, argc
+    R_FFI_CALL,         // dst, extern_id, arg_base, argc
+
+    // Bitwise (3-address)
+    R_BIT_AND,          // dst, src1, src2: r[dst] = r[src1] & r[src2]
+    R_BIT_OR,           // dst, src1, src2: r[dst] = r[src1] | r[src2]
+    R_BIT_XOR,          // dst, src1, src2: r[dst] = r[src1] ^ r[src2]
+    R_BIT_NOT,          // dst, src: r[dst] = ~r[src]
+    R_BIT_SHL,          // dst, src1, src2: r[dst] = r[src1] << r[src2]
+    R_BIT_SHR           // dst, src1, src2: r[dst] = r[src1] >> r[src2]
 } OpCode;
 
 typedef enum {
@@ -349,7 +357,18 @@ typedef enum {
     BI_BIT_XOR,
     BI_BIT_NOT,
     BI_BIT_SHL,
-    BI_BIT_SHR
+    BI_BIT_SHR,
+
+    // Type conversion
+    BI_PARSE_INT,
+
+    // JSON
+    BI_JSON_STRINGIFY,
+
+    // Byte arrays
+    BI_BYTES_NEW,
+    BI_BYTES_GET,
+    BI_BYTES_SET
 } BuiltinId;
 
 typedef struct {

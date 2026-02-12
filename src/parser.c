@@ -527,6 +527,7 @@ static Expr *parse_unary(Parser *p) {
     size_t line = p->cur.line;
     if (accept(p, TOK_MINUS)) return expr_new_unary(UOP_NEG, parse_unary(p), line);
     if (accept(p, TOK_NOT)) return expr_new_unary(UOP_NOT, parse_unary(p), line);
+    if (accept(p, TOK_TILDE)) return expr_new_unary(UOP_BIT_NOT, parse_unary(p), line);
     return parse_primary(p);
 }
 
@@ -545,6 +546,11 @@ static BinaryOp bop_from(TokenKind k) {
         case TOK_GTE: return BOP_GTE;
         case TOK_AND: return BOP_AND;
         case TOK_OR: return BOP_OR;
+        case TOK_AMP: return BOP_BIT_AND;
+        case TOK_PIPE: return BOP_BIT_OR;
+        case TOK_CARET: return BOP_BIT_XOR;
+        case TOK_SHL: return BOP_BIT_SHL;
+        case TOK_SHR: return BOP_BIT_SHR;
         default: break;
     }
     bp_fatal("internal: bad bop");
@@ -555,10 +561,14 @@ static int precedence(TokenKind k) {
     switch (k) {
         case TOK_OR: return 1;
         case TOK_AND: return 2;
-        case TOK_EQ: case TOK_NEQ: return 3;
-        case TOK_LT: case TOK_LTE: case TOK_GT: case TOK_GTE: return 4;
-        case TOK_PLUS: case TOK_MINUS: return 5;
-        case TOK_STAR: case TOK_SLASH: case TOK_PCT: return 6;
+        case TOK_PIPE: return 3;       // bitwise OR
+        case TOK_CARET: return 4;      // bitwise XOR
+        case TOK_AMP: return 5;        // bitwise AND
+        case TOK_EQ: case TOK_NEQ: return 6;
+        case TOK_LT: case TOK_LTE: case TOK_GT: case TOK_GTE: return 7;
+        case TOK_SHL: case TOK_SHR: return 8;   // shifts
+        case TOK_PLUS: case TOK_MINUS: return 9;
+        case TOK_STAR: case TOK_SLASH: case TOK_PCT: return 10;
         default: return 0;
     }
 }
