@@ -209,6 +209,8 @@ int reg_vm_run(Vm *vm) {
         [R_BIT_NOT] = &&L_R_BIT_NOT,
         [R_BIT_SHL] = &&L_R_BIT_SHL,
         [R_BIT_SHR] = &&L_R_BIT_SHR,
+        [R_LOAD_GLOBAL] = &&L_R_LOAD_GLOBAL,
+        [R_STORE_GLOBAL] = &&L_R_STORE_GLOBAL,
     };
 
     #define VM_DISPATCH() do { \
@@ -865,6 +867,20 @@ L_R_BIT_SHR: {
     REG(dst) = v_int(REG(src1).as.i >> REG(src2).as.i);
     VM_DISPATCH();
 }
+L_R_LOAD_GLOBAL: {
+    uint8_t dst = code[ip++];
+    uint16_t idx; memcpy(&idx, code + ip, 2); ip += 2;
+    if (idx >= vm->mod.global_count) bp_fatal("global index out of bounds");
+    REG(dst) = vm->mod.globals[idx];
+    VM_DISPATCH();
+}
+L_R_STORE_GLOBAL: {
+    uint8_t src = code[ip++];
+    uint16_t idx; memcpy(&idx, code + ip, 2); ip += 2;
+    if (idx >= vm->mod.global_count) bp_fatal("global index out of bounds");
+    vm->mod.globals[idx] = REG(src);
+    VM_DISPATCH();
+}
 
 vm_exit:
     free(regs);
@@ -1476,6 +1492,20 @@ vm_exit:
             case R_BIT_SHR: {
                 uint8_t dst = code[ip++]; uint8_t s1 = code[ip++]; uint8_t s2 = code[ip++];
                 REG(dst) = v_int(REG(s1).as.i >> REG(s2).as.i); break;
+            }
+            case R_LOAD_GLOBAL: {
+                uint8_t dst = code[ip++];
+                uint16_t idx; memcpy(&idx, code + ip, 2); ip += 2;
+                if (idx >= vm->mod.global_count) bp_fatal("global index out of bounds");
+                REG(dst) = vm->mod.globals[idx];
+                break;
+            }
+            case R_STORE_GLOBAL: {
+                uint8_t src = code[ip++];
+                uint16_t idx; memcpy(&idx, code + ip, 2); ip += 2;
+                if (idx >= vm->mod.global_count) bp_fatal("global index out of bounds");
+                vm->mod.globals[idx] = REG(src);
+                break;
             }
             default:
                 bp_fatal("unknown register opcode %u", op);

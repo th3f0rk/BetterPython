@@ -576,6 +576,38 @@ static bool is_builtin(const char *name) {
     if (strcmp(name, "int_to_bytes") == 0) return true;
     if (strcmp(name, "int_from_bytes") == 0) return true;
 
+    // Byte buffer operations
+    if (strcmp(name, "bytes_append") == 0) return true;
+    if (strcmp(name, "bytes_len") == 0) return true;
+    if (strcmp(name, "bytes_write_u16") == 0) return true;
+    if (strcmp(name, "bytes_write_u32") == 0) return true;
+    if (strcmp(name, "bytes_write_i64") == 0) return true;
+    if (strcmp(name, "bytes_read_u16") == 0) return true;
+    if (strcmp(name, "bytes_read_u32") == 0) return true;
+    if (strcmp(name, "bytes_read_i64") == 0) return true;
+
+    // Binary file I/O
+    if (strcmp(name, "file_read_bytes") == 0) return true;
+    if (strcmp(name, "file_write_bytes") == 0) return true;
+
+    // Array utilities
+    if (strcmp(name, "array_insert") == 0) return true;
+    if (strcmp(name, "array_remove") == 0) return true;
+
+    // Type introspection
+    if (strcmp(name, "typeof") == 0) return true;
+
+    // Array utility builtins
+    if (strcmp(name, "array_concat") == 0) return true;
+    if (strcmp(name, "array_copy") == 0) return true;
+    if (strcmp(name, "array_clear") == 0) return true;
+    if (strcmp(name, "array_index_of") == 0) return true;
+    if (strcmp(name, "array_contains") == 0) return true;
+    if (strcmp(name, "array_reverse") == 0) return true;
+    if (strcmp(name, "array_fill") == 0) return true;
+    if (strcmp(name, "str_from_chars") == 0) return true;
+    if (strcmp(name, "str_bytes") == 0) return true;
+
     return false;
 }
 
@@ -1369,6 +1401,157 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
 
+    // Byte buffer operations
+    if (strcmp(name, "bytes_append") == 0) {
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "bytes_append expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_ARRAY) bp_fatal_at(e->line, "bytes_append arg0 must be array");
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal_at(e->line, "bytes_append arg1 must be int");
+        e->inferred = type_void();
+        return e->inferred;
+    }
+    if (strcmp(name, "bytes_len") == 0) {
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "bytes_len expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_ARRAY) bp_fatal_at(e->line, "bytes_len arg0 must be array");
+        e->inferred = type_int();
+        return e->inferred;
+    }
+    if (strcmp(name, "bytes_write_u16") == 0 || strcmp(name, "bytes_write_u32") == 0 || strcmp(name, "bytes_write_i64") == 0) {
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "%s expects 2 args", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_ARRAY) bp_fatal_at(e->line, "%s arg0 must be array", name);
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal_at(e->line, "%s arg1 must be int", name);
+        e->inferred = type_void();
+        return e->inferred;
+    }
+    if (strcmp(name, "bytes_read_u16") == 0 || strcmp(name, "bytes_read_u32") == 0 || strcmp(name, "bytes_read_i64") == 0) {
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "%s expects 2 args", name);
+        if (check_expr(e->as.call.args[0], s).kind != TY_ARRAY) bp_fatal_at(e->line, "%s arg0 must be array", name);
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal_at(e->line, "%s arg1 must be int", name);
+        e->inferred = type_int();
+        return e->inferred;
+    }
+    if (strcmp(name, "file_read_bytes") == 0) {
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "file_read_bytes expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "file_read_bytes expects str path");
+        Type t;
+        t.kind = TY_ARRAY;
+        t.elem_type = type_new(TY_INT);
+        t.key_type = NULL;
+        t.struct_name = NULL;
+        t.tuple_types = NULL;
+        t.tuple_len = 0;
+        t.param_types = NULL;
+        t.param_count = 0;
+        t.return_type = NULL;
+        e->inferred = t;
+        return e->inferred;
+    }
+    if (strcmp(name, "file_write_bytes") == 0) {
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "file_write_bytes expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "file_write_bytes arg0 must be str");
+        if (check_expr(e->as.call.args[1], s).kind != TY_ARRAY) bp_fatal_at(e->line, "file_write_bytes arg1 must be array");
+        e->inferred = type_bool();
+        return e->inferred;
+    }
+    if (strcmp(name, "array_insert") == 0) {
+        if (e->as.call.argc != 3) bp_fatal_at(e->line, "array_insert expects 3 args");
+        check_expr(e->as.call.args[0], s);
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal_at(e->line, "array_insert arg1 must be int");
+        check_expr(e->as.call.args[2], s);
+        e->inferred = type_void();
+        return e->inferred;
+    }
+    if (strcmp(name, "array_remove") == 0) {
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "array_remove expects 2 args");
+        Type arr_type = check_expr(e->as.call.args[0], s);
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal_at(e->line, "array_remove arg1 must be int");
+        e->inferred = arr_type.elem_type ? *arr_type.elem_type : type_int();
+        return e->inferred;
+    }
+    if (strcmp(name, "typeof") == 0) {
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "typeof expects 1 arg");
+        check_expr(e->as.call.args[0], s);
+        e->inferred = type_str();
+        return e->inferred;
+    }
+    if (strcmp(name, "array_concat") == 0) {
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "array_concat expects 2 args");
+        Type t = check_expr(e->as.call.args[0], s);
+        check_expr(e->as.call.args[1], s);
+        e->inferred = t;
+        return e->inferred;
+    }
+    if (strcmp(name, "array_copy") == 0) {
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "array_copy expects 1 arg");
+        Type t = check_expr(e->as.call.args[0], s);
+        e->inferred = t;
+        return e->inferred;
+    }
+    if (strcmp(name, "array_clear") == 0) {
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "array_clear expects 1 arg");
+        check_expr(e->as.call.args[0], s);
+        e->inferred = type_void();
+        return e->inferred;
+    }
+    if (strcmp(name, "array_index_of") == 0) {
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "array_index_of expects 2 args");
+        check_expr(e->as.call.args[0], s);
+        check_expr(e->as.call.args[1], s);
+        e->inferred = type_int();
+        return e->inferred;
+    }
+    if (strcmp(name, "array_contains") == 0) {
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "array_contains expects 2 args");
+        check_expr(e->as.call.args[0], s);
+        check_expr(e->as.call.args[1], s);
+        e->inferred = type_bool();
+        return e->inferred;
+    }
+    if (strcmp(name, "array_reverse") == 0) {
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "array_reverse expects 1 arg");
+        check_expr(e->as.call.args[0], s);
+        e->inferred = type_void();
+        return e->inferred;
+    }
+    if (strcmp(name, "array_fill") == 0) {
+        if (e->as.call.argc != 2) bp_fatal_at(e->line, "array_fill expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal_at(e->line, "array_fill arg0 must be int");
+        Type val_type = check_expr(e->as.call.args[1], s);
+        Type t;
+        t.kind = TY_ARRAY;
+        t.elem_type = type_new(val_type.kind);
+        t.key_type = NULL;
+        t.struct_name = NULL;
+        t.tuple_types = NULL;
+        t.tuple_len = 0;
+        t.param_types = NULL;
+        t.param_count = 0;
+        t.return_type = NULL;
+        e->inferred = t;
+        return e->inferred;
+    }
+    if (strcmp(name, "str_from_chars") == 0) {
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "str_from_chars expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_ARRAY) bp_fatal_at(e->line, "str_from_chars arg0 must be array");
+        e->inferred = type_str();
+        return e->inferred;
+    }
+    if (strcmp(name, "str_bytes") == 0) {
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "str_bytes expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "str_bytes expects str");
+        Type t;
+        t.kind = TY_ARRAY;
+        t.elem_type = type_new(TY_INT);
+        t.key_type = NULL;
+        t.struct_name = NULL;
+        t.tuple_types = NULL;
+        t.tuple_len = 0;
+        t.param_types = NULL;
+        t.param_count = 0;
+        t.return_type = NULL;
+        e->inferred = t;
+        return e->inferred;
+    }
+
     bp_fatal("unknown builtin '%s'", name);
     return type_void();
 }
@@ -2009,6 +2192,20 @@ static void check_stmt(Stmt *st, Scope *s, Type ret_type) {
             }
             return;
         }
+        case ST_MATCH: {
+            check_expr(st->as.match.expr, s);
+            for (size_t i = 0; i < st->as.match.case_count; i++) {
+                if (st->as.match.case_values[i]) {
+                    check_expr(st->as.match.case_values[i], s);
+                }
+                size_t mark = scope_mark(s);
+                for (size_t j = 0; j < st->as.match.case_body_lens[i]; j++) {
+                    check_stmt(st->as.match.case_bodies[i][j], s, ret_type);
+                }
+                scope_restore(s, mark);
+            }
+            return;
+        }
         case ST_FIELD_ASSIGN: {
             // Type check the field access (object.field)
             Expr *fa = st->as.field_assign.object;
@@ -2131,11 +2328,31 @@ void typecheck_module(Module *m) {
         g_lambda_base_index = m->fnc + total_methods;
     }
 
+    // Type check global variables
+    {
+        Scope scope = {0};
+        for (size_t i = 0; i < m->global_varc; i++) {
+            check_stmt(m->global_vars[i], &scope, type_void());
+        }
+        for (size_t k = 0; k < scope.len; k++) free(scope.items[k].name);
+        free(scope.items);
+    }
+
     // Now type-check all function bodies
     for (size_t i = 0; i < m->fnc; i++) {
         Function *f = &m->fns[i];
 
         Scope s = {0};
+
+        // Add global variables to scope so functions can reference them
+        for (size_t g = 0; g < m->global_varc; g++) {
+            if (m->global_vars[g]->kind == ST_LET) {
+                scope_put(&s, m->global_vars[g]->as.let.name,
+                          m->global_vars[g]->as.let.init->inferred,
+                          m->global_vars[g]->line);
+            }
+        }
+
         for (size_t p = 0; p < f->paramc; p++) scope_put(&s, f->params[p].name, f->params[p].type, f->line);
 
         for (size_t j = 0; j < f->body_len; j++) check_stmt(f->body[j], &s, f->ret_type);

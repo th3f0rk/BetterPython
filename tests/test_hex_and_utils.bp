@@ -1,0 +1,119 @@
+# Test: hex/binary literals and array/string utilities
+
+def test_hex_literals() -> int:
+    let a: int = 0xFF
+    let b: int = 0x10
+    let c: int = 0xDEAD
+    if a == 255:
+        if b == 16:
+            if c == 57005:
+                print("PASS hex_literals")
+                return 0
+    print("FAIL hex_literals")
+    return 1
+
+def test_binary_literals() -> int:
+    let a: int = 0b1010
+    let b: int = 0b11111111
+    if a == 10:
+        if b == 255:
+            print("PASS binary_literals")
+            return 0
+    print("FAIL binary_literals")
+    return 1
+
+def test_array_concat() -> int:
+    let a: [int] = [1, 2, 3]
+    let b: [int] = [4, 5]
+    let c: [int] = array_concat(a, b)
+    if array_len(c) == 5:
+        if c[0] == 1:
+            if c[4] == 5:
+                print("PASS array_concat")
+                return 0
+    print("FAIL array_concat")
+    return 1
+
+def test_array_copy() -> int:
+    let a: [int] = [10, 20, 30]
+    let b: [int] = array_copy(a)
+    array_push(b, 40)
+    if array_len(a) == 3:
+        if array_len(b) == 4:
+            print("PASS array_copy")
+            return 0
+    print("FAIL array_copy")
+    return 1
+
+def test_array_index_of() -> int:
+    let a: [int] = [10, 20, 30, 40]
+    let idx: int = array_index_of(a, 30)
+    let missing: int = array_index_of(a, 99)
+    if idx == 2:
+        if missing == -1:
+            print("PASS array_index_of")
+            return 0
+    print("FAIL array_index_of")
+    return 1
+
+def test_array_contains() -> int:
+    let a: [str] = ["hello", "world"]
+    if array_contains(a, "hello"):
+        if array_contains(a, "nope") == false:
+            print("PASS array_contains")
+            return 0
+    print("FAIL array_contains")
+    return 1
+
+def test_array_reverse() -> int:
+    let a: [int] = [1, 2, 3, 4]
+    array_reverse(a)
+    if a[0] == 4:
+        if a[3] == 1:
+            print("PASS array_reverse")
+            return 0
+    print("FAIL array_reverse")
+    return 1
+
+def test_array_fill() -> int:
+    let a: [int] = array_fill(5, 0)
+    if array_len(a) == 5:
+        if a[0] == 0:
+            if a[4] == 0:
+                print("PASS array_fill")
+                return 0
+    print("FAIL array_fill")
+    return 1
+
+def test_str_from_chars() -> int:
+    let chars: [int] = [72, 105]
+    let s: str = str_from_chars(chars)
+    if s == "Hi":
+        print("PASS str_from_chars")
+        return 0
+    print("FAIL str_from_chars")
+    return 1
+
+def test_str_bytes() -> int:
+    let s: str = "AB"
+    let b: [int] = str_bytes(s)
+    if array_len(b) == 2:
+        if b[0] == 65:
+            if b[1] == 66:
+                print("PASS str_bytes")
+                return 0
+    print("FAIL str_bytes")
+    return 1
+
+def main() -> int:
+    test_hex_literals()
+    test_binary_literals()
+    test_array_concat()
+    test_array_copy()
+    test_array_index_of()
+    test_array_contains()
+    test_array_reverse()
+    test_array_fill()
+    test_str_from_chars()
+    test_str_bytes()
+    return 0

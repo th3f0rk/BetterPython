@@ -250,6 +250,7 @@ typedef enum {
     ST_THROW,
     ST_FIELD_ASSIGN,    // obj.field = value
     ST_FOR_IN           // for x in collection:
+    ,ST_MATCH             // match expr: case val: body
 } StmtKind;
 
 struct Stmt {
@@ -306,6 +307,17 @@ struct Stmt {
             Stmt **body;
             size_t body_len;
         } for_in;
+
+        // Match statement
+        struct {
+            Expr *expr;          // Expression to match on
+            Expr **case_values;  // Case value expressions (NULL for default)
+            Stmt ***case_bodies; // Array of statement arrays
+            size_t *case_body_lens;
+            size_t case_count;   // Number of cases (including default)
+            bool has_default;    // Whether there's a default case
+            size_t default_idx;  // Index of default case in arrays
+        } match;
 
         struct {
             Expr *value; // may be NULL
@@ -424,6 +436,8 @@ typedef struct {
     size_t classc;
     ExternDef *externs;
     size_t externc;
+    Stmt **global_vars;  // Module-level let statements
+    size_t global_varc;
 } Module;
 
 Expr *expr_new_int(int64_t v, size_t line);
@@ -461,5 +475,6 @@ Stmt *stmt_new_continue(size_t line);
 Stmt *stmt_new_return(Expr *value, size_t line);
 Stmt *stmt_new_try(Stmt **try_s, size_t try_len, char *catch_var, Stmt **catch_s, size_t catch_len, Stmt **finally_s, size_t finally_len, size_t line);
 Stmt *stmt_new_throw(Expr *value, size_t line);
+Stmt *stmt_new_match(Expr *expr, Expr **case_values, Stmt ***case_bodies, size_t *case_body_lens, size_t case_count, bool has_default, size_t default_idx, size_t line);
 
 void module_free(Module *m);

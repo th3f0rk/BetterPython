@@ -1,0 +1,73 @@
+# Test: bootstrapping features (file I/O, typeof, array ops)
+
+def test_typeof() -> int:
+    let i: int = 42
+    let s: str = "hello"
+    let b: bool = true
+    let a: [int] = [1, 2, 3]
+    if typeof(i) == "int":
+        if typeof(s) == "str":
+            if typeof(b) == "bool":
+                if typeof(a) == "array":
+                    print("PASS typeof")
+                    return 0
+    print("FAIL typeof")
+    return 1
+
+def test_array_insert() -> int:
+    let a: [int] = [1, 2, 3]
+    array_insert(a, 1, 10)
+    if array_len(a) == 4:
+        if a[0] == 1:
+            if a[1] == 10:
+                if a[2] == 2:
+                    print("PASS array_insert")
+                    return 0
+    print("FAIL array_insert")
+    return 1
+
+def test_array_remove() -> int:
+    let a: [int] = [10, 20, 30, 40]
+    let removed: int = array_remove(a, 1)
+    if removed == 20:
+        if array_len(a) == 3:
+            if a[0] == 10:
+                if a[1] == 30:
+                    print("PASS array_remove")
+                    return 0
+    print("FAIL array_remove")
+    return 1
+
+def test_file_bytes_io() -> int:
+    # Write bytes to a file and read them back
+    let data: [int] = bytes_new(0)
+    bytes_append(data, 72)
+    bytes_append(data, 101)
+    bytes_append(data, 108)
+    bytes_append(data, 108)
+    bytes_append(data, 111)
+    let ok: bool = file_write_bytes("/tmp/bp_test_bytes.bin", data)
+    if ok:
+        let read_data: [int] = file_read_bytes("/tmp/bp_test_bytes.bin")
+        if array_len(read_data) == 5:
+            if read_data[0] == 72:
+                if read_data[4] == 111:
+                    print("PASS file_bytes_io")
+                    file_delete("/tmp/bp_test_bytes.bin")
+                    return 0
+    print("FAIL file_bytes_io")
+    return 1
+
+def test_global_vars() -> int:
+    # Global variables are tested via module-level let
+    # This test just validates function calls work
+    print("PASS global_vars_stub")
+    return 0
+
+def main() -> int:
+    test_typeof()
+    test_array_insert()
+    test_array_remove()
+    test_file_bytes_io()
+    test_global_vars()
+    return 0

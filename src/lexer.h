@@ -87,6 +87,11 @@ typedef enum {
     TOK_TILDE,      // ~
     TOK_SHL,        // <<
     TOK_SHR         // >>
+    ,
+    // Match statement
+    TOK_MATCH,      // match keyword
+    TOK_CASE,       // case keyword
+    TOK_DEFAULT     // default keyword
 } TokenKind;
 
 typedef struct {

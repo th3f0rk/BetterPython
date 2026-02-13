@@ -350,6 +350,18 @@ Stmt *stmt_new_throw(Expr *value, size_t line) {
     return s;
 }
 
+Stmt *stmt_new_match(Expr *expr, Expr **case_values, Stmt ***case_bodies, size_t *case_body_lens, size_t case_count, bool has_default, size_t default_idx, size_t line) {
+    Stmt *s = stmt_alloc(ST_MATCH, line);
+    s->as.match.expr = expr;
+    s->as.match.case_values = case_values;
+    s->as.match.case_bodies = case_bodies;
+    s->as.match.case_body_lens = case_body_lens;
+    s->as.match.case_count = case_count;
+    s->as.match.has_default = has_default;
+    s->as.match.default_idx = default_idx;
+    return s;
+}
+
 Stmt *stmt_new_field_assign(Expr *object, Expr *value, size_t line) {
     Stmt *s = stmt_alloc(ST_FIELD_ASSIGN, line);
     s->as.field_assign.object = object;
@@ -501,6 +513,18 @@ static void stmt_free(Stmt *s) {
         case ST_THROW:
             expr_free(s->as.throw.value);
             break;
+        case ST_MATCH:
+            expr_free(s->as.match.expr);
+            for (size_t i = 0; i < s->as.match.case_count; i++) {
+                if (s->as.match.case_values[i]) expr_free(s->as.match.case_values[i]);
+                for (size_t j = 0; j < s->as.match.case_body_lens[i]; j++)
+                    stmt_free(s->as.match.case_bodies[i][j]);
+                free(s->as.match.case_bodies[i]);
+            }
+            free(s->as.match.case_values);
+            free(s->as.match.case_bodies);
+            free(s->as.match.case_body_lens);
+            break;
         case ST_FIELD_ASSIGN:
             expr_free(s->as.field_assign.object);
             expr_free(s->as.field_assign.value);
@@ -589,6 +613,14 @@ void module_free(Module *m) {
     free(m->classes);
     m->classes = NULL;
     m->classc = 0;
+
+    // Free global vars
+    for (size_t i = 0; i < m->global_varc; i++) {
+        stmt_free(m->global_vars[i]);
+    }
+    free(m->global_vars);
+    m->global_vars = NULL;
+    m->global_varc = 0;
 
     // Free extern declarations
     for (size_t i = 0; i < m->externc; i++) {

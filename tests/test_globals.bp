@@ -1,0 +1,55 @@
+# Test: Global variable support
+# Verifies that functions can read and write module-level variables
+
+let counter: int = 0
+let message: str = "hello"
+
+def get_counter() -> int:
+    return counter
+
+def increment() -> int:
+    counter = counter + 1
+    return counter
+
+def set_message(m: str) -> str:
+    message = m
+    return message
+
+def main() -> int:
+    # Test 1: Read global from function
+    let c: int = get_counter()
+    if c != 0:
+        print("FAIL: initial counter should be 0")
+        return 1
+
+    # Test 2: Write global from function
+    let c2: int = increment()
+    if c2 != 1:
+        print("FAIL: counter after increment should be 1")
+        return 1
+
+    # Test 3: Multiple writes
+    increment()
+    let c3: int = increment()
+    if c3 != 3:
+        print("FAIL: counter after 3 increments should be 3")
+        return 1
+
+    # Test 4: Read global directly in main
+    if counter != 3:
+        print("FAIL: global counter should be 3 from main")
+        return 1
+
+    # Test 5: String globals
+    let msg: str = set_message("world")
+    if msg != "world":
+        print("FAIL: set_message should return world")
+        return 1
+
+    # Test 6: Read modified string global
+    if message != "world":
+        print("FAIL: message should be world")
+        return 1
+
+    print("PASS")
+    return 0

@@ -114,6 +114,8 @@ static void patch_function_calls(BpFunc *func, size_t *fn_remap, size_t fn_count
                 break;
             case OP_LOAD_LOCAL:
             case OP_STORE_LOCAL:
+            case OP_LOAD_GLOBAL:
+            case OP_STORE_GLOBAL:
                 i += 3;  // opcode + 2 bytes
                 break;
             case OP_JMP:
@@ -631,6 +633,7 @@ bool multi_compile(ModuleGraph *g, BpModule *out) {
                                 case R_BIT_AND: case R_BIT_OR: case R_BIT_XOR:
                                 case R_BIT_SHL: case R_BIT_SHR: ip += 3; break;
                                 case R_BIT_NOT: ip += 2; break;
+                                case R_LOAD_GLOBAL: case R_STORE_GLOBAL: ip += 3; break;  // reg(1) + u16(2)
                                 default: break;
                             }
                         }

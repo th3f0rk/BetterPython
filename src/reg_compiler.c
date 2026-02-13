@@ -252,6 +252,32 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "int_to_bytes") == 0) return BI_INT_TO_BYTES;
     if (strcmp(name, "int_from_bytes") == 0) return BI_INT_FROM_BYTES;
 
+    // Byte buffer operations
+    if (strcmp(name, "bytes_append") == 0) return BI_BYTES_APPEND;
+    if (strcmp(name, "bytes_len") == 0) return BI_BYTES_LEN;
+    if (strcmp(name, "bytes_write_u16") == 0) return BI_BYTES_WRITE_U16;
+    if (strcmp(name, "bytes_write_u32") == 0) return BI_BYTES_WRITE_U32;
+    if (strcmp(name, "bytes_write_i64") == 0) return BI_BYTES_WRITE_I64;
+    if (strcmp(name, "bytes_read_u16") == 0) return BI_BYTES_READ_U16;
+    if (strcmp(name, "bytes_read_u32") == 0) return BI_BYTES_READ_U32;
+    if (strcmp(name, "bytes_read_i64") == 0) return BI_BYTES_READ_I64;
+    if (strcmp(name, "file_read_bytes") == 0) return BI_FILE_READ_BYTES;
+    if (strcmp(name, "file_write_bytes") == 0) return BI_FILE_WRITE_BYTES;
+    if (strcmp(name, "array_insert") == 0) return BI_ARRAY_INSERT;
+    if (strcmp(name, "array_remove") == 0) return BI_ARRAY_REMOVE;
+    if (strcmp(name, "typeof") == 0) return BI_TYPEOF;
+
+    // Array utility builtins
+    if (strcmp(name, "array_concat") == 0) return BI_ARRAY_CONCAT;
+    if (strcmp(name, "array_copy") == 0) return BI_ARRAY_COPY;
+    if (strcmp(name, "array_clear") == 0) return BI_ARRAY_CLEAR;
+    if (strcmp(name, "array_index_of") == 0) return BI_ARRAY_INDEX_OF;
+    if (strcmp(name, "array_contains") == 0) return BI_ARRAY_CONTAINS;
+    if (strcmp(name, "array_reverse") == 0) return BI_ARRAY_REVERSE;
+    if (strcmp(name, "array_fill") == 0) return BI_ARRAY_FILL;
+    if (strcmp(name, "str_from_chars") == 0) return BI_STR_FROM_CHARS;
+    if (strcmp(name, "str_bytes") == 0) return BI_STR_BYTES;
+
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
 }
@@ -262,6 +288,20 @@ static BuiltinId builtin_id(const char *name) {
 
 static void emit_jump_patch(Buf *b, size_t at, uint32_t target) {
     memcpy(b->data + at, &target, 4);
+}
+
+// ============================================================================
+// Global Variable Tracking
+// ============================================================================
+
+static char **g_global_names = NULL;
+static size_t g_global_count = 0;
+
+static int global_get(const char *name) {
+    for (size_t i = 0; i < g_global_count; i++) {
+        if (strcmp(g_global_names[i], name) == 0) return (int)i;
+    }
+    return -1;
 }
 
 // ============================================================================
@@ -403,13 +443,22 @@ static void reg_emit_stmt(RegFnEmit *fe, const Stmt *s) {
         case ST_ASSIGN: {
             // Evaluate value expression
             uint8_t val_reg = reg_emit_expr(fe, s->as.assign.value);
-            // Get variable register
-            uint8_t var_reg = reg_get_var(&fe->ra, s->as.assign.name);
-            // Move if different registers
-            if (val_reg != var_reg) {
-                buf_u8(&fe->code, R_MOV);
-                buf_u8(&fe->code, var_reg);
+            // Check if it's a local variable
+            if (reg_has_var(&fe->ra, s->as.assign.name)) {
+                uint8_t var_reg = reg_get_var(&fe->ra, s->as.assign.name);
+                if (val_reg != var_reg) {
+                    buf_u8(&fe->code, R_MOV);
+                    buf_u8(&fe->code, var_reg);
+                    buf_u8(&fe->code, val_reg);
+                    reg_free_temp(&fe->ra, val_reg);
+                }
+            } else {
+                // Check if it's a global variable
+                int gi = global_get(s->as.assign.name);
+                if (gi < 0) bp_fatal("unknown variable '%s'", s->as.assign.name);
+                buf_u8(&fe->code, R_STORE_GLOBAL);
                 buf_u8(&fe->code, val_reg);
+                buf_u16(&fe->code, (uint16_t)gi);
                 reg_free_temp(&fe->ra, val_reg);
             }
             return;
@@ -686,6 +735,70 @@ static void reg_emit_stmt(RegFnEmit *fe, const Stmt *s) {
             pop_loop(fe);
             return;
         }
+        case ST_MATCH: {
+            // Match compiles as a chain of equality checks (if/elif style)
+            // Evaluate match expression into a register
+            uint8_t match_reg = reg_emit_expr(fe, s->as.match.expr);
+
+            size_t *end_patches = NULL;
+            size_t end_count = 0, end_cap = 0;
+
+            for (size_t i = 0; i < s->as.match.case_count; i++) {
+                if (s->as.match.case_values[i] == NULL) continue; // skip default
+
+                // Evaluate case value
+                uint8_t case_reg = reg_emit_expr(fe, s->as.match.case_values[i]);
+
+                // Compare: tmp = (match_reg == case_reg)
+                uint8_t cmp_reg = reg_alloc_temp(&fe->ra);
+                buf_u8(&fe->code, R_EQ);
+                buf_u8(&fe->code, cmp_reg);
+                buf_u8(&fe->code, match_reg);
+                buf_u8(&fe->code, case_reg);
+
+                reg_free_temp(&fe->ra, case_reg);
+
+                // JMP_IF_FALSE to next case
+                buf_u8(&fe->code, R_JMP_IF_FALSE);
+                buf_u8(&fe->code, cmp_reg);
+                size_t skip_at = fe->code.len;
+                buf_u32(&fe->code, 0);
+
+                reg_free_temp(&fe->ra, cmp_reg);
+
+                // Case body
+                for (size_t j = 0; j < s->as.match.case_body_lens[i]; j++)
+                    reg_emit_stmt(fe, s->as.match.case_bodies[i][j]);
+
+                // Jump to end
+                buf_u8(&fe->code, R_JMP);
+                if (end_count + 1 > end_cap) {
+                    end_cap = end_cap ? end_cap * 2 : 8;
+                    end_patches = bp_xrealloc(end_patches, end_cap * sizeof(size_t));
+                }
+                end_patches[end_count++] = fe->code.len;
+                buf_u32(&fe->code, 0);
+
+                // Patch skip
+                emit_jump_patch(&fe->code, skip_at, (uint32_t)fe->code.len);
+            }
+
+            // Default case
+            if (s->as.match.has_default) {
+                size_t di = s->as.match.default_idx;
+                for (size_t j = 0; j < s->as.match.case_body_lens[di]; j++)
+                    reg_emit_stmt(fe, s->as.match.case_bodies[di][j]);
+            }
+
+            // Patch all end jumps
+            uint32_t end_addr = (uint32_t)fe->code.len;
+            for (size_t i = 0; i < end_count; i++)
+                emit_jump_patch(&fe->code, end_patches[i], end_addr);
+            free(end_patches);
+
+            reg_free_temp(&fe->ra, match_reg);
+            return;
+        }
         case ST_BREAK: {
             if (fe->loop_count == 0) bp_fatal("break outside of loop");
             buf_u8(&fe->code, R_JMP);
@@ -815,8 +928,21 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             return dst;
         }
         case EX_VAR: {
-            // Return the register holding the variable
-            return reg_get_var(&fe->ra, e->as.var_name);
+            // Check if it's a local/parameter variable first
+            if (reg_has_var(&fe->ra, e->as.var_name)) {
+                return reg_get_var(&fe->ra, e->as.var_name);
+            }
+            // Check if it's a global variable
+            int gi = global_get(e->as.var_name);
+            if (gi >= 0) {
+                uint8_t dst = reg_alloc_temp(&fe->ra);
+                buf_u8(&fe->code, R_LOAD_GLOBAL);
+                buf_u8(&fe->code, dst);
+                buf_u16(&fe->code, (uint16_t)gi);
+                return dst;
+            }
+            bp_fatal("unknown variable '%s'", e->as.var_name);
+            return 0;
         }
         case EX_CALL: {
             // Allocate consecutive registers for arguments
@@ -1344,6 +1470,22 @@ BpModule reg_compile_module(const Module *m) {
         if (strcmp(m->fns[i].name, "main") == 0) out.entry = (uint32_t)i;
     }
 
+    // Store global variable count for VM
+    out.global_count = m->global_varc;
+    if (m->global_varc > 0) {
+        out.globals = bp_xmalloc(m->global_varc * sizeof(Value));
+        memset(out.globals, 0, m->global_varc * sizeof(Value));
+    }
+
+    // Populate global variable name table for cross-function access
+    g_global_count = m->global_varc;
+    if (m->global_varc > 0) {
+        g_global_names = bp_xmalloc(m->global_varc * sizeof(char *));
+        for (size_t g = 0; g < m->global_varc; g++) {
+            g_global_names[g] = m->global_vars[g]->as.let.name;
+        }
+    }
+
     for (size_t i = 0; i < m->fnc; i++) {
         const Function *f = &m->fns[i];
 
@@ -1358,6 +1500,19 @@ BpModule reg_compile_module(const Module *m) {
         // Parameters are pre-allocated in registers r0..r(paramc-1)
         for (size_t p = 0; p < f->paramc; p++) {
             reg_alloc_param(&fe.ra, f->params[p].name, (uint8_t)p);
+        }
+
+        // If this is the entry function, emit global variable initializers
+        if (i == out.entry) {
+            for (size_t g = 0; g < m->global_varc; g++) {
+                if (m->global_vars[g]->kind == ST_LET && m->global_vars[g]->as.let.init) {
+                    uint8_t val = reg_emit_expr(&fe, m->global_vars[g]->as.let.init);
+                    buf_u8(&fe.code, R_STORE_GLOBAL);
+                    buf_u8(&fe.code, val);
+                    buf_u16(&fe.code, (uint16_t)g);
+                    reg_free_temp(&fe.ra, val);
+                }
+            }
         }
 
         // Compile function body
@@ -1487,6 +1642,11 @@ BpModule reg_compile_module(const Module *m) {
 
     out.str_len = pool.len;
     out.strings = pool.strings;
+
+    // Clean up global variable tracking
+    free(g_global_names);
+    g_global_names = NULL;
+    g_global_count = 0;
 
     return out;
 }

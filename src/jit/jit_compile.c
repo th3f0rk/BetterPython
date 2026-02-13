@@ -199,6 +199,11 @@ static bool first_pass(CompileCtx *ctx) {
                 ip += 2;  // dst(1) + src(1)
                 break;
 
+            case R_LOAD_GLOBAL:
+            case R_STORE_GLOBAL:
+                ip += 3;  // reg(1) + global_idx(u16=2)
+                break;
+
             default:
                 if (ctx->jit->debug) {
                     fprintf(stderr, "JIT: Unknown opcode %u in first pass at offset %zu\n", op, ip - 1);
@@ -549,6 +554,7 @@ static bool compile_insn(CompileCtx *ctx, size_t *ip) {
         case R_TRY_BEGIN: case R_TRY_END: case R_THROW:
         case R_BIT_AND: case R_BIT_OR: case R_BIT_XOR:
         case R_BIT_NOT: case R_BIT_SHL: case R_BIT_SHR:
+        case R_LOAD_GLOBAL: case R_STORE_GLOBAL:
             return false;
 
         default:

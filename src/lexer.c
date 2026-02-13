@@ -97,6 +97,36 @@ static Token lex_number(Lexer *lx) {
     size_t start = lx->i;
     bool is_float = false;
 
+    // Check for hex (0x) or binary (0b) prefix
+    if (cur(lx) == '0' && (nxt(lx) == 'x' || nxt(lx) == 'X')) {
+        adv(lx); adv(lx); // consume '0x'
+        if (!isxdigit((unsigned char)cur(lx)))
+            bp_fatal("invalid hex literal at %zu:%zu", line, col);
+        while (isxdigit((unsigned char)cur(lx))) adv(lx);
+        size_t len = lx->i - start;
+        char *num_str = bp_xmalloc(len + 1);
+        memcpy(num_str, lx->src + start, len);
+        num_str[len] = '\0';
+        Token t = tok_make(TOK_INT, lx->src + start, len, line, col);
+        t.int_val = strtoll(num_str, NULL, 16);
+        free(num_str);
+        return t;
+    }
+    if (cur(lx) == '0' && (nxt(lx) == 'b' || nxt(lx) == 'B')) {
+        adv(lx); adv(lx); // consume '0b'
+        if (cur(lx) != '0' && cur(lx) != '1')
+            bp_fatal("invalid binary literal at %zu:%zu", line, col);
+        while (cur(lx) == '0' || cur(lx) == '1') adv(lx);
+        size_t len = lx->i - start;
+        char *num_str = bp_xmalloc(len + 1);
+        memcpy(num_str, lx->src + start, len);
+        num_str[len] = '\0';
+        Token t = tok_make(TOK_INT, lx->src + start, len, line, col);
+        t.int_val = strtoll(num_str + 2, NULL, 2);
+        free(num_str);
+        return t;
+    }
+
     // Parse integer part
     while (isdigit((unsigned char)cur(lx))) {
         adv(lx);
@@ -152,7 +182,8 @@ static TokenKind keyword_kind(const char *s, size_t n) {
         {"import", TOK_IMPORT}, {"export", TOK_EXPORT}, {"as", TOK_AS},
         {"try", TOK_TRY}, {"catch", TOK_CATCH}, {"finally", TOK_FINALLY}, {"throw", TOK_THROW},
         {"struct", TOK_STRUCT}, {"enum", TOK_ENUM}, {"fn", TOK_FN}, {"from", TOK_FROM}, {"self", TOK_SELF},
-        {"class", TOK_CLASS}, {"new", TOK_NEW}, {"super", TOK_SUPER}, {"extern", TOK_EXTERN}, {"ptr", TOK_PTR}
+        {"class", TOK_CLASS}, {"new", TOK_NEW}, {"super", TOK_SUPER}, {"extern", TOK_EXTERN}, {"ptr", TOK_PTR},
+        {"match", TOK_MATCH}, {"case", TOK_CASE}, {"default", TOK_DEFAULT}
     };
     for (size_t i = 0; i < sizeof(m) / sizeof(m[0]); i++) {
         if (strlen(m[i].k) == n && memcmp(s, m[i].k, n) == 0) return m[i].t;
@@ -387,6 +418,9 @@ const char *token_kind_name(TokenKind k) {
         case TOK_TILDE: return "TILDE";
         case TOK_SHL: return "SHL";
         case TOK_SHR: return "SHR";
+        case TOK_MATCH: return "MATCH";
+        case TOK_CASE: return "CASE";
+        case TOK_DEFAULT: return "DEFAULT";
         default: return "UNKNOWN";
     }
 }

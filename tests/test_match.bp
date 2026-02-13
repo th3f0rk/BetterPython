@@ -1,0 +1,86 @@
+# Test: match/switch statement
+def test_match_basic() -> int:
+    let x: int = 2
+    let result: int = 0
+    match x:
+        case 1:
+            result = 10
+        case 2:
+            result = 20
+        case 3:
+            result = 30
+    if result == 20:
+        print("PASS match_basic")
+    else:
+        print("FAIL match_basic")
+    return result
+
+def test_match_default() -> int:
+    let x: int = 99
+    let result: str = "none"
+    match x:
+        case 1:
+            result = "one"
+        case 2:
+            result = "two"
+        default:
+            result = "other"
+    if result == "other":
+        print("PASS match_default")
+    else:
+        print("FAIL match_default")
+    return 0
+
+def test_match_string() -> int:
+    let cmd: str = "quit"
+    let code: int = -1
+    match cmd:
+        case "start":
+            code = 0
+        case "stop":
+            code = 1
+        case "quit":
+            code = 2
+        default:
+            code = -1
+    if code == 2:
+        print("PASS match_string")
+    else:
+        print("FAIL match_string")
+    return 0
+
+def test_match_first_case() -> int:
+    let x: int = 1
+    let r: int = 0
+    match x:
+        case 1:
+            r = 100
+        case 2:
+            r = 200
+    if r == 100:
+        print("PASS match_first_case")
+    else:
+        print("FAIL match_first_case")
+    return 0
+
+def test_match_no_match() -> int:
+    let x: int = 42
+    let r: int = -1
+    match x:
+        case 1:
+            r = 1
+        case 2:
+            r = 2
+    if r == -1:
+        print("PASS match_no_match")
+    else:
+        print("FAIL match_no_match")
+    return 0
+
+def main() -> int:
+    test_match_basic()
+    test_match_default()
+    test_match_string()
+    test_match_first_case()
+    test_match_no_match()
+    return 0

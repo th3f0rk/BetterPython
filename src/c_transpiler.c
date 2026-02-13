@@ -976,6 +976,54 @@ static void emit_stmt(CGen *cg, const Stmt *s) {
             fputs(";\n", cg->out);
             return;
         }
+        case ST_MATCH: {
+            cg_indent(cg);
+            fputs("{\n", cg->out);
+            cg->indent++;
+
+            /* Emit: type __match_val = (expr); */
+            cg_indent(cg);
+            emit_type(cg, &s->as.match.expr->inferred);
+            fputs(" __match_val = ", cg->out);
+            emit_expr(cg, s->as.match.expr);
+            fputs(";\n", cg->out);
+
+            bool first = true;
+            for (size_t i = 0; i < s->as.match.case_count; i++) {
+                if (s->as.match.case_values[i] == NULL) continue; /* skip default */
+                cg_indent(cg);
+                if (!first) fputs("} else ", cg->out);
+                first = false;
+                fputs("if (__match_val == ", cg->out);
+                emit_expr(cg, s->as.match.case_values[i]);
+                fputs(") {\n", cg->out);
+                cg->indent++;
+                for (size_t j = 0; j < s->as.match.case_body_lens[i]; j++)
+                    emit_stmt(cg, s->as.match.case_bodies[i][j]);
+                cg->indent--;
+            }
+
+            if (s->as.match.has_default) {
+                size_t di = s->as.match.default_idx;
+                cg_indent(cg);
+                if (!first) fputs("} else {\n", cg->out);
+                else fputs("{\n", cg->out);
+                cg->indent++;
+                for (size_t j = 0; j < s->as.match.case_body_lens[di]; j++)
+                    emit_stmt(cg, s->as.match.case_bodies[di][j]);
+                cg->indent--;
+                cg_indent(cg);
+                fputs("}\n", cg->out);
+            } else if (!first) {
+                cg_indent(cg);
+                fputs("}\n", cg->out);
+            }
+
+            cg->indent--;
+            cg_indent(cg);
+            fputs("}\n", cg->out);
+            return;
+        }
     }
 }
 
@@ -1079,6 +1127,18 @@ bool transpile_module_to_c(const Module *m, const char *output_path) {
         emit_enum_def(&cg, &m->enums[i]);
     }
 
+    /* ── Global variables ────────────────────────── */
+    for (size_t i = 0; i < m->global_varc; i++) {
+        const Stmt *gs = m->global_vars[i];
+        if (gs->kind == ST_LET) {
+            emit_type(&cg, &gs->as.let.type);
+            fputc(' ', out);
+            emit_safe_name(&cg, gs->as.let.name);
+            fputs(";\n", out);
+        }
+    }
+    if (m->global_varc > 0) fputc('\n', out);
+
     /* ── Forward declarations ────────────────────── */
     for (size_t i = 0; i < m->fnc; i++) {
         emit_function_forward(&cg, &m->fns[i]);
@@ -1093,6 +1153,27 @@ bool transpile_module_to_c(const Module *m, const char *output_path) {
     /* ── main() entry point ──────────────────────── */
     fputs("int main(int argc, char **argv) {\n", out);
     fputs("    bp_runtime_init(argc, argv);\n", out);
+
+    /* Initialize global variables */
+    if (m->global_varc > 0) {
+        cg.indent = 1;
+        for (size_t i = 0; i < m->global_varc; i++) {
+            const Stmt *gs = m->global_vars[i];
+            if (gs->kind == ST_LET && gs->as.let.init) {
+                cg_indent(&cg);
+                emit_safe_name(&cg, gs->as.let.name);
+                fputs(" = ", out);
+                if (gs->as.let.type.kind == TY_FLOAT && gs->as.let.init->inferred.kind != TY_FLOAT) {
+                    emit_expr_as_float(&cg, gs->as.let.init);
+                } else {
+                    emit_expr(&cg, gs->as.let.init);
+                }
+                fputs(";\n", out);
+            }
+        }
+        cg.indent = 0;
+    }
+
     fputs("    int64_t ret = bp_main();\n", out);
     fputs("    bp_runtime_cleanup();\n", out);
     fputs("    return (int)ret;\n", out);
