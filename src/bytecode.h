@@ -368,7 +368,15 @@ typedef enum {
     // Byte arrays
     BI_BYTES_NEW,
     BI_BYTES_GET,
-    BI_BYTES_SET
+    BI_BYTES_SET,
+
+    // Array utilities
+    BI_ARRAY_SORT,
+    BI_ARRAY_SLICE,
+
+    // Byte packing (big-endian)
+    BI_INT_TO_BYTES,
+    BI_INT_FROM_BYTES
 } BuiltinId;
 
 typedef struct {

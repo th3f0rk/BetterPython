@@ -657,6 +657,7 @@ static Stmt *parse_while(Parser *p) {
 }
 
 // Parses: for <var> in range(<start>, <end>):
+//     or: for <var> in <collection>:
 static Stmt *parse_for(Parser *p) {
     size_t line = p->cur.line;
     expect(p, TOK_FOR, "expected 'for'");
@@ -667,22 +668,29 @@ static Stmt *parse_for(Parser *p) {
 
     expect(p, TOK_IN, "expected 'in' after for variable");
 
-    // Expect 'range' identifier
-    if (p->cur.kind != TOK_IDENT || p->cur.len != 5 || memcmp(p->cur.lexeme, "range", 5) != 0) {
-        bp_fatal("expected 'range' after 'in' at %zu:%zu", p->cur.line, p->cur.col);
-    }
-    next(p);
+    // Check if it's range(start, end) or a collection expression
+    if (p->cur.kind == TOK_IDENT && p->cur.len == 5 && memcmp(p->cur.lexeme, "range", 5) == 0) {
+        // range-based for loop: for i in range(start, end):
+        next(p);
+        expect(p, TOK_LPAREN, "expected '(' after range");
+        Expr *start = parse_expr(p);
+        expect(p, TOK_COMMA, "expected ',' in range");
+        Expr *end = parse_expr(p);
+        expect(p, TOK_RPAREN, "expected ')' after range");
+        expect(p, TOK_COLON, "expected ':' after for header");
 
-    expect(p, TOK_LPAREN, "expected '(' after range");
-    Expr *start = parse_expr(p);
-    expect(p, TOK_COMMA, "expected ',' in range");
-    Expr *end = parse_expr(p);
-    expect(p, TOK_RPAREN, "expected ')' after range");
-    expect(p, TOK_COLON, "expected ':' after for header");
+        size_t body_len = 0;
+        Stmt **body = parse_block(p, &body_len);
+        return stmt_new_for(var, start, end, body, body_len, line);
+    }
+
+    // Collection-based for loop: for x in <expr>:
+    Expr *collection = parse_expr(p);
+    expect(p, TOK_COLON, "expected ':' after for-in collection");
 
     size_t body_len = 0;
     Stmt **body = parse_block(p, &body_len);
-    return stmt_new_for(var, start, end, body, body_len, line);
+    return stmt_new_for_in(var, collection, body, body_len, line);
 }
 
 static Stmt *parse_try(Parser *p) {

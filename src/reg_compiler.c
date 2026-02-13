@@ -244,6 +244,14 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "bytes_get") == 0) return BI_BYTES_GET;
     if (strcmp(name, "bytes_set") == 0) return BI_BYTES_SET;
 
+    // Array utilities
+    if (strcmp(name, "array_sort") == 0) return BI_ARRAY_SORT;
+    if (strcmp(name, "array_slice") == 0) return BI_ARRAY_SLICE;
+
+    // Byte packing
+    if (strcmp(name, "int_to_bytes") == 0) return BI_INT_TO_BYTES;
+    if (strcmp(name, "int_from_bytes") == 0) return BI_INT_FROM_BYTES;
+
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
 }
@@ -560,6 +568,110 @@ static void reg_emit_stmt(RegFnEmit *fe, const Stmt *s) {
             buf_u8(&fe->code, R_ADD_I64);
             buf_u8(&fe->code, iter_reg);
             buf_u8(&fe->code, iter_reg);
+            buf_u8(&fe->code, one_reg);
+            reg_free_temp(&fe->ra, one_reg);
+
+            // Jump back
+            buf_u8(&fe->code, R_JMP);
+            buf_u32(&fe->code, loop_start);
+
+            // Patch exit
+            uint32_t loop_end = (uint32_t)fe->code.len;
+            emit_jump_patch(&fe->code, jmp_out_at, loop_end);
+            patch_breaks(fe, loop_end);
+            pop_loop(fe);
+            return;
+        }
+        case ST_FOR_IN: {
+            // for x in collection:
+            // Desugars to: coll = expr (or map_keys(expr)), len = array_len(coll),
+            //              idx = 0, while idx < len: x = coll[idx]; body; idx++
+            Type coll_type = s->as.for_in.collection->inferred;
+            bool is_map = (coll_type.kind == TY_MAP);
+
+            // Evaluate collection
+            uint8_t coll_src = reg_emit_expr(fe, s->as.for_in.collection);
+            uint8_t coll_reg = reg_alloc_var(&fe->ra, "__for_coll");
+            buf_u8(&fe->code, R_MOV);
+            buf_u8(&fe->code, coll_reg);
+            buf_u8(&fe->code, coll_src);
+            if (coll_src != coll_reg) reg_free_temp(&fe->ra, coll_src);
+
+            // For maps: coll = map_keys(coll)
+            if (is_map) {
+                uint8_t arg_reg = reg_alloc_temp(&fe->ra);
+                buf_u8(&fe->code, R_MOV);
+                buf_u8(&fe->code, arg_reg);
+                buf_u8(&fe->code, coll_reg);
+                buf_u8(&fe->code, R_CALL_BUILTIN);
+                buf_u8(&fe->code, coll_reg);
+                buf_u16(&fe->code, (uint16_t)BI_MAP_KEYS);
+                buf_u8(&fe->code, arg_reg);
+                buf_u8(&fe->code, 1);
+                reg_free_temp(&fe->ra, arg_reg);
+            }
+
+            // len = array_len(coll)
+            uint8_t len_reg = reg_alloc_var(&fe->ra, "__for_len");
+            {
+                uint8_t arg_reg = reg_alloc_temp(&fe->ra);
+                buf_u8(&fe->code, R_MOV);
+                buf_u8(&fe->code, arg_reg);
+                buf_u8(&fe->code, coll_reg);
+                buf_u8(&fe->code, R_CALL_BUILTIN);
+                buf_u8(&fe->code, len_reg);
+                buf_u16(&fe->code, (uint16_t)BI_ARRAY_LEN);
+                buf_u8(&fe->code, arg_reg);
+                buf_u8(&fe->code, 1);
+                reg_free_temp(&fe->ra, arg_reg);
+            }
+
+            // idx = 0
+            uint8_t idx_reg = reg_alloc_var(&fe->ra, "__for_idx");
+            buf_u8(&fe->code, R_CONST_I64);
+            buf_u8(&fe->code, idx_reg);
+            buf_i64(&fe->code, 0);
+
+            // Loop start
+            uint32_t loop_start = (uint32_t)fe->code.len;
+            push_loop(fe, 0);
+
+            // Condition: idx < len
+            uint8_t cond_reg = reg_alloc_temp(&fe->ra);
+            buf_u8(&fe->code, R_LT);
+            buf_u8(&fe->code, cond_reg);
+            buf_u8(&fe->code, idx_reg);
+            buf_u8(&fe->code, len_reg);
+
+            buf_u8(&fe->code, R_JMP_IF_FALSE);
+            buf_u8(&fe->code, cond_reg);
+            size_t jmp_out_at = fe->code.len;
+            buf_u32(&fe->code, 0);
+            reg_free_temp(&fe->ra, cond_reg);
+
+            // x = coll[idx]
+            uint8_t var_reg = reg_alloc_var(&fe->ra, s->as.for_in.var);
+            buf_u8(&fe->code, R_ARRAY_GET);
+            buf_u8(&fe->code, var_reg);
+            buf_u8(&fe->code, coll_reg);
+            buf_u8(&fe->code, idx_reg);
+
+            // Body
+            for (size_t i = 0; i < s->as.for_in.body_len; i++) {
+                reg_emit_stmt(fe, s->as.for_in.body[i]);
+            }
+
+            // continue_target: idx++
+            uint32_t continue_pos = (uint32_t)fe->code.len;
+            patch_continues(fe, continue_pos);
+
+            uint8_t one_reg = reg_alloc_temp(&fe->ra);
+            buf_u8(&fe->code, R_CONST_I64);
+            buf_u8(&fe->code, one_reg);
+            buf_i64(&fe->code, 1);
+            buf_u8(&fe->code, R_ADD_I64);
+            buf_u8(&fe->code, idx_reg);
+            buf_u8(&fe->code, idx_reg);
             buf_u8(&fe->code, one_reg);
             reg_free_temp(&fe->ra, one_reg);
 

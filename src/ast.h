@@ -248,7 +248,8 @@ typedef enum {
     ST_RETURN,
     ST_TRY,
     ST_THROW,
-    ST_FIELD_ASSIGN     // obj.field = value
+    ST_FIELD_ASSIGN,    // obj.field = value
+    ST_FOR_IN           // for x in collection:
 } StmtKind;
 
 struct Stmt {
@@ -298,6 +299,13 @@ struct Stmt {
             Stmt **body;
             size_t body_len;
         } forr;
+
+        struct {
+            char *var;          // iterator variable name
+            Expr *collection;   // array or map expression
+            Stmt **body;
+            size_t body_len;
+        } for_in;
 
         struct {
             Expr *value; // may be NULL
@@ -447,6 +455,7 @@ Stmt *stmt_new_expr(Expr *e, size_t line);
 Stmt *stmt_new_if(Expr *cond, Stmt **then_s, size_t then_len, Stmt **else_s, size_t else_len, size_t line);
 Stmt *stmt_new_while(Expr *cond, Stmt **body, size_t body_len, size_t line);
 Stmt *stmt_new_for(char *var, Expr *start, Expr *end, Stmt **body, size_t body_len, size_t line);
+Stmt *stmt_new_for_in(char *var, Expr *collection, Stmt **body, size_t body_len, size_t line);
 Stmt *stmt_new_break(size_t line);
 Stmt *stmt_new_continue(size_t line);
 Stmt *stmt_new_return(Expr *value, size_t line);

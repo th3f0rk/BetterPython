@@ -1,0 +1,84 @@
+# Test for-in collection iteration
+
+def test_for_in_array() -> int:
+    let arr: [int] = [10, 20, 30, 40, 50]
+    let sum: int = 0
+    for x in arr:
+        sum = sum + x
+    if sum != 150:
+        print("FAIL: for-in array sum expected 150, got", sum)
+        return 1
+    print("PASS: for-in array iteration")
+    return 0
+
+def test_for_in_array_str() -> int:
+    let words: [str] = ["hello", "world"]
+    let result: str = ""
+    for w in words:
+        result = result + w + " "
+    if result != "hello world ":
+        print("FAIL: for-in string array")
+        return 1
+    print("PASS: for-in string array iteration")
+    return 0
+
+def test_for_in_map() -> int:
+    let m: {str: int} = {"a": 1, "b": 2, "c": 3}
+    let count: int = 0
+    for k in m:
+        count = count + m[k]
+    if count != 6:
+        print("FAIL: for-in map expected sum 6, got", count)
+        return 1
+    print("PASS: for-in map iteration")
+    return 0
+
+def test_for_in_empty() -> int:
+    let arr: [int] = [0]
+    array_pop(arr)
+    let count: int = 0
+    for x in arr:
+        count = count + 1
+    if count != 0:
+        print("FAIL: for-in empty array")
+        return 1
+    print("PASS: for-in empty array")
+    return 0
+
+def test_for_in_break() -> int:
+    let arr: [int] = [1, 2, 3, 4, 5]
+    let sum: int = 0
+    for x in arr:
+        if x == 4:
+            break
+        sum = sum + x
+    if sum != 6:
+        print("FAIL: for-in break expected 6, got", sum)
+        return 1
+    print("PASS: for-in with break")
+    return 0
+
+def test_for_in_continue() -> int:
+    let arr: [int] = [1, 2, 3, 4, 5]
+    let sum: int = 0
+    for x in arr:
+        if x == 3:
+            continue
+        sum = sum + x
+    if sum != 12:
+        print("FAIL: for-in continue expected 12, got", sum)
+        return 1
+    print("PASS: for-in with continue")
+    return 0
+
+def main() -> int:
+    let fails: int = 0
+    fails = fails + test_for_in_array()
+    fails = fails + test_for_in_array_str()
+    fails = fails + test_for_in_map()
+    fails = fails + test_for_in_empty()
+    fails = fails + test_for_in_break()
+    fails = fails + test_for_in_continue()
+    if fails > 0:
+        print("FAILURES:", fails)
+    return fails

@@ -571,6 +571,10 @@ static bool is_builtin(const char *name) {
     if (strcmp(name, "bytes_new") == 0) return true;
     if (strcmp(name, "bytes_get") == 0) return true;
     if (strcmp(name, "bytes_set") == 0) return true;
+    if (strcmp(name, "array_sort") == 0) return true;
+    if (strcmp(name, "array_slice") == 0) return true;
+    if (strcmp(name, "int_to_bytes") == 0) return true;
+    if (strcmp(name, "int_from_bytes") == 0) return true;
 
     return false;
 }
@@ -1324,6 +1328,46 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         e->inferred = type_void();
         return e->inferred;
     }
+    // array_sort(arr) -> void  (in-place sort)
+    if (strcmp(name, "array_sort") == 0) {
+        if (e->as.call.argc != 1) bp_fatal("array_sort expects 1 arg");
+        Type arr_type = check_expr(e->as.call.args[0], s);
+        if (arr_type.kind != TY_ARRAY) bp_fatal_at(e->line, "array_sort expects array");
+        e->inferred = type_void();
+        return e->inferred;
+    }
+    // array_slice(arr, start, end) -> [T]
+    if (strcmp(name, "array_slice") == 0) {
+        if (e->as.call.argc != 3) bp_fatal("array_slice expects 3 args");
+        Type arr_type = check_expr(e->as.call.args[0], s);
+        if (arr_type.kind != TY_ARRAY) bp_fatal_at(e->line, "array_slice expects array");
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal("array_slice start must be int");
+        if (check_expr(e->as.call.args[2], s).kind != TY_INT) bp_fatal("array_slice end must be int");
+        e->inferred = arr_type;
+        return e->inferred;
+    }
+    // int_to_bytes(value, num_bytes) -> [int]
+    if (strcmp(name, "int_to_bytes") == 0) {
+        if (e->as.call.argc != 2) bp_fatal("int_to_bytes expects 2 args");
+        if (check_expr(e->as.call.args[0], s).kind != TY_INT) bp_fatal("int_to_bytes value must be int");
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal("int_to_bytes size must be int");
+        Type arr = {TY_ARRAY, NULL, NULL, NULL, NULL, 0, NULL, 0, NULL};
+        Type *elem = bp_xmalloc(sizeof(Type));
+        *elem = type_int();
+        arr.elem_type = elem;
+        e->inferred = arr;
+        return e->inferred;
+    }
+    // int_from_bytes(arr, offset, num_bytes) -> int
+    if (strcmp(name, "int_from_bytes") == 0) {
+        if (e->as.call.argc != 3) bp_fatal("int_from_bytes expects 3 args");
+        Type arr_type = check_expr(e->as.call.args[0], s);
+        if (arr_type.kind != TY_ARRAY) bp_fatal_at(e->line, "int_from_bytes expects array");
+        if (check_expr(e->as.call.args[1], s).kind != TY_INT) bp_fatal("int_from_bytes offset must be int");
+        if (check_expr(e->as.call.args[2], s).kind != TY_INT) bp_fatal("int_from_bytes size must be int");
+        e->inferred = type_int();
+        return e->inferred;
+    }
 
     bp_fatal("unknown builtin '%s'", name);
     return type_void();
@@ -1900,6 +1944,22 @@ static void check_stmt(Stmt *st, Scope *s, Type ret_type) {
             // Add iterator variable to this block's scope
             scope_put(s, st->as.forr.var, type_int(), st->line);
             for (size_t i = 0; i < st->as.forr.body_len; i++) check_stmt(st->as.forr.body[i], s, ret_type);
+            scope_restore(s, mark);
+            return;
+        }
+        case ST_FOR_IN: {
+            Type coll_type = check_expr(st->as.for_in.collection, s);
+            Type elem_type;
+            if (coll_type.kind == TY_ARRAY) {
+                elem_type = coll_type.elem_type ? *coll_type.elem_type : type_int();
+            } else if (coll_type.kind == TY_MAP) {
+                elem_type = coll_type.key_type ? *coll_type.key_type : type_str();
+            } else {
+                bp_fatal_at(st->line, "for-in requires array or map, got %s", type_name(coll_type));
+            }
+            size_t mark = scope_mark(s);
+            scope_put(s, st->as.for_in.var, elem_type, st->line);
+            for (size_t i = 0; i < st->as.for_in.body_len; i++) check_stmt(st->as.for_in.body[i], s, ret_type);
             scope_restore(s, mark);
             return;
         }

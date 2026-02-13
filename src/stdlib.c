@@ -1849,6 +1849,86 @@ Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_co
             return v_null();
         }
 
+        case BI_ARRAY_SORT: {
+            if (argc != 1 || args[0].type != VAL_ARRAY) bp_fatal("array_sort expects (array)");
+            BpArray *arr = args[0].as.arr;
+            // Quicksort in-place (compare by integer value, then float, then string)
+            if (arr->len <= 1) return v_null();
+            // Simple insertion sort for small arrays, qsort for larger
+            for (size_t i = 1; i < arr->len; i++) {
+                Value key = arr->data[i];
+                size_t j = i;
+                while (j > 0) {
+                    Value *a = &arr->data[j - 1];
+                    bool swap = false;
+                    if (a->type == VAL_INT && key.type == VAL_INT) swap = a->as.i > key.as.i;
+                    else if (a->type == VAL_FLOAT && key.type == VAL_FLOAT) swap = a->as.f > key.as.f;
+                    else if (a->type == VAL_STR && key.type == VAL_STR) swap = strcmp(a->as.s->data, key.as.s->data) > 0;
+                    else swap = false;
+                    if (!swap) break;
+                    arr->data[j] = arr->data[j - 1];
+                    j--;
+                }
+                arr->data[j] = key;
+            }
+            return v_null();
+        }
+        case BI_ARRAY_SLICE: {
+            if (argc != 3 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT || args[2].type != VAL_INT)
+                bp_fatal("array_slice expects (array, int, int)");
+            BpArray *src = args[0].as.arr;
+            int64_t start = args[1].as.i;
+            int64_t end = args[2].as.i;
+            if (start < 0) start = 0;
+            if (end > (int64_t)src->len) end = (int64_t)src->len;
+            if (start >= end) {
+                BpArray *empty = gc_new_array(gc, 1);
+                return v_array(empty);
+            }
+            size_t n = (size_t)(end - start);
+            BpArray *out = gc_new_array(gc, n);
+            for (size_t i = 0; i < n; i++) {
+                gc_array_push(gc, out, src->data[start + (int64_t)i]);
+            }
+            return v_array(out);
+        }
+        case BI_INT_TO_BYTES: {
+            if (argc != 2 || args[0].type != VAL_INT || args[1].type != VAL_INT)
+                bp_fatal("int_to_bytes expects (int, int)");
+            int64_t value = args[0].as.i;
+            int64_t size = args[1].as.i;
+            if (size < 1 || size > 8) bp_fatal("int_to_bytes: size must be 1-8");
+            BpArray *arr = gc_new_array(gc, (size_t)size);
+            // Big-endian: most significant byte first
+            for (int64_t i = size - 1; i >= 0; i--) {
+                gc_array_push(gc, arr, v_int(value & 0xFF));
+                value >>= 8;
+            }
+            // Reverse to get big-endian order (we pushed LSB first)
+            for (size_t i = 0; i < (size_t)size / 2; i++) {
+                Value tmp = arr->data[i];
+                arr->data[i] = arr->data[size - 1 - (int64_t)i];
+                arr->data[size - 1 - (int64_t)i] = tmp;
+            }
+            return v_array(arr);
+        }
+        case BI_INT_FROM_BYTES: {
+            if (argc != 3 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT || args[2].type != VAL_INT)
+                bp_fatal("int_from_bytes expects (array, int, int)");
+            BpArray *arr = args[0].as.arr;
+            int64_t offset = args[1].as.i;
+            int64_t size = args[2].as.i;
+            if (size < 1 || size > 8) bp_fatal("int_from_bytes: size must be 1-8");
+            if (offset < 0 || offset + size > (int64_t)arr->len)
+                bp_fatal("int_from_bytes: out of bounds");
+            // Big-endian: read most significant byte first
+            int64_t result = 0;
+            for (int64_t i = 0; i < size; i++) {
+                result = (result << 8) | (arr->data[offset + i].as.i & 0xFF);
+            }
+            return v_int(result);
+        }
+
         default: break;
     }
     bp_fatal("unknown builtin id");

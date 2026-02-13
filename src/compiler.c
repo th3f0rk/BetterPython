@@ -321,6 +321,14 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "bytes_get") == 0) return BI_BYTES_GET;
     if (strcmp(name, "bytes_set") == 0) return BI_BYTES_SET;
 
+    // Array utilities
+    if (strcmp(name, "array_sort") == 0) return BI_ARRAY_SORT;
+    if (strcmp(name, "array_slice") == 0) return BI_ARRAY_SLICE;
+
+    // Byte packing
+    if (strcmp(name, "int_to_bytes") == 0) return BI_INT_TO_BYTES;
+    if (strcmp(name, "int_from_bytes") == 0) return BI_INT_FROM_BYTES;
+
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
 }
@@ -589,6 +597,95 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             pop_loop(fe);
 
             // Exit for loop scope
+            locals_pop_scope(&fe->locals);
+            return;
+        }
+        case ST_FOR_IN: {
+            // for x in collection:  →  desugars to index-based loop
+            locals_push_scope(&fe->locals);
+            Type coll_type = s->as.for_in.collection->inferred;
+            bool is_map = (coll_type.kind == TY_MAP);
+
+            // Evaluate collection
+            emit_expr(fe, s->as.for_in.collection);
+            uint16_t coll_slot = locals_add(&fe->locals, "__for_coll");
+            buf_u8(&fe->code, OP_STORE_LOCAL);
+            buf_u16(&fe->code, coll_slot);
+
+            // For maps: get keys array  →  coll = map_keys(coll)
+            if (is_map) {
+                buf_u8(&fe->code, OP_LOAD_LOCAL);
+                buf_u16(&fe->code, coll_slot);
+                buf_u8(&fe->code, OP_CALL_BUILTIN);
+                buf_u16(&fe->code, (uint16_t)BI_MAP_KEYS);
+                buf_u8(&fe->code, 1);
+                buf_u8(&fe->code, OP_STORE_LOCAL);
+                buf_u16(&fe->code, coll_slot);
+            }
+
+            // len = array_len(coll)
+            buf_u8(&fe->code, OP_LOAD_LOCAL);
+            buf_u16(&fe->code, coll_slot);
+            buf_u8(&fe->code, OP_CALL_BUILTIN);
+            buf_u16(&fe->code, (uint16_t)BI_ARRAY_LEN);
+            buf_u8(&fe->code, 1);
+            uint16_t len_slot = locals_add(&fe->locals, "__for_len");
+            buf_u8(&fe->code, OP_STORE_LOCAL);
+            buf_u16(&fe->code, len_slot);
+
+            // idx = 0
+            buf_u8(&fe->code, OP_CONST_I64);
+            buf_i64(&fe->code, 0);
+            uint16_t idx_slot = locals_add(&fe->locals, "__for_idx");
+            buf_u8(&fe->code, OP_STORE_LOCAL);
+            buf_u16(&fe->code, idx_slot);
+
+            // loop_start:
+            uint32_t loop_start = (uint32_t)fe->code.len;
+            push_loop(fe, 0);
+
+            // condition: idx < len
+            buf_u8(&fe->code, OP_LOAD_LOCAL);
+            buf_u16(&fe->code, idx_slot);
+            buf_u8(&fe->code, OP_LOAD_LOCAL);
+            buf_u16(&fe->code, len_slot);
+            buf_u8(&fe->code, OP_LT);
+            buf_u8(&fe->code, OP_JMP_IF_FALSE);
+            size_t jmp_out_at = fe->code.len;
+            buf_u32(&fe->code, 0);
+
+            // x = coll[idx]
+            buf_u8(&fe->code, OP_LOAD_LOCAL);
+            buf_u16(&fe->code, coll_slot);
+            buf_u8(&fe->code, OP_LOAD_LOCAL);
+            buf_u16(&fe->code, idx_slot);
+            buf_u8(&fe->code, OP_ARRAY_GET);
+            uint16_t var_slot = locals_add(&fe->locals, s->as.for_in.var);
+            buf_u8(&fe->code, OP_STORE_LOCAL);
+            buf_u16(&fe->code, var_slot);
+
+            // body
+            for (size_t i = 0; i < s->as.for_in.body_len; i++) emit_stmt(fe, s->as.for_in.body[i]);
+
+            // continue_target: idx++
+            uint32_t continue_pos = (uint32_t)fe->code.len;
+            patch_continues(fe, continue_pos);
+
+            buf_u8(&fe->code, OP_LOAD_LOCAL);
+            buf_u16(&fe->code, idx_slot);
+            buf_u8(&fe->code, OP_CONST_I64);
+            buf_i64(&fe->code, 1);
+            buf_u8(&fe->code, OP_ADD_I64);
+            buf_u8(&fe->code, OP_STORE_LOCAL);
+            buf_u16(&fe->code, idx_slot);
+
+            buf_u8(&fe->code, OP_JMP);
+            buf_u32(&fe->code, loop_start);
+
+            uint32_t loop_end = (uint32_t)fe->code.len;
+            emit_jump_patch(&fe->code, jmp_out_at, loop_end);
+            patch_breaks(fe, loop_end);
+            pop_loop(fe);
             locals_pop_scope(&fe->locals);
             return;
         }

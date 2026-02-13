@@ -307,6 +307,15 @@ Stmt *stmt_new_for(char *var, Expr *start, Expr *end, Stmt **body, size_t body_l
     return s;
 }
 
+Stmt *stmt_new_for_in(char *var, Expr *collection, Stmt **body, size_t body_len, size_t line) {
+    Stmt *s = stmt_alloc(ST_FOR_IN, line);
+    s->as.for_in.var = var;
+    s->as.for_in.collection = collection;
+    s->as.for_in.body = body;
+    s->as.for_in.body_len = body_len;
+    return s;
+}
+
 Stmt *stmt_new_break(size_t line) {
     Stmt *s = stmt_alloc(ST_BREAK, line);
     return s;
@@ -467,6 +476,12 @@ static void stmt_free(Stmt *s) {
             expr_free(s->as.forr.end);
             for (size_t i = 0; i < s->as.forr.body_len; i++) stmt_free(s->as.forr.body[i]);
             free(s->as.forr.body);
+            break;
+        case ST_FOR_IN:
+            free(s->as.for_in.var);
+            expr_free(s->as.for_in.collection);
+            for (size_t i = 0; i < s->as.for_in.body_len; i++) stmt_free(s->as.for_in.body[i]);
+            free(s->as.for_in.body);
             break;
         case ST_BREAK:
         case ST_CONTINUE:

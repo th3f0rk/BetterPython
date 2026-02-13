@@ -860,6 +860,66 @@ static void emit_stmt(CGen *cg, const Stmt *s) {
             pop_loop_label(cg);
             return;
         }
+        case ST_FOR_IN: {
+            int lbl = cg_fresh_label(cg);
+            push_loop_label(cg, lbl);
+            Type coll_type = s->as.for_in.collection->inferred;
+            bool is_map = (coll_type.kind == TY_MAP);
+            cg_indent(cg);
+            fputs("{\n", cg->out);
+            cg->indent++;
+            // Evaluate collection once
+            cg_indent(cg);
+            if (is_map) {
+                fputs("BpRtArray* __keys = bp_map_keys(", cg->out);
+                emit_expr(cg, s->as.for_in.collection);
+                fputs(");\n", cg->out);
+                cg_indent(cg);
+                fputs("int64_t __len = __keys->len;\n", cg->out);
+            } else {
+                fputs("BpRtArray* __coll = ", cg->out);
+                emit_expr(cg, s->as.for_in.collection);
+                fputs(";\n", cg->out);
+                cg_indent(cg);
+                fputs("int64_t __len = __coll->len;\n", cg->out);
+            }
+            cg_indent(cg);
+            fputs("for (int64_t __i = 0; __i < __len; __i++) {\n", cg->out);
+            cg->indent++;
+            // Declare iterator variable
+            cg_indent(cg);
+            if (is_map) {
+                // Key type from map
+                Type key_type = coll_type.key_type ? *coll_type.key_type : type_str();
+                emit_type(cg, &key_type);
+                fputc(' ', cg->out);
+                emit_safe_name(cg, s->as.for_in.var);
+                fputs(" = __keys->data[__i]", cg->out);
+                if (key_type.kind == TY_INT) fputs(".as.i", cg->out);
+                else if (key_type.kind == TY_STR) fputs(".as.str", cg->out);
+                fputs(";\n", cg->out);
+            } else {
+                Type elem_type = coll_type.elem_type ? *coll_type.elem_type : type_int();
+                emit_type(cg, &elem_type);
+                fputc(' ', cg->out);
+                emit_safe_name(cg, s->as.for_in.var);
+                fputs(" = __coll->data[__i]", cg->out);
+                if (elem_type.kind == TY_INT) fputs(".as.i", cg->out);
+                else if (elem_type.kind == TY_FLOAT) fputs(".as.f", cg->out);
+                else if (elem_type.kind == TY_STR) fputs(".as.str", cg->out);
+                else if (elem_type.kind == TY_BOOL) fputs(".as.b", cg->out);
+                fputs(";\n", cg->out);
+            }
+            emit_block(cg, s->as.for_in.body, s->as.for_in.body_len);
+            cg->indent--;
+            cg_indent(cg);
+            fputs("}\n", cg->out);
+            cg->indent--;
+            cg_indent(cg);
+            fputs("}\n", cg->out);
+            pop_loop_label(cg);
+            return;
+        }
         case ST_BREAK:
             cg_indent(cg);
             fputs("break;\n", cg->out);
