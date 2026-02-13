@@ -203,6 +203,14 @@ int reg_vm_run(Vm *vm) {
         [R_METHOD_CALL] = &&L_R_METHOD_CALL,
         [R_SUPER_CALL] = &&L_R_SUPER_CALL,
         [R_FFI_CALL] = &&L_R_FFI_CALL,
+        [R_BIT_AND] = &&L_R_BIT_AND,
+        [R_BIT_OR] = &&L_R_BIT_OR,
+        [R_BIT_XOR] = &&L_R_BIT_XOR,
+        [R_BIT_NOT] = &&L_R_BIT_NOT,
+        [R_BIT_SHL] = &&L_R_BIT_SHL,
+        [R_BIT_SHR] = &&L_R_BIT_SHR,
+        [R_LOAD_GLOBAL] = &&L_R_LOAD_GLOBAL,
+        [R_STORE_GLOBAL] = &&L_R_STORE_GLOBAL,
     };
 
     #define VM_DISPATCH() do { \
@@ -818,6 +826,62 @@ L_R_FFI_CALL: {
     VM_DISPATCH();
 }
 
+L_R_BIT_AND: {
+    uint8_t dst = code[ip++];
+    uint8_t src1 = code[ip++];
+    uint8_t src2 = code[ip++];
+    REG(dst) = v_int(REG(src1).as.i & REG(src2).as.i);
+    VM_DISPATCH();
+}
+L_R_BIT_OR: {
+    uint8_t dst = code[ip++];
+    uint8_t src1 = code[ip++];
+    uint8_t src2 = code[ip++];
+    REG(dst) = v_int(REG(src1).as.i | REG(src2).as.i);
+    VM_DISPATCH();
+}
+L_R_BIT_XOR: {
+    uint8_t dst = code[ip++];
+    uint8_t src1 = code[ip++];
+    uint8_t src2 = code[ip++];
+    REG(dst) = v_int(REG(src1).as.i ^ REG(src2).as.i);
+    VM_DISPATCH();
+}
+L_R_BIT_NOT: {
+    uint8_t dst = code[ip++];
+    uint8_t src = code[ip++];
+    REG(dst) = v_int(~REG(src).as.i);
+    VM_DISPATCH();
+}
+L_R_BIT_SHL: {
+    uint8_t dst = code[ip++];
+    uint8_t src1 = code[ip++];
+    uint8_t src2 = code[ip++];
+    REG(dst) = v_int(REG(src1).as.i << REG(src2).as.i);
+    VM_DISPATCH();
+}
+L_R_BIT_SHR: {
+    uint8_t dst = code[ip++];
+    uint8_t src1 = code[ip++];
+    uint8_t src2 = code[ip++];
+    REG(dst) = v_int(REG(src1).as.i >> REG(src2).as.i);
+    VM_DISPATCH();
+}
+L_R_LOAD_GLOBAL: {
+    uint8_t dst = code[ip++];
+    uint16_t idx; memcpy(&idx, code + ip, 2); ip += 2;
+    if (idx >= vm->mod.global_count) bp_fatal("global index out of bounds");
+    REG(dst) = vm->mod.globals[idx];
+    VM_DISPATCH();
+}
+L_R_STORE_GLOBAL: {
+    uint8_t src = code[ip++];
+    uint16_t idx; memcpy(&idx, code + ip, 2); ip += 2;
+    if (idx >= vm->mod.global_count) bp_fatal("global index out of bounds");
+    vm->mod.globals[idx] = REG(src);
+    VM_DISPATCH();
+}
+
 vm_exit:
     free(regs);
     return vm->exiting ? vm->exit_code : 0;
@@ -1403,6 +1467,44 @@ vm_exit:
                 for (uint8_t i = 0; i < argc && i < 8; i++)
                     ffi_args[i] = REG(arg_base + i);
                 REG(dst) = ffi_invoke(&vm->mod.extern_funcs[extern_id], ffi_args, argc, &vm->gc);
+                break;
+            }
+            case R_BIT_AND: {
+                uint8_t dst = code[ip++]; uint8_t s1 = code[ip++]; uint8_t s2 = code[ip++];
+                REG(dst) = v_int(REG(s1).as.i & REG(s2).as.i); break;
+            }
+            case R_BIT_OR: {
+                uint8_t dst = code[ip++]; uint8_t s1 = code[ip++]; uint8_t s2 = code[ip++];
+                REG(dst) = v_int(REG(s1).as.i | REG(s2).as.i); break;
+            }
+            case R_BIT_XOR: {
+                uint8_t dst = code[ip++]; uint8_t s1 = code[ip++]; uint8_t s2 = code[ip++];
+                REG(dst) = v_int(REG(s1).as.i ^ REG(s2).as.i); break;
+            }
+            case R_BIT_NOT: {
+                uint8_t dst = code[ip++]; uint8_t src = code[ip++];
+                REG(dst) = v_int(~REG(src).as.i); break;
+            }
+            case R_BIT_SHL: {
+                uint8_t dst = code[ip++]; uint8_t s1 = code[ip++]; uint8_t s2 = code[ip++];
+                REG(dst) = v_int(REG(s1).as.i << REG(s2).as.i); break;
+            }
+            case R_BIT_SHR: {
+                uint8_t dst = code[ip++]; uint8_t s1 = code[ip++]; uint8_t s2 = code[ip++];
+                REG(dst) = v_int(REG(s1).as.i >> REG(s2).as.i); break;
+            }
+            case R_LOAD_GLOBAL: {
+                uint8_t dst = code[ip++];
+                uint16_t idx; memcpy(&idx, code + ip, 2); ip += 2;
+                if (idx >= vm->mod.global_count) bp_fatal("global index out of bounds");
+                REG(dst) = vm->mod.globals[idx];
+                break;
+            }
+            case R_STORE_GLOBAL: {
+                uint8_t src = code[ip++];
+                uint16_t idx; memcpy(&idx, code + ip, 2); ip += 2;
+                if (idx >= vm->mod.global_count) bp_fatal("global index out of bounds");
+                vm->mod.globals[idx] = REG(src);
                 break;
             }
             default:

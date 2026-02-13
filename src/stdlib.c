@@ -1774,6 +1774,421 @@ Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_co
             return v_array(arr);
         }
 
+        case BI_PARSE_INT: {
+            if (argc != 1 || args[0].type != VAL_STR) bp_fatal("parse_int expects (str)");
+            char *end = NULL;
+            long long val = strtoll(args[0].as.s->data, &end, 10);
+            if (end == args[0].as.s->data) return v_int(0); // parse failure
+            return v_int((int64_t)val);
+        }
+        case BI_JSON_STRINGIFY: {
+            if (argc != 1) bp_fatal("json_stringify expects 1 arg");
+            Value v = args[0];
+            if (v.type == VAL_NULL) return v_str(gc_new_str(gc, "null", 4));
+            if (v.type == VAL_BOOL) {
+                const char *s = v.as.b ? "true" : "false";
+                return v_str(gc_new_str(gc, s, strlen(s)));
+            }
+            if (v.type == VAL_INT) {
+                char buf[32]; snprintf(buf, sizeof(buf), "%lld", (long long)v.as.i);
+                return v_str(gc_new_str(gc, buf, strlen(buf)));
+            }
+            if (v.type == VAL_FLOAT) {
+                char buf[64]; snprintf(buf, sizeof(buf), "%g", v.as.f);
+                return v_str(gc_new_str(gc, buf, strlen(buf)));
+            }
+            if (v.type == VAL_STR) {
+                // Wrap string in quotes with escaping
+                BpStr *src = v.as.s;
+                size_t cap = src->len * 2 + 3;
+                char *buf = bp_xmalloc(cap);
+                size_t o = 0;
+                buf[o++] = '"';
+                for (size_t i = 0; i < src->len; i++) {
+                    char c = src->data[i];
+                    if (c == '"' || c == '\\') { buf[o++] = '\\'; buf[o++] = c; }
+                    else if (c == '\n') { buf[o++] = '\\'; buf[o++] = 'n'; }
+                    else if (c == '\t') { buf[o++] = '\\'; buf[o++] = 't'; }
+                    else if (c == '\r') { buf[o++] = '\\'; buf[o++] = 'r'; }
+                    else buf[o++] = c;
+                }
+                buf[o++] = '"'; buf[o] = '\0';
+                BpStr *res = gc_new_str(gc, buf, o);
+                free(buf);
+                return v_str(res);
+            }
+            // For arrays and maps, fall back to simple representation
+            BpStr *s = val_to_str(v, gc);
+            return v_str(s);
+        }
+        case BI_BYTES_NEW: {
+            if (argc != 1 || args[0].type != VAL_INT) bp_fatal("bytes_new expects (int)");
+            int64_t n = args[0].as.i;
+            if (n < 0) n = 0;
+            BpArray *arr = gc_new_array(gc, (size_t)n);
+            for (int64_t i = 0; i < n; i++) {
+                gc_array_push(gc, arr, v_int(0));
+            }
+            return v_array(arr);
+        }
+        case BI_BYTES_GET: {
+            if (argc != 2 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT)
+                bp_fatal("bytes_get expects (array, int)");
+            int64_t idx = args[1].as.i;
+            BpArray *arr = args[0].as.arr;
+            if (idx < 0 || (size_t)idx >= arr->len) bp_fatal("bytes_get: index out of bounds");
+            return v_int(arr->data[idx].as.i & 0xFF);
+        }
+        case BI_BYTES_SET: {
+            if (argc != 3 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT || args[2].type != VAL_INT)
+                bp_fatal("bytes_set expects (array, int, int)");
+            int64_t idx = args[1].as.i;
+            BpArray *arr = args[0].as.arr;
+            if (idx < 0 || (size_t)idx >= arr->len) bp_fatal("bytes_set: index out of bounds");
+            arr->data[idx] = v_int(args[2].as.i & 0xFF);
+            return v_null();
+        }
+
+        case BI_ARRAY_SORT: {
+            if (argc != 1 || args[0].type != VAL_ARRAY) bp_fatal("array_sort expects (array)");
+            BpArray *arr = args[0].as.arr;
+            // Quicksort in-place (compare by integer value, then float, then string)
+            if (arr->len <= 1) return v_null();
+            // Simple insertion sort for small arrays, qsort for larger
+            for (size_t i = 1; i < arr->len; i++) {
+                Value key = arr->data[i];
+                size_t j = i;
+                while (j > 0) {
+                    Value *a = &arr->data[j - 1];
+                    bool swap = false;
+                    if (a->type == VAL_INT && key.type == VAL_INT) swap = a->as.i > key.as.i;
+                    else if (a->type == VAL_FLOAT && key.type == VAL_FLOAT) swap = a->as.f > key.as.f;
+                    else if (a->type == VAL_STR && key.type == VAL_STR) swap = strcmp(a->as.s->data, key.as.s->data) > 0;
+                    else swap = false;
+                    if (!swap) break;
+                    arr->data[j] = arr->data[j - 1];
+                    j--;
+                }
+                arr->data[j] = key;
+            }
+            return v_null();
+        }
+        case BI_ARRAY_SLICE: {
+            if (argc != 3 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT || args[2].type != VAL_INT)
+                bp_fatal("array_slice expects (array, int, int)");
+            BpArray *src = args[0].as.arr;
+            int64_t start = args[1].as.i;
+            int64_t end = args[2].as.i;
+            if (start < 0) start = 0;
+            if (end > (int64_t)src->len) end = (int64_t)src->len;
+            if (start >= end) {
+                BpArray *empty = gc_new_array(gc, 1);
+                return v_array(empty);
+            }
+            size_t n = (size_t)(end - start);
+            BpArray *out = gc_new_array(gc, n);
+            for (size_t i = 0; i < n; i++) {
+                gc_array_push(gc, out, src->data[start + (int64_t)i]);
+            }
+            return v_array(out);
+        }
+        case BI_INT_TO_BYTES: {
+            if (argc != 2 || args[0].type != VAL_INT || args[1].type != VAL_INT)
+                bp_fatal("int_to_bytes expects (int, int)");
+            int64_t value = args[0].as.i;
+            int64_t size = args[1].as.i;
+            if (size < 1 || size > 8) bp_fatal("int_to_bytes: size must be 1-8");
+            BpArray *arr = gc_new_array(gc, (size_t)size);
+            // Big-endian: most significant byte first
+            for (int64_t i = size - 1; i >= 0; i--) {
+                gc_array_push(gc, arr, v_int(value & 0xFF));
+                value >>= 8;
+            }
+            // Reverse to get big-endian order (we pushed LSB first)
+            for (size_t i = 0; i < (size_t)size / 2; i++) {
+                Value tmp = arr->data[i];
+                arr->data[i] = arr->data[size - 1 - (int64_t)i];
+                arr->data[size - 1 - (int64_t)i] = tmp;
+            }
+            return v_array(arr);
+        }
+        case BI_INT_FROM_BYTES: {
+            if (argc != 3 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT || args[2].type != VAL_INT)
+                bp_fatal("int_from_bytes expects (array, int, int)");
+            BpArray *arr = args[0].as.arr;
+            int64_t offset = args[1].as.i;
+            int64_t size = args[2].as.i;
+            if (size < 1 || size > 8) bp_fatal("int_from_bytes: size must be 1-8");
+            if (offset < 0 || offset + size > (int64_t)arr->len)
+                bp_fatal("int_from_bytes: out of bounds");
+            // Big-endian: read most significant byte first
+            int64_t result = 0;
+            for (int64_t i = 0; i < size; i++) {
+                result = (result << 8) | (arr->data[offset + i].as.i & 0xFF);
+            }
+            return v_int(result);
+        }
+
+        // Byte buffer operations
+        case BI_BYTES_APPEND: {
+            if (argc != 2 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT)
+                bp_fatal("bytes_append expects (array, int)");
+            gc_array_push(gc, args[0].as.arr, v_int(args[1].as.i & 0xFF));
+            return v_null();
+        }
+        case BI_BYTES_LEN: {
+            if (argc != 1 || args[0].type != VAL_ARRAY)
+                bp_fatal("bytes_len expects (array)");
+            return v_int((int64_t)args[0].as.arr->len);
+        }
+        case BI_BYTES_WRITE_U16: {
+            if (argc != 2 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT)
+                bp_fatal("bytes_write_u16 expects (array, int)");
+            uint16_t val = (uint16_t)args[1].as.i;
+            gc_array_push(gc, args[0].as.arr, v_int(val & 0xFF));
+            gc_array_push(gc, args[0].as.arr, v_int((val >> 8) & 0xFF));
+            return v_null();
+        }
+        case BI_BYTES_WRITE_U32: {
+            if (argc != 2 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT)
+                bp_fatal("bytes_write_u32 expects (array, int)");
+            uint32_t val = (uint32_t)args[1].as.i;
+            gc_array_push(gc, args[0].as.arr, v_int(val & 0xFF));
+            gc_array_push(gc, args[0].as.arr, v_int((val >> 8) & 0xFF));
+            gc_array_push(gc, args[0].as.arr, v_int((val >> 16) & 0xFF));
+            gc_array_push(gc, args[0].as.arr, v_int((val >> 24) & 0xFF));
+            return v_null();
+        }
+        case BI_BYTES_WRITE_I64: {
+            if (argc != 2 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT)
+                bp_fatal("bytes_write_i64 expects (array, int)");
+            int64_t val = args[1].as.i;
+            for (int b = 0; b < 8; b++) {
+                gc_array_push(gc, args[0].as.arr, v_int((val >> (b * 8)) & 0xFF));
+            }
+            return v_null();
+        }
+        case BI_BYTES_READ_U16: {
+            if (argc != 2 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT)
+                bp_fatal("bytes_read_u16 expects (array, int)");
+            BpArray *arr = args[0].as.arr;
+            int64_t off = args[1].as.i;
+            if (off < 0 || (size_t)(off + 2) > arr->len) bp_fatal("bytes_read_u16: out of bounds");
+            uint16_t val = (uint16_t)(arr->data[off].as.i & 0xFF) |
+                           ((uint16_t)(arr->data[off+1].as.i & 0xFF) << 8);
+            return v_int((int64_t)val);
+        }
+        case BI_BYTES_READ_U32: {
+            if (argc != 2 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT)
+                bp_fatal("bytes_read_u32 expects (array, int)");
+            BpArray *arr = args[0].as.arr;
+            int64_t off = args[1].as.i;
+            if (off < 0 || (size_t)(off + 4) > arr->len) bp_fatal("bytes_read_u32: out of bounds");
+            uint32_t val = (uint32_t)(arr->data[off].as.i & 0xFF) |
+                           ((uint32_t)(arr->data[off+1].as.i & 0xFF) << 8) |
+                           ((uint32_t)(arr->data[off+2].as.i & 0xFF) << 16) |
+                           ((uint32_t)(arr->data[off+3].as.i & 0xFF) << 24);
+            return v_int((int64_t)val);
+        }
+        case BI_BYTES_READ_I64: {
+            if (argc != 2 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT)
+                bp_fatal("bytes_read_i64 expects (array, int)");
+            BpArray *arr = args[0].as.arr;
+            int64_t off = args[1].as.i;
+            if (off < 0 || (size_t)(off + 8) > arr->len) bp_fatal("bytes_read_i64: out of bounds");
+            int64_t val = 0;
+            for (int b = 0; b < 8; b++) {
+                val |= ((int64_t)(arr->data[off + b].as.i & 0xFF)) << (b * 8);
+            }
+            return v_int(val);
+        }
+
+        // Binary file I/O
+        case BI_FILE_READ_BYTES: {
+            if (argc != 1 || args[0].type != VAL_STR)
+                bp_fatal("file_read_bytes expects (str)");
+            FILE *fp = fopen(args[0].as.s->data, "rb");
+            if (!fp) return v_null();
+            fseek(fp, 0, SEEK_END);
+            long sz = ftell(fp);
+            fseek(fp, 0, SEEK_SET);
+            BpArray *arr = gc_new_array(gc, sz > 0 ? (size_t)sz : 4);
+            if (sz > 0) {
+                unsigned char *buf = malloc((size_t)sz);
+                size_t nread = fread(buf, 1, (size_t)sz, fp);
+                for (size_t i = 0; i < nread; i++) {
+                    gc_array_push(gc, arr, v_int((int64_t)buf[i]));
+                }
+                free(buf);
+            }
+            fclose(fp);
+            return v_array(arr);
+        }
+        case BI_FILE_WRITE_BYTES: {
+            if (argc != 2 || args[0].type != VAL_STR || args[1].type != VAL_ARRAY)
+                bp_fatal("file_write_bytes expects (str, array)");
+            FILE *fp = fopen(args[0].as.s->data, "wb");
+            if (!fp) return v_bool(false);
+            BpArray *arr = args[1].as.arr;
+            for (size_t i = 0; i < arr->len; i++) {
+                unsigned char byte = (unsigned char)(arr->data[i].as.i & 0xFF);
+                fwrite(&byte, 1, 1, fp);
+            }
+            fclose(fp);
+            return v_bool(true);
+        }
+
+        // Array insert
+        case BI_ARRAY_INSERT: {
+            if (argc != 3 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT)
+                bp_fatal("array_insert expects (array, int, value)");
+            BpArray *arr = args[0].as.arr;
+            int64_t idx = args[1].as.i;
+            if (idx < 0) idx = 0;
+            if ((size_t)idx > arr->len) idx = (int64_t)arr->len;
+            // Grow array
+            gc_array_push(gc, arr, v_null()); // extend by 1
+            // Shift elements right
+            for (size_t i = arr->len - 1; i > (size_t)idx; i--) {
+                arr->data[i] = arr->data[i - 1];
+            }
+            arr->data[idx] = args[2];
+            return v_null();
+        }
+        // Array remove
+        case BI_ARRAY_REMOVE: {
+            if (argc != 2 || args[0].type != VAL_ARRAY || args[1].type != VAL_INT)
+                bp_fatal("array_remove expects (array, int)");
+            BpArray *arr = args[0].as.arr;
+            int64_t idx = args[1].as.i;
+            if (idx < 0 || (size_t)idx >= arr->len) bp_fatal("array_remove: index out of bounds");
+            Value removed = arr->data[idx];
+            // Shift elements left
+            for (size_t i = (size_t)idx; i < arr->len - 1; i++) {
+                arr->data[i] = arr->data[i + 1];
+            }
+            arr->len--;
+            return removed;
+        }
+
+        // Type introspection
+        case BI_TYPEOF: {
+            if (argc != 1) bp_fatal("typeof expects 1 arg");
+            const char *tname = "unknown";
+            switch (args[0].type) {
+                case VAL_INT:    tname = "int"; break;
+                case VAL_FLOAT:  tname = "float"; break;
+                case VAL_BOOL:   tname = "bool"; break;
+                case VAL_NULL:   tname = "null"; break;
+                case VAL_STR:    tname = "str"; break;
+                case VAL_ARRAY:  tname = "array"; break;
+                case VAL_MAP:    tname = "map"; break;
+                case VAL_STRUCT: tname = "struct"; break;
+                case VAL_CLASS:  tname = "class"; break;
+                case VAL_PTR:    tname = "ptr"; break;
+            }
+            return v_str(gc_new_str(gc, tname, strlen(tname)));
+        }
+
+        case BI_ARRAY_CONCAT: {
+            if (argc != 2 || args[0].type != VAL_ARRAY || args[1].type != VAL_ARRAY)
+                bp_fatal("array_concat expects (array, array)");
+            BpArray *a = args[0].as.arr, *b = args[1].as.arr;
+            BpArray *out = gc_new_array(gc, a->len + b->len);
+            for (size_t i = 0; i < a->len; i++) gc_array_push(gc, out, a->data[i]);
+            for (size_t i = 0; i < b->len; i++) gc_array_push(gc, out, b->data[i]);
+            return v_array(out);
+        }
+        case BI_ARRAY_COPY: {
+            if (argc != 1 || args[0].type != VAL_ARRAY)
+                bp_fatal("array_copy expects (array)");
+            BpArray *a = args[0].as.arr;
+            BpArray *out = gc_new_array(gc, a->len);
+            for (size_t i = 0; i < a->len; i++) gc_array_push(gc, out, a->data[i]);
+            return v_array(out);
+        }
+        case BI_ARRAY_CLEAR: {
+            if (argc != 1 || args[0].type != VAL_ARRAY)
+                bp_fatal("array_clear expects (array)");
+            args[0].as.arr->len = 0;
+            return v_null();
+        }
+        case BI_ARRAY_INDEX_OF: {
+            if (argc != 2 || args[0].type != VAL_ARRAY)
+                bp_fatal("array_index_of expects (array, value)");
+            BpArray *arr = args[0].as.arr;
+            for (size_t i = 0; i < arr->len; i++) {
+                Value v = arr->data[i];
+                if (v.type == args[1].type) {
+                    if (v.type == VAL_INT && v.as.i == args[1].as.i) return v_int((int64_t)i);
+                    if (v.type == VAL_FLOAT && v.as.f == args[1].as.f) return v_int((int64_t)i);
+                    if (v.type == VAL_BOOL && v.as.b == args[1].as.b) return v_int((int64_t)i);
+                    if (v.type == VAL_STR && v.as.s->len == args[1].as.s->len &&
+                        memcmp(v.as.s->data, args[1].as.s->data, v.as.s->len) == 0) return v_int((int64_t)i);
+                }
+            }
+            return v_int(-1);
+        }
+        case BI_ARRAY_CONTAINS: {
+            if (argc != 2 || args[0].type != VAL_ARRAY)
+                bp_fatal("array_contains expects (array, value)");
+            BpArray *arr = args[0].as.arr;
+            for (size_t i = 0; i < arr->len; i++) {
+                Value v = arr->data[i];
+                if (v.type == args[1].type) {
+                    if (v.type == VAL_INT && v.as.i == args[1].as.i) return v_bool(true);
+                    if (v.type == VAL_FLOAT && v.as.f == args[1].as.f) return v_bool(true);
+                    if (v.type == VAL_BOOL && v.as.b == args[1].as.b) return v_bool(true);
+                    if (v.type == VAL_STR && v.as.s->len == args[1].as.s->len &&
+                        memcmp(v.as.s->data, args[1].as.s->data, v.as.s->len) == 0) return v_bool(true);
+                }
+            }
+            return v_bool(false);
+        }
+        case BI_ARRAY_REVERSE: {
+            if (argc != 1 || args[0].type != VAL_ARRAY)
+                bp_fatal("array_reverse expects (array)");
+            BpArray *arr = args[0].as.arr;
+            for (size_t i = 0; i < arr->len / 2; i++) {
+                Value tmp = arr->data[i];
+                arr->data[i] = arr->data[arr->len - 1 - i];
+                arr->data[arr->len - 1 - i] = tmp;
+            }
+            return v_null();
+        }
+        case BI_ARRAY_FILL: {
+            if (argc != 2 || args[0].type != VAL_INT)
+                bp_fatal("array_fill expects (int, value)");
+            int64_t size = args[0].as.i;
+            if (size < 0) size = 0;
+            BpArray *arr = gc_new_array(gc, (size_t)size);
+            for (int64_t i = 0; i < size; i++) gc_array_push(gc, arr, args[1]);
+            return v_array(arr);
+        }
+        case BI_STR_FROM_CHARS: {
+            if (argc != 1 || args[0].type != VAL_ARRAY)
+                bp_fatal("str_from_chars expects (array)");
+            BpArray *arr = args[0].as.arr;
+            char *buf = malloc(arr->len + 1);
+            for (size_t i = 0; i < arr->len; i++) {
+                buf[i] = (char)(arr->data[i].as.i & 0xFF);
+            }
+            buf[arr->len] = '\0';
+            BpStr *s = gc_new_str(gc, buf, arr->len);
+            free(buf);
+            return v_str(s);
+        }
+        case BI_STR_BYTES: {
+            if (argc != 1 || args[0].type != VAL_STR)
+                bp_fatal("str_bytes expects (str)");
+            BpStr *s = args[0].as.s;
+            BpArray *arr = gc_new_array(gc, s->len);
+            for (size_t i = 0; i < s->len; i++) {
+                gc_array_push(gc, arr, v_int((int64_t)(unsigned char)s->data[i]));
+            }
+            return v_array(arr);
+        }
+
         default: break;
     }
     bp_fatal("unknown builtin id");

@@ -426,6 +426,8 @@ int vm_run(Vm *vm) {
         [OP_POP] = &&L_OP_POP,
         [OP_LOAD_LOCAL] = &&L_OP_LOAD_LOCAL,
         [OP_STORE_LOCAL] = &&L_OP_STORE_LOCAL,
+        [OP_LOAD_GLOBAL] = &&L_OP_LOAD_GLOBAL,
+        [OP_STORE_GLOBAL] = &&L_OP_STORE_GLOBAL,
         [OP_ADD_I64] = &&L_OP_ADD_I64,
         [OP_SUB_I64] = &&L_OP_SUB_I64,
         [OP_MUL_I64] = &&L_OP_MUL_I64,
@@ -579,6 +581,18 @@ L_OP_STORE_LOCAL: {
     size_t abs_slot = locals_base + slot;
     if (abs_slot >= total_locals_cap) bp_fatal("bad local");
     vm->locals[abs_slot] = POP();
+    VM_DISPATCH();
+}
+L_OP_LOAD_GLOBAL: {
+    uint16_t idx = rd_u16(code, &ip);
+    if (idx >= vm->mod.global_count) bp_fatal("global index out of bounds");
+    PUSH(vm->mod.globals[idx]);
+    VM_DISPATCH();
+}
+L_OP_STORE_GLOBAL: {
+    uint16_t idx = rd_u16(code, &ip);
+    if (idx >= vm->mod.global_count) bp_fatal("global index out of bounds");
+    vm->mod.globals[idx] = POP();
     VM_DISPATCH();
 }
 L_OP_ADD_I64: { Value b = POP(), a = POP(); PUSH(v_int(a.as.i + b.as.i)); VM_DISPATCH(); }
@@ -1048,6 +1062,18 @@ vm_exit:
                 size_t abs_slot = locals_base + slot;
                 if (abs_slot >= total_locals_cap) bp_fatal("bad local");
                 vm->locals[abs_slot] = pop(vm);
+                break;
+            }
+            case OP_LOAD_GLOBAL: {
+                uint16_t idx = rd_u16(code, &ip);
+                if (idx >= vm->mod.global_count) bp_fatal("global index out of bounds");
+                push(vm, vm->mod.globals[idx]);
+                break;
+            }
+            case OP_STORE_GLOBAL: {
+                uint16_t idx = rd_u16(code, &ip);
+                if (idx >= vm->mod.global_count) bp_fatal("global index out of bounds");
+                vm->mod.globals[idx] = pop(vm);
                 break;
             }
             case OP_ADD_I64: {

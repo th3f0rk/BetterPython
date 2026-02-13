@@ -1,0 +1,123 @@
+# Test array_sort, array_slice, int_to_bytes, int_from_bytes
+
+def test_array_sort_int() -> int:
+    let arr: [int] = [5, 3, 8, 1, 9, 2, 7, 4, 6]
+    array_sort(arr)
+    if arr[0] != 1:
+        print("FAIL: sort first element")
+        return 1
+    if arr[4] != 5:
+        print("FAIL: sort middle element")
+        return 1
+    if arr[8] != 9:
+        print("FAIL: sort last element")
+        return 1
+    print("PASS: array_sort integers")
+    return 0
+
+def test_array_sort_str() -> int:
+    let arr: [str] = ["cherry", "apple", "banana"]
+    array_sort(arr)
+    if arr[0] != "apple":
+        print("FAIL: sort strings first")
+        return 1
+    if arr[1] != "banana":
+        print("FAIL: sort strings second")
+        return 1
+    if arr[2] != "cherry":
+        print("FAIL: sort strings third")
+        return 1
+    print("PASS: array_sort strings")
+    return 0
+
+def test_array_slice() -> int:
+    let arr: [int] = [10, 20, 30, 40, 50]
+    let sub: [int] = array_slice(arr, 1, 4)
+    if array_len(sub) != 3:
+        print("FAIL: slice length")
+        return 1
+    if sub[0] != 20:
+        print("FAIL: slice[0]")
+        return 1
+    if sub[2] != 40:
+        print("FAIL: slice[2]")
+        return 1
+    print("PASS: array_slice")
+    return 0
+
+def test_array_slice_edge() -> int:
+    let arr: [int] = [1, 2, 3]
+    # Empty slice
+    let empty: [int] = array_slice(arr, 2, 2)
+    if array_len(empty) != 0:
+        print("FAIL: empty slice")
+        return 1
+    # Full slice
+    let full: [int] = array_slice(arr, 0, 3)
+    if array_len(full) != 3:
+        print("FAIL: full slice")
+        return 1
+    print("PASS: array_slice edge cases")
+    return 0
+
+def test_int_to_bytes() -> int:
+    # 2-byte big-endian: 0x0102 = 258
+    let b2: [int] = int_to_bytes(258, 2)
+    if array_len(b2) != 2:
+        print("FAIL: int_to_bytes length")
+        return 1
+    if b2[0] != 1:
+        print("FAIL: int_to_bytes high byte", b2[0])
+        return 1
+    if b2[1] != 2:
+        print("FAIL: int_to_bytes low byte", b2[1])
+        return 1
+    # 4-byte big-endian: 0x01020304 = 16909060
+    let b4: [int] = int_to_bytes(16909060, 4)
+    if b4[0] != 1:
+        print("FAIL: 4-byte [0]")
+        return 1
+    if b4[3] != 4:
+        print("FAIL: 4-byte [3]")
+        return 1
+    print("PASS: int_to_bytes")
+    return 0
+
+def test_int_from_bytes() -> int:
+    let b: [int] = [0, 0, 1, 0]
+    # Read 2 bytes from offset 2: 0x0100 = 256
+    let val: int = int_from_bytes(b, 2, 2)
+    if val != 256:
+        print("FAIL: int_from_bytes expected 256, got", val)
+        return 1
+    # Read 4 bytes from offset 0: 0x00000100 = 256
+    let val4: int = int_from_bytes(b, 0, 4)
+    if val4 != 256:
+        print("FAIL: int_from_bytes 4-byte expected 256, got", val4)
+        return 1
+    print("PASS: int_from_bytes")
+    return 0
+
+def test_roundtrip() -> int:
+    # Encode and decode a value
+    let original: int = 12345678
+    let encoded: [int] = int_to_bytes(original, 4)
+    let decoded: int = int_from_bytes(encoded, 0, 4)
+    if decoded != original:
+        print("FAIL: roundtrip expected", original, "got", decoded)
+        return 1
+    print("PASS: int_to_bytes/int_from_bytes roundtrip")
+    return 0
+
+def main() -> int:
+    let fails: int = 0
+    fails = fails + test_array_sort_int()
+    fails = fails + test_array_sort_str()
+    fails = fails + test_array_slice()
+    fails = fails + test_array_slice_edge()
+    fails = fails + test_int_to_bytes()
+    fails = fails + test_int_from_bytes()
+    fails = fails + test_roundtrip()
+    if fails > 0:
+        print("FAILURES:", fails)
+    return fails

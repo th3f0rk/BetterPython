@@ -527,6 +527,7 @@ static Expr *parse_unary(Parser *p) {
     size_t line = p->cur.line;
     if (accept(p, TOK_MINUS)) return expr_new_unary(UOP_NEG, parse_unary(p), line);
     if (accept(p, TOK_NOT)) return expr_new_unary(UOP_NOT, parse_unary(p), line);
+    if (accept(p, TOK_TILDE)) return expr_new_unary(UOP_BIT_NOT, parse_unary(p), line);
     return parse_primary(p);
 }
 
@@ -545,6 +546,11 @@ static BinaryOp bop_from(TokenKind k) {
         case TOK_GTE: return BOP_GTE;
         case TOK_AND: return BOP_AND;
         case TOK_OR: return BOP_OR;
+        case TOK_AMP: return BOP_BIT_AND;
+        case TOK_PIPE: return BOP_BIT_OR;
+        case TOK_CARET: return BOP_BIT_XOR;
+        case TOK_SHL: return BOP_BIT_SHL;
+        case TOK_SHR: return BOP_BIT_SHR;
         default: break;
     }
     bp_fatal("internal: bad bop");
@@ -555,10 +561,14 @@ static int precedence(TokenKind k) {
     switch (k) {
         case TOK_OR: return 1;
         case TOK_AND: return 2;
-        case TOK_EQ: case TOK_NEQ: return 3;
-        case TOK_LT: case TOK_LTE: case TOK_GT: case TOK_GTE: return 4;
-        case TOK_PLUS: case TOK_MINUS: return 5;
-        case TOK_STAR: case TOK_SLASH: case TOK_PCT: return 6;
+        case TOK_PIPE: return 3;       // bitwise OR
+        case TOK_CARET: return 4;      // bitwise XOR
+        case TOK_AMP: return 5;        // bitwise AND
+        case TOK_EQ: case TOK_NEQ: return 6;
+        case TOK_LT: case TOK_LTE: case TOK_GT: case TOK_GTE: return 7;
+        case TOK_SHL: case TOK_SHR: return 8;   // shifts
+        case TOK_PLUS: case TOK_MINUS: return 9;
+        case TOK_STAR: case TOK_SLASH: case TOK_PCT: return 10;
         default: return 0;
     }
 }
@@ -647,6 +657,7 @@ static Stmt *parse_while(Parser *p) {
 }
 
 // Parses: for <var> in range(<start>, <end>):
+//     or: for <var> in <collection>:
 static Stmt *parse_for(Parser *p) {
     size_t line = p->cur.line;
     expect(p, TOK_FOR, "expected 'for'");
@@ -657,22 +668,29 @@ static Stmt *parse_for(Parser *p) {
 
     expect(p, TOK_IN, "expected 'in' after for variable");
 
-    // Expect 'range' identifier
-    if (p->cur.kind != TOK_IDENT || p->cur.len != 5 || memcmp(p->cur.lexeme, "range", 5) != 0) {
-        bp_fatal("expected 'range' after 'in' at %zu:%zu", p->cur.line, p->cur.col);
-    }
-    next(p);
+    // Check if it's range(start, end) or a collection expression
+    if (p->cur.kind == TOK_IDENT && p->cur.len == 5 && memcmp(p->cur.lexeme, "range", 5) == 0) {
+        // range-based for loop: for i in range(start, end):
+        next(p);
+        expect(p, TOK_LPAREN, "expected '(' after range");
+        Expr *start = parse_expr(p);
+        expect(p, TOK_COMMA, "expected ',' in range");
+        Expr *end = parse_expr(p);
+        expect(p, TOK_RPAREN, "expected ')' after range");
+        expect(p, TOK_COLON, "expected ':' after for header");
 
-    expect(p, TOK_LPAREN, "expected '(' after range");
-    Expr *start = parse_expr(p);
-    expect(p, TOK_COMMA, "expected ',' in range");
-    Expr *end = parse_expr(p);
-    expect(p, TOK_RPAREN, "expected ')' after range");
-    expect(p, TOK_COLON, "expected ':' after for header");
+        size_t body_len = 0;
+        Stmt **body = parse_block(p, &body_len);
+        return stmt_new_for(var, start, end, body, body_len, line);
+    }
+
+    // Collection-based for loop: for x in <expr>:
+    Expr *collection = parse_expr(p);
+    expect(p, TOK_COLON, "expected ':' after for-in collection");
 
     size_t body_len = 0;
     Stmt **body = parse_block(p, &body_len);
-    return stmt_new_for(var, start, end, body, body_len, line);
+    return stmt_new_for_in(var, collection, body, body_len, line);
 }
 
 static Stmt *parse_try(Parser *p) {
@@ -745,9 +763,62 @@ static Stmt *parse_try(Parser *p) {
     return stmt_new_try(try_stmts, try_len, catch_var, catch_stmts, catch_len, finally_stmts, finally_len, line);
 }
 
+static Stmt *parse_match(Parser *p) {
+    size_t line = p->cur.line;
+    expect(p, TOK_MATCH, "expected 'match'");
+    Expr *expr = parse_expr(p);
+    expect(p, TOK_COLON, "expected ':' after match expression");
+    expect(p, TOK_NEWLINE, "expected newline after match:");
+    expect(p, TOK_INDENT, "expected indent after match:");
+
+    Expr **case_values = NULL;
+    Stmt ***case_bodies = NULL;
+    size_t *case_body_lens = NULL;
+    size_t case_count = 0, case_cap = 0;
+    bool has_default = false;
+    size_t default_idx = 0;
+
+    while (p->cur.kind != TOK_DEDENT && p->cur.kind != TOK_EOF) {
+        skip_newlines(p);
+        if (p->cur.kind == TOK_DEDENT || p->cur.kind == TOK_EOF) break;
+
+        Expr *case_val = NULL;
+        if (accept(p, TOK_DEFAULT)) {
+            if (has_default) bp_fatal("duplicate default case in match at %zu:%zu", p->cur.line, p->cur.col);
+            has_default = true;
+            default_idx = case_count;
+        } else {
+            expect(p, TOK_CASE, "expected 'case' or 'default' in match block");
+            case_val = parse_expr(p);
+        }
+        expect(p, TOK_COLON, "expected ':' after case value");
+
+        size_t body_len = 0;
+        Stmt **body = parse_block(p, &body_len);
+
+        if (case_count + 1 > case_cap) {
+            case_cap = case_cap ? case_cap * 2 : 8;
+            case_values = bp_xrealloc(case_values, case_cap * sizeof(*case_values));
+            case_bodies = bp_xrealloc(case_bodies, case_cap * sizeof(*case_bodies));
+            case_body_lens = bp_xrealloc(case_body_lens, case_cap * sizeof(*case_body_lens));
+        }
+        case_values[case_count] = case_val;
+        case_bodies[case_count] = body;
+        case_body_lens[case_count] = body_len;
+        case_count++;
+
+        skip_newlines(p);
+    }
+
+    if (p->cur.kind == TOK_DEDENT) next(p);
+
+    return stmt_new_match(expr, case_values, case_bodies, case_body_lens, case_count, has_default, default_idx, line);
+}
+
 static Stmt *parse_stmt(Parser *p) {
     size_t line = p->cur.line;
 
+    if (p->cur.kind == TOK_MATCH) return parse_match(p);
     if (p->cur.kind == TOK_IF) return parse_if(p);
     if (p->cur.kind == TOK_WHILE) return parse_while(p);
     if (p->cur.kind == TOK_FOR) return parse_for(p);
@@ -1274,7 +1345,7 @@ Module parse_module(const char *src) {
     Module m;
     memset(&m, 0, sizeof(m));
 
-    size_t fn_cap = 0, st_cap = 0, en_cap = 0, im_cap = 0, cl_cap = 0, ex_cap = 0;
+    size_t fn_cap = 0, st_cap = 0, en_cap = 0, im_cap = 0, cl_cap = 0, ex_cap = 0, gv_cap = 0;
     skip_newlines(&p);
 
     while (p.cur.kind != TOK_EOF) {
@@ -1328,8 +1399,12 @@ Module parse_module(const char *src) {
             ExternDef ed = parse_extern(&p);
             if (m.externc + 1 > ex_cap) { ex_cap = ex_cap ? ex_cap * 2 : 8; m.externs = bp_xrealloc(m.externs, ex_cap * sizeof(*m.externs)); }
             m.externs[m.externc++] = ed;
+        } else if (p.cur.kind == TOK_LET) {
+            Stmt *gv = parse_stmt(&p);
+            if (m.global_varc + 1 > gv_cap) { gv_cap = gv_cap ? gv_cap * 2 : 8; m.global_vars = bp_xrealloc(m.global_vars, gv_cap * sizeof(*m.global_vars)); }
+            m.global_vars[m.global_varc++] = gv;
         } else {
-            bp_fatal("expected 'def', 'struct', 'enum', 'class', 'import', 'extern', or 'export' at top level (line %zu)", p.cur.line);
+            bp_fatal("expected 'def', 'struct', 'enum', 'class', 'import', 'extern', 'let', or 'export' at top level (line %zu)", p.cur.line);
         }
 
         skip_newlines(&p);

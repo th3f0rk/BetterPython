@@ -101,13 +101,15 @@ typedef enum {
 
 typedef enum {
     UOP_NEG,
-    UOP_NOT
+    UOP_NOT,
+    UOP_BIT_NOT
 } UnaryOp;
 
 typedef enum {
     BOP_ADD, BOP_SUB, BOP_MUL, BOP_DIV, BOP_MOD,
     BOP_EQ, BOP_NEQ, BOP_LT, BOP_LTE, BOP_GT, BOP_GTE,
-    BOP_AND, BOP_OR
+    BOP_AND, BOP_OR,
+    BOP_BIT_AND, BOP_BIT_OR, BOP_BIT_XOR, BOP_BIT_SHL, BOP_BIT_SHR
 } BinaryOp;
 
 typedef struct Expr Expr;
@@ -246,7 +248,9 @@ typedef enum {
     ST_RETURN,
     ST_TRY,
     ST_THROW,
-    ST_FIELD_ASSIGN     // obj.field = value
+    ST_FIELD_ASSIGN,    // obj.field = value
+    ST_FOR_IN           // for x in collection:
+    ,ST_MATCH             // match expr: case val: body
 } StmtKind;
 
 struct Stmt {
@@ -296,6 +300,24 @@ struct Stmt {
             Stmt **body;
             size_t body_len;
         } forr;
+
+        struct {
+            char *var;          // iterator variable name
+            Expr *collection;   // array or map expression
+            Stmt **body;
+            size_t body_len;
+        } for_in;
+
+        // Match statement
+        struct {
+            Expr *expr;          // Expression to match on
+            Expr **case_values;  // Case value expressions (NULL for default)
+            Stmt ***case_bodies; // Array of statement arrays
+            size_t *case_body_lens;
+            size_t case_count;   // Number of cases (including default)
+            bool has_default;    // Whether there's a default case
+            size_t default_idx;  // Index of default case in arrays
+        } match;
 
         struct {
             Expr *value; // may be NULL
@@ -414,6 +436,8 @@ typedef struct {
     size_t classc;
     ExternDef *externs;
     size_t externc;
+    Stmt **global_vars;  // Module-level let statements
+    size_t global_varc;
 } Module;
 
 Expr *expr_new_int(int64_t v, size_t line);
@@ -445,10 +469,12 @@ Stmt *stmt_new_expr(Expr *e, size_t line);
 Stmt *stmt_new_if(Expr *cond, Stmt **then_s, size_t then_len, Stmt **else_s, size_t else_len, size_t line);
 Stmt *stmt_new_while(Expr *cond, Stmt **body, size_t body_len, size_t line);
 Stmt *stmt_new_for(char *var, Expr *start, Expr *end, Stmt **body, size_t body_len, size_t line);
+Stmt *stmt_new_for_in(char *var, Expr *collection, Stmt **body, size_t body_len, size_t line);
 Stmt *stmt_new_break(size_t line);
 Stmt *stmt_new_continue(size_t line);
 Stmt *stmt_new_return(Expr *value, size_t line);
 Stmt *stmt_new_try(Stmt **try_s, size_t try_len, char *catch_var, Stmt **catch_s, size_t catch_len, Stmt **finally_s, size_t finally_len, size_t line);
 Stmt *stmt_new_throw(Expr *value, size_t line);
+Stmt *stmt_new_match(Expr *expr, Expr **case_values, Stmt ***case_bodies, size_t *case_body_lens, size_t case_count, bool has_default, size_t default_idx, size_t line);
 
 void module_free(Module *m);

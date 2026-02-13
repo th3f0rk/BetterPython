@@ -97,16 +97,26 @@ static uint16_t locals_add(Locals *ls, const char *name) {
     return slot;
 }
 
-static uint16_t locals_get(Locals *ls, const char *name) {
-    // Search from newest to oldest to find innermost visible variable
+// Try to get a local variable slot, returns -1 if not found (also used where locals_get was)
+static int locals_try_get(Locals *ls, const char *name) {
     for (size_t i = ls->len; i > 0; i--) {
         if (locals_scope_visible(ls, ls->items[i-1].scope_id) &&
             strcmp(ls->items[i-1].name, name) == 0) {
-            return ls->items[i-1].slot;
+            return (int)ls->items[i-1].slot;
         }
     }
-    bp_fatal("unknown local '%s'", name);
-    return 0;
+    return -1;
+}
+
+// Global variable tracking for cross-function access
+static char **g_global_names = NULL;
+static size_t g_global_count = 0;
+
+static int global_get(const char *name) {
+    for (size_t i = 0; i < g_global_count; i++) {
+        if (strcmp(g_global_names[i], name) == 0) return (int)i;
+    }
+    return -1;
 }
 
 static void locals_free(Locals *ls) {
@@ -310,6 +320,57 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "bytes_to_str") == 0) return BI_BYTES_TO_STR;
     if (strcmp(name, "str_to_bytes") == 0) return BI_STR_TO_BYTES;
 
+    // Type conversion
+    if (strcmp(name, "parse_int") == 0) return BI_PARSE_INT;
+
+    // JSON
+    if (strcmp(name, "json_stringify") == 0) return BI_JSON_STRINGIFY;
+
+    // Byte arrays
+    if (strcmp(name, "bytes_new") == 0) return BI_BYTES_NEW;
+    if (strcmp(name, "bytes_get") == 0) return BI_BYTES_GET;
+    if (strcmp(name, "bytes_set") == 0) return BI_BYTES_SET;
+
+    // Array utilities
+    if (strcmp(name, "array_sort") == 0) return BI_ARRAY_SORT;
+    if (strcmp(name, "array_slice") == 0) return BI_ARRAY_SLICE;
+
+    // Byte packing
+    if (strcmp(name, "int_to_bytes") == 0) return BI_INT_TO_BYTES;
+    if (strcmp(name, "int_from_bytes") == 0) return BI_INT_FROM_BYTES;
+
+    // Byte buffer operations
+    if (strcmp(name, "bytes_append") == 0) return BI_BYTES_APPEND;
+    if (strcmp(name, "bytes_len") == 0) return BI_BYTES_LEN;
+    if (strcmp(name, "bytes_write_u16") == 0) return BI_BYTES_WRITE_U16;
+    if (strcmp(name, "bytes_write_u32") == 0) return BI_BYTES_WRITE_U32;
+    if (strcmp(name, "bytes_write_i64") == 0) return BI_BYTES_WRITE_I64;
+    if (strcmp(name, "bytes_read_u16") == 0) return BI_BYTES_READ_U16;
+    if (strcmp(name, "bytes_read_u32") == 0) return BI_BYTES_READ_U32;
+    if (strcmp(name, "bytes_read_i64") == 0) return BI_BYTES_READ_I64;
+
+    // Binary file I/O
+    if (strcmp(name, "file_read_bytes") == 0) return BI_FILE_READ_BYTES;
+    if (strcmp(name, "file_write_bytes") == 0) return BI_FILE_WRITE_BYTES;
+
+    // Array utilities
+    if (strcmp(name, "array_insert") == 0) return BI_ARRAY_INSERT;
+    if (strcmp(name, "array_remove") == 0) return BI_ARRAY_REMOVE;
+
+    // Type introspection
+    if (strcmp(name, "typeof") == 0) return BI_TYPEOF;
+
+    // Array utility builtins
+    if (strcmp(name, "array_concat") == 0) return BI_ARRAY_CONCAT;
+    if (strcmp(name, "array_copy") == 0) return BI_ARRAY_COPY;
+    if (strcmp(name, "array_clear") == 0) return BI_ARRAY_CLEAR;
+    if (strcmp(name, "array_index_of") == 0) return BI_ARRAY_INDEX_OF;
+    if (strcmp(name, "array_contains") == 0) return BI_ARRAY_CONTAINS;
+    if (strcmp(name, "array_reverse") == 0) return BI_ARRAY_REVERSE;
+    if (strcmp(name, "array_fill") == 0) return BI_ARRAY_FILL;
+    if (strcmp(name, "str_from_chars") == 0) return BI_STR_FROM_CHARS;
+    if (strcmp(name, "str_bytes") == 0) return BI_STR_BYTES;
+
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
 }
@@ -430,9 +491,16 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
         }
         case ST_ASSIGN: {
             emit_expr(fe, s->as.assign.value);
-            uint16_t slot = locals_get(&fe->locals, s->as.assign.name);
-            buf_u8(&fe->code, OP_STORE_LOCAL);
-            buf_u16(&fe->code, slot);
+            int slot = locals_try_get(&fe->locals, s->as.assign.name);
+            if (slot >= 0) {
+                buf_u8(&fe->code, OP_STORE_LOCAL);
+                buf_u16(&fe->code, (uint16_t)slot);
+            } else {
+                int gi = global_get(s->as.assign.name);
+                if (gi < 0) bp_fatal("unknown variable '%s'", s->as.assign.name);
+                buf_u8(&fe->code, OP_STORE_GLOBAL);
+                buf_u16(&fe->code, (uint16_t)gi);
+            }
             return;
         }
         case ST_INDEX_ASSIGN: {
@@ -581,6 +649,153 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             locals_pop_scope(&fe->locals);
             return;
         }
+        case ST_FOR_IN: {
+            // for x in collection:  →  desugars to index-based loop
+            locals_push_scope(&fe->locals);
+            Type coll_type = s->as.for_in.collection->inferred;
+            bool is_map = (coll_type.kind == TY_MAP);
+
+            // Evaluate collection
+            emit_expr(fe, s->as.for_in.collection);
+            uint16_t coll_slot = locals_add(&fe->locals, "__for_coll");
+            buf_u8(&fe->code, OP_STORE_LOCAL);
+            buf_u16(&fe->code, coll_slot);
+
+            // For maps: get keys array  →  coll = map_keys(coll)
+            if (is_map) {
+                buf_u8(&fe->code, OP_LOAD_LOCAL);
+                buf_u16(&fe->code, coll_slot);
+                buf_u8(&fe->code, OP_CALL_BUILTIN);
+                buf_u16(&fe->code, (uint16_t)BI_MAP_KEYS);
+                buf_u8(&fe->code, 1);
+                buf_u8(&fe->code, OP_STORE_LOCAL);
+                buf_u16(&fe->code, coll_slot);
+            }
+
+            // len = array_len(coll)
+            buf_u8(&fe->code, OP_LOAD_LOCAL);
+            buf_u16(&fe->code, coll_slot);
+            buf_u8(&fe->code, OP_CALL_BUILTIN);
+            buf_u16(&fe->code, (uint16_t)BI_ARRAY_LEN);
+            buf_u8(&fe->code, 1);
+            uint16_t len_slot = locals_add(&fe->locals, "__for_len");
+            buf_u8(&fe->code, OP_STORE_LOCAL);
+            buf_u16(&fe->code, len_slot);
+
+            // idx = 0
+            buf_u8(&fe->code, OP_CONST_I64);
+            buf_i64(&fe->code, 0);
+            uint16_t idx_slot = locals_add(&fe->locals, "__for_idx");
+            buf_u8(&fe->code, OP_STORE_LOCAL);
+            buf_u16(&fe->code, idx_slot);
+
+            // loop_start:
+            uint32_t loop_start = (uint32_t)fe->code.len;
+            push_loop(fe, 0);
+
+            // condition: idx < len
+            buf_u8(&fe->code, OP_LOAD_LOCAL);
+            buf_u16(&fe->code, idx_slot);
+            buf_u8(&fe->code, OP_LOAD_LOCAL);
+            buf_u16(&fe->code, len_slot);
+            buf_u8(&fe->code, OP_LT);
+            buf_u8(&fe->code, OP_JMP_IF_FALSE);
+            size_t jmp_out_at = fe->code.len;
+            buf_u32(&fe->code, 0);
+
+            // x = coll[idx]
+            buf_u8(&fe->code, OP_LOAD_LOCAL);
+            buf_u16(&fe->code, coll_slot);
+            buf_u8(&fe->code, OP_LOAD_LOCAL);
+            buf_u16(&fe->code, idx_slot);
+            buf_u8(&fe->code, OP_ARRAY_GET);
+            uint16_t var_slot = locals_add(&fe->locals, s->as.for_in.var);
+            buf_u8(&fe->code, OP_STORE_LOCAL);
+            buf_u16(&fe->code, var_slot);
+
+            // body
+            for (size_t i = 0; i < s->as.for_in.body_len; i++) emit_stmt(fe, s->as.for_in.body[i]);
+
+            // continue_target: idx++
+            uint32_t continue_pos = (uint32_t)fe->code.len;
+            patch_continues(fe, continue_pos);
+
+            buf_u8(&fe->code, OP_LOAD_LOCAL);
+            buf_u16(&fe->code, idx_slot);
+            buf_u8(&fe->code, OP_CONST_I64);
+            buf_i64(&fe->code, 1);
+            buf_u8(&fe->code, OP_ADD_I64);
+            buf_u8(&fe->code, OP_STORE_LOCAL);
+            buf_u16(&fe->code, idx_slot);
+
+            buf_u8(&fe->code, OP_JMP);
+            buf_u32(&fe->code, loop_start);
+
+            uint32_t loop_end = (uint32_t)fe->code.len;
+            emit_jump_patch(&fe->code, jmp_out_at, loop_end);
+            patch_breaks(fe, loop_end);
+            pop_loop(fe);
+            locals_pop_scope(&fe->locals);
+            return;
+        }
+        case ST_MATCH: {
+            // Match compiles as a chain of if/elif with equality checks
+            emit_expr(fe, s->as.match.expr);
+            // Store matched value in temp local
+            uint16_t match_slot = locals_add(&fe->locals, "__match_val");
+            buf_u8(&fe->code, OP_STORE_LOCAL);
+            buf_u16(&fe->code, match_slot);
+
+            size_t *end_patches = NULL;
+            size_t end_count = 0, end_cap = 0;
+
+            for (size_t i = 0; i < s->as.match.case_count; i++) {
+                if (s->as.match.case_values[i] == NULL) continue; // skip default for now
+
+                // Load match value and compare
+                buf_u8(&fe->code, OP_LOAD_LOCAL);
+                buf_u16(&fe->code, match_slot);
+                emit_expr(fe, s->as.match.case_values[i]);
+                buf_u8(&fe->code, OP_EQ);
+                buf_u8(&fe->code, OP_JMP_IF_FALSE);
+                size_t skip_at = fe->code.len;
+                buf_u32(&fe->code, 0);
+
+                // Case body
+                locals_push_scope(&fe->locals);
+                for (size_t j = 0; j < s->as.match.case_body_lens[i]; j++)
+                    emit_stmt(fe, s->as.match.case_bodies[i][j]);
+                locals_pop_scope(&fe->locals);
+
+                // Jump to end after body
+                buf_u8(&fe->code, OP_JMP);
+                if (end_count + 1 > end_cap) {
+                    end_cap = end_cap ? end_cap * 2 : 8;
+                    end_patches = bp_xrealloc(end_patches, end_cap * sizeof(size_t));
+                }
+                end_patches[end_count++] = fe->code.len;
+                buf_u32(&fe->code, 0);
+
+                // Patch skip
+                emit_jump_patch(&fe->code, skip_at, (uint32_t)fe->code.len);
+            }
+
+            // Default case (if any)
+            if (s->as.match.has_default) {
+                size_t di = s->as.match.default_idx;
+                locals_push_scope(&fe->locals);
+                for (size_t j = 0; j < s->as.match.case_body_lens[di]; j++)
+                    emit_stmt(fe, s->as.match.case_bodies[di][j]);
+                locals_pop_scope(&fe->locals);
+            }
+
+            // Patch all end jumps
+            uint32_t end_addr = (uint32_t)fe->code.len;
+            for (size_t i = 0; i < end_count; i++)
+                emit_jump_patch(&fe->code, end_patches[i], end_addr);
+            free(end_patches);
+            return;
+        }
         case ST_BREAK: {
             if (fe->loop_count == 0) bp_fatal("break outside of loop");
             buf_u8(&fe->code, OP_JMP);
@@ -718,9 +933,16 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
             return;
         }
         case EX_VAR: {
-            uint16_t slot = locals_get(&fe->locals, e->as.var_name);
-            buf_u8(&fe->code, OP_LOAD_LOCAL);
-            buf_u16(&fe->code, slot);
+            int slot = locals_try_get(&fe->locals, e->as.var_name);
+            if (slot >= 0) {
+                buf_u8(&fe->code, OP_LOAD_LOCAL);
+                buf_u16(&fe->code, (uint16_t)slot);
+            } else {
+                int gi = global_get(e->as.var_name);
+                if (gi < 0) bp_fatal("unknown variable '%s'", e->as.var_name);
+                buf_u8(&fe->code, OP_LOAD_GLOBAL);
+                buf_u16(&fe->code, (uint16_t)gi);
+            }
             return;
         }
         case EX_CALL: {
@@ -1004,6 +1226,22 @@ BpModule compile_module(const Module *m) {
         if (strcmp(m->fns[i].name, "main") == 0) out.entry = (uint32_t)i;
     }
 
+    // Store global variable count for VM
+    out.global_count = m->global_varc;
+    if (m->global_varc > 0) {
+        out.globals = bp_xmalloc(m->global_varc * sizeof(Value));
+        memset(out.globals, 0, m->global_varc * sizeof(Value));
+    }
+
+    // Populate global variable name table for cross-function access
+    g_global_count = m->global_varc;
+    if (m->global_varc > 0) {
+        g_global_names = bp_xmalloc(m->global_varc * sizeof(char *));
+        for (size_t g = 0; g < m->global_varc; g++) {
+            g_global_names[g] = m->global_vars[g]->as.let.name;
+        }
+    }
+
     for (size_t i = 0; i < m->fnc; i++) {
         const Function *f = &m->fns[i];
 
@@ -1014,6 +1252,17 @@ BpModule compile_module(const Module *m) {
 
         // params occupy first locals
         for (size_t p = 0; p < f->paramc; p++) locals_add(&fe.locals, f->params[p].name);
+
+        // If this is the entry function, emit global variable initializers
+        if (i == out.entry) {
+            for (size_t g = 0; g < m->global_varc; g++) {
+                if (m->global_vars[g]->kind == ST_LET && m->global_vars[g]->as.let.init) {
+                    emit_expr(&fe, m->global_vars[g]->as.let.init);
+                    buf_u8(&fe.code, OP_STORE_GLOBAL);
+                    buf_u16(&fe.code, (uint16_t)g);
+                }
+            }
+        }
 
         for (size_t s = 0; s < f->body_len; s++) emit_stmt(&fe, f->body[s]);
 
@@ -1114,6 +1363,11 @@ BpModule compile_module(const Module *m) {
 
     out.str_len = pool.len;
     out.strings = pool.strings;
+
+    // Clean up global variable tracking
+    free(g_global_names);
+    g_global_names = NULL;
+    g_global_count = 0;
 
     return out;
 }

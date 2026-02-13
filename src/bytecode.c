@@ -37,6 +37,7 @@ void bc_module_free(BpModule *m) {
         if (m->extern_funcs[i].handle) dlclose(m->extern_funcs[i].handle);
     }
     free(m->extern_funcs);
+    free(m->globals);
     memset(m, 0, sizeof(*m));
 }
 
@@ -44,9 +45,9 @@ int bc_write_file(const char *path, const BpModule *m) {
     FILE *f = fopen(path, "wb");
     if (!f) return 0;
 
-    // magic "BPC0" + version 3 (adds extern function metadata)
+    // magic "BPC0" + version 4 (adds global variable count)
     w_bytes(f, "BPC0", 4);
-    w_u32(f, 3);
+    w_u32(f, 4);
 
     w_u32(f, (uint32_t)m->entry);
 
@@ -100,6 +101,9 @@ int bc_write_file(const char *path, const BpModule *m) {
         }
     }
 
+    /* Global variable count — version 4+ */
+    w_u32(f, (uint32_t)m->global_count);
+
     fclose(f);
     return 1;
 }
@@ -113,7 +117,7 @@ BpModule bc_read_file(const char *path) {
     if (memcmp(magic, "BPC0", 4) != 0) bp_fatal("bad .bpc file");
 
     uint32_t ver = r_u32(f);
-    if (ver != 1 && ver != 2 && ver != 3) bp_fatal("unsupported .bpc version %u", ver);
+    if (ver != 1 && ver != 2 && ver != 3 && ver != 4) bp_fatal("unsupported .bpc version %u", ver);
 
     BpModule m;
     memset(&m, 0, sizeof(m));
@@ -195,6 +199,15 @@ BpModule bc_read_file(const char *path) {
                 m.extern_funcs[i].handle = NULL;
                 m.extern_funcs[i].fn_ptr = NULL;
             }
+        }
+    }
+
+    /* Global variable count — version 4+ */
+    if (ver >= 4) {
+        m.global_count = r_u32(f);
+        if (m.global_count > 0) {
+            m.globals = bp_xmalloc(m.global_count * sizeof(Value));
+            memset(m.globals, 0, m.global_count * sizeof(Value));
         }
     }
 

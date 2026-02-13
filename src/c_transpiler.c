@@ -188,6 +188,11 @@ static const char *binop_str(BinaryOp op) {
         case BOP_GTE: return ">=";
         case BOP_AND: return "&&";
         case BOP_OR:  return "||";
+        case BOP_BIT_AND: return "&";
+        case BOP_BIT_OR:  return "|";
+        case BOP_BIT_XOR: return "^";
+        case BOP_BIT_SHL: return "<<";
+        case BOP_BIT_SHR: return ">>";
     }
     return "?";
 }
@@ -496,6 +501,7 @@ static void emit_expr(CGen *cg, const Expr *e) {
         case EX_UNARY:
             fputc('(', cg->out);
             if (e->as.unary.op == UOP_NEG) fputc('-', cg->out);
+            else if (e->as.unary.op == UOP_BIT_NOT) fputc('~', cg->out);
             else fputs("!", cg->out);
             emit_expr(cg, e->as.unary.rhs);
             fputc(')', cg->out);
@@ -854,6 +860,66 @@ static void emit_stmt(CGen *cg, const Stmt *s) {
             pop_loop_label(cg);
             return;
         }
+        case ST_FOR_IN: {
+            int lbl = cg_fresh_label(cg);
+            push_loop_label(cg, lbl);
+            Type coll_type = s->as.for_in.collection->inferred;
+            bool is_map = (coll_type.kind == TY_MAP);
+            cg_indent(cg);
+            fputs("{\n", cg->out);
+            cg->indent++;
+            // Evaluate collection once
+            cg_indent(cg);
+            if (is_map) {
+                fputs("BpRtArray* __keys = bp_map_keys(", cg->out);
+                emit_expr(cg, s->as.for_in.collection);
+                fputs(");\n", cg->out);
+                cg_indent(cg);
+                fputs("int64_t __len = __keys->len;\n", cg->out);
+            } else {
+                fputs("BpRtArray* __coll = ", cg->out);
+                emit_expr(cg, s->as.for_in.collection);
+                fputs(";\n", cg->out);
+                cg_indent(cg);
+                fputs("int64_t __len = __coll->len;\n", cg->out);
+            }
+            cg_indent(cg);
+            fputs("for (int64_t __i = 0; __i < __len; __i++) {\n", cg->out);
+            cg->indent++;
+            // Declare iterator variable
+            cg_indent(cg);
+            if (is_map) {
+                // Key type from map
+                Type key_type = coll_type.key_type ? *coll_type.key_type : type_str();
+                emit_type(cg, &key_type);
+                fputc(' ', cg->out);
+                emit_safe_name(cg, s->as.for_in.var);
+                fputs(" = __keys->data[__i]", cg->out);
+                if (key_type.kind == TY_INT) fputs(".as.i", cg->out);
+                else if (key_type.kind == TY_STR) fputs(".as.str", cg->out);
+                fputs(";\n", cg->out);
+            } else {
+                Type elem_type = coll_type.elem_type ? *coll_type.elem_type : type_int();
+                emit_type(cg, &elem_type);
+                fputc(' ', cg->out);
+                emit_safe_name(cg, s->as.for_in.var);
+                fputs(" = __coll->data[__i]", cg->out);
+                if (elem_type.kind == TY_INT) fputs(".as.i", cg->out);
+                else if (elem_type.kind == TY_FLOAT) fputs(".as.f", cg->out);
+                else if (elem_type.kind == TY_STR) fputs(".as.str", cg->out);
+                else if (elem_type.kind == TY_BOOL) fputs(".as.b", cg->out);
+                fputs(";\n", cg->out);
+            }
+            emit_block(cg, s->as.for_in.body, s->as.for_in.body_len);
+            cg->indent--;
+            cg_indent(cg);
+            fputs("}\n", cg->out);
+            cg->indent--;
+            cg_indent(cg);
+            fputs("}\n", cg->out);
+            pop_loop_label(cg);
+            return;
+        }
         case ST_BREAK:
             cg_indent(cg);
             fputs("break;\n", cg->out);
@@ -908,6 +974,54 @@ static void emit_stmt(CGen *cg, const Stmt *s) {
             fprintf(cg->out, ".%s = ", s->as.field_assign.object->as.field_access.field_name);
             emit_expr(cg, s->as.field_assign.value);
             fputs(";\n", cg->out);
+            return;
+        }
+        case ST_MATCH: {
+            cg_indent(cg);
+            fputs("{\n", cg->out);
+            cg->indent++;
+
+            /* Emit: type __match_val = (expr); */
+            cg_indent(cg);
+            emit_type(cg, &s->as.match.expr->inferred);
+            fputs(" __match_val = ", cg->out);
+            emit_expr(cg, s->as.match.expr);
+            fputs(";\n", cg->out);
+
+            bool first = true;
+            for (size_t i = 0; i < s->as.match.case_count; i++) {
+                if (s->as.match.case_values[i] == NULL) continue; /* skip default */
+                cg_indent(cg);
+                if (!first) fputs("} else ", cg->out);
+                first = false;
+                fputs("if (__match_val == ", cg->out);
+                emit_expr(cg, s->as.match.case_values[i]);
+                fputs(") {\n", cg->out);
+                cg->indent++;
+                for (size_t j = 0; j < s->as.match.case_body_lens[i]; j++)
+                    emit_stmt(cg, s->as.match.case_bodies[i][j]);
+                cg->indent--;
+            }
+
+            if (s->as.match.has_default) {
+                size_t di = s->as.match.default_idx;
+                cg_indent(cg);
+                if (!first) fputs("} else {\n", cg->out);
+                else fputs("{\n", cg->out);
+                cg->indent++;
+                for (size_t j = 0; j < s->as.match.case_body_lens[di]; j++)
+                    emit_stmt(cg, s->as.match.case_bodies[di][j]);
+                cg->indent--;
+                cg_indent(cg);
+                fputs("}\n", cg->out);
+            } else if (!first) {
+                cg_indent(cg);
+                fputs("}\n", cg->out);
+            }
+
+            cg->indent--;
+            cg_indent(cg);
+            fputs("}\n", cg->out);
             return;
         }
     }
@@ -1013,6 +1127,18 @@ bool transpile_module_to_c(const Module *m, const char *output_path) {
         emit_enum_def(&cg, &m->enums[i]);
     }
 
+    /* ── Global variables ────────────────────────── */
+    for (size_t i = 0; i < m->global_varc; i++) {
+        const Stmt *gs = m->global_vars[i];
+        if (gs->kind == ST_LET) {
+            emit_type(&cg, &gs->as.let.type);
+            fputc(' ', out);
+            emit_safe_name(&cg, gs->as.let.name);
+            fputs(";\n", out);
+        }
+    }
+    if (m->global_varc > 0) fputc('\n', out);
+
     /* ── Forward declarations ────────────────────── */
     for (size_t i = 0; i < m->fnc; i++) {
         emit_function_forward(&cg, &m->fns[i]);
@@ -1027,6 +1153,27 @@ bool transpile_module_to_c(const Module *m, const char *output_path) {
     /* ── main() entry point ──────────────────────── */
     fputs("int main(int argc, char **argv) {\n", out);
     fputs("    bp_runtime_init(argc, argv);\n", out);
+
+    /* Initialize global variables */
+    if (m->global_varc > 0) {
+        cg.indent = 1;
+        for (size_t i = 0; i < m->global_varc; i++) {
+            const Stmt *gs = m->global_vars[i];
+            if (gs->kind == ST_LET && gs->as.let.init) {
+                cg_indent(&cg);
+                emit_safe_name(&cg, gs->as.let.name);
+                fputs(" = ", out);
+                if (gs->as.let.type.kind == TY_FLOAT && gs->as.let.init->inferred.kind != TY_FLOAT) {
+                    emit_expr_as_float(&cg, gs->as.let.init);
+                } else {
+                    emit_expr(&cg, gs->as.let.init);
+                }
+                fputs(";\n", out);
+            }
+        }
+        cg.indent = 0;
+    }
+
     fputs("    int64_t ret = bp_main();\n", out);
     fputs("    bp_runtime_cleanup();\n", out);
     fputs("    return (int)ret;\n", out);

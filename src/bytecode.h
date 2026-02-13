@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "common.h"
 
 // Register VM Configuration
 #define REG_VM_MAX_REGS 256     // Maximum virtual registers per function
@@ -86,6 +87,9 @@ typedef enum {
 
     // FFI operations
     OP_FFI_CALL,        // Call external C function: u16 extern_id, u8 argc
+
+    OP_LOAD_GLOBAL,     // Load global variable: u16 global_idx
+    OP_STORE_GLOBAL,    // Store global variable: u16 global_idx
 
     OP_CALL_BUILTIN,
     OP_CALL,
@@ -181,7 +185,19 @@ typedef enum {
     R_SUPER_CALL,       // dst, method_id, arg_base, argc
 
     // FFI
-    R_FFI_CALL          // dst, extern_id, arg_base, argc
+    R_FFI_CALL,         // dst, extern_id, arg_base, argc
+
+    // Global variables
+    R_LOAD_GLOBAL,      // dst, global_idx(u16): r[dst] = globals[idx]
+    R_STORE_GLOBAL,     // src, global_idx(u16): globals[idx] = r[src]
+
+    // Bitwise (3-address)
+    R_BIT_AND,          // dst, src1, src2: r[dst] = r[src1] & r[src2]
+    R_BIT_OR,           // dst, src1, src2: r[dst] = r[src1] | r[src2]
+    R_BIT_XOR,          // dst, src1, src2: r[dst] = r[src1] ^ r[src2]
+    R_BIT_NOT,          // dst, src: r[dst] = ~r[src]
+    R_BIT_SHL,          // dst, src1, src2: r[dst] = r[src1] << r[src2]
+    R_BIT_SHR           // dst, src1, src2: r[dst] = r[src1] >> r[src2]
 } OpCode;
 
 typedef enum {
@@ -349,7 +365,60 @@ typedef enum {
     BI_BIT_XOR,
     BI_BIT_NOT,
     BI_BIT_SHL,
-    BI_BIT_SHR
+    BI_BIT_SHR,
+
+    // Type conversion
+    BI_PARSE_INT,
+
+    // JSON
+    BI_JSON_STRINGIFY,
+
+    // Byte arrays
+    BI_BYTES_NEW,
+    BI_BYTES_GET,
+    BI_BYTES_SET,
+
+    // Array utilities
+    BI_ARRAY_SORT,
+    BI_ARRAY_SLICE,
+
+    // Byte packing (big-endian)
+    BI_INT_TO_BYTES,
+    BI_INT_FROM_BYTES,
+
+    // Byte buffer operations (for self-hosting)
+    BI_BYTES_APPEND,     // bytes_append(arr, byte) -> void
+    BI_BYTES_LEN,        // bytes_len(arr) -> int
+    BI_BYTES_WRITE_U16,  // bytes_write_u16(arr, value) -> void
+    BI_BYTES_WRITE_U32,  // bytes_write_u32(arr, value) -> void
+    BI_BYTES_WRITE_I64,  // bytes_write_i64(arr, value) -> void
+    BI_BYTES_READ_U16,   // bytes_read_u16(arr, offset) -> int
+    BI_BYTES_READ_U32,   // bytes_read_u32(arr, offset) -> int
+    BI_BYTES_READ_I64,   // bytes_read_i64(arr, offset) -> int
+
+    // Binary file I/O
+    BI_FILE_READ_BYTES,  // file_read_bytes(path) -> [int]
+    BI_FILE_WRITE_BYTES, // file_write_bytes(path, arr) -> bool
+
+    // Array utilities
+    BI_ARRAY_INSERT,     // array_insert(arr, index, value) -> void
+    BI_ARRAY_REMOVE,     // array_remove(arr, index) -> value
+
+    // Type introspection
+    BI_TYPEOF,           // typeof(value) -> str
+
+    // String builder (for self-hosting lexer/compiler)
+    BI_ARRAY_CONCAT,     // array_concat(arr1, arr2) -> [T]
+    BI_ARRAY_COPY,       // array_copy(arr) -> [T]
+    BI_ARRAY_CLEAR,      // array_clear(arr) -> void
+    BI_ARRAY_INDEX_OF,   // array_index_of(arr, val) -> int
+    BI_ARRAY_CONTAINS,   // array_contains(arr, val) -> bool
+    BI_ARRAY_REVERSE,    // array_reverse(arr) -> void
+    BI_ARRAY_FILL,       // array_fill(size, val) -> [T]
+
+    // Additional string ops needed for self-hosting
+    BI_STR_FROM_CHARS,   // str_from_chars(char_array) -> str
+    BI_STR_BYTES         // str_bytes(s) -> [int]
 } BuiltinId;
 
 typedef struct {
@@ -419,6 +488,10 @@ typedef struct {
     size_t extern_func_len;
 
     uint32_t entry;
+
+    // Global variables
+    Value *globals;
+    size_t global_count;
 } BpModule;
 
 void bc_module_free(BpModule *m);
