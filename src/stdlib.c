@@ -1597,6 +1597,142 @@ static Value bi_str_concat_all(Value *args, uint16_t argc, Gc *gc) {
     return v_str(str);
 }
 
+// ============================================================================
+// JSON Parser (recursive descent)
+// ============================================================================
+
+static Value json_parse_value(const char *src, size_t slen, size_t *pos, Gc *gc);
+
+static void jp_skip_ws(const char *src, size_t slen, size_t *pos) {
+    while (*pos < slen && (src[*pos]==' '||src[*pos]=='\t'||src[*pos]=='\n'||src[*pos]=='\r'))
+        (*pos)++;
+}
+
+static Value json_parse_string(const char *src, size_t slen, size_t *pos, Gc *gc) {
+    if (*pos >= slen || src[*pos] != '"') bp_fatal("json_parse: expected '\"'");
+    (*pos)++;  // skip opening quote
+    // Build string with escape handling
+    char *buf = bp_xmalloc(slen);
+    size_t blen = 0;
+    while (*pos < slen && src[*pos] != '"') {
+        if (src[*pos] == '\\' && *pos + 1 < slen) {
+            (*pos)++;
+            switch (src[*pos]) {
+                case '"': buf[blen++] = '"'; break;
+                case '\\': buf[blen++] = '\\'; break;
+                case '/': buf[blen++] = '/'; break;
+                case 'b': buf[blen++] = '\b'; break;
+                case 'f': buf[blen++] = '\f'; break;
+                case 'n': buf[blen++] = '\n'; break;
+                case 'r': buf[blen++] = '\r'; break;
+                case 't': buf[blen++] = '\t'; break;
+                case 'u': {
+                    // Parse 4 hex digits (basic support)
+                    if (*pos + 4 < slen) {
+                        unsigned int cp = 0;
+                        for (int i = 0; i < 4; i++) {
+                            (*pos)++;
+                            char c = src[*pos];
+                            cp <<= 4;
+                            if (c >= '0' && c <= '9') cp |= (unsigned)(c - '0');
+                            else if (c >= 'a' && c <= 'f') cp |= (unsigned)(c - 'a' + 10);
+                            else if (c >= 'A' && c <= 'F') cp |= (unsigned)(c - 'A' + 10);
+                        }
+                        // Simple ASCII range support
+                        if (cp < 128) buf[blen++] = (char)cp;
+                        else { buf[blen++] = '?'; }  // Non-ASCII placeholder
+                    }
+                    break;
+                }
+                default: buf[blen++] = src[*pos]; break;
+            }
+        } else {
+            buf[blen++] = src[*pos];
+        }
+        (*pos)++;
+    }
+    if (*pos < slen) (*pos)++;  // skip closing quote
+    buf[blen] = '\0';
+    BpStr *s = gc_new_str(gc, buf, blen);
+    free(buf);
+    return v_str(s);
+}
+
+static Value json_parse_number(const char *src, size_t slen, size_t *pos, Gc *gc) {
+    (void)gc;
+    size_t start = *pos;
+    bool is_float = false;
+    if (*pos < slen && src[*pos] == '-') (*pos)++;
+    while (*pos < slen && src[*pos] >= '0' && src[*pos] <= '9') (*pos)++;
+    if (*pos < slen && src[*pos] == '.') { is_float = true; (*pos)++; }
+    while (*pos < slen && src[*pos] >= '0' && src[*pos] <= '9') (*pos)++;
+    if (*pos < slen && (src[*pos] == 'e' || src[*pos] == 'E')) {
+        is_float = true;
+        (*pos)++;
+        if (*pos < slen && (src[*pos] == '+' || src[*pos] == '-')) (*pos)++;
+        while (*pos < slen && src[*pos] >= '0' && src[*pos] <= '9') (*pos)++;
+    }
+    char tmp[64];
+    size_t nlen = *pos - start;
+    if (nlen >= sizeof(tmp)) nlen = sizeof(tmp) - 1;
+    memcpy(tmp, src + start, nlen);
+    tmp[nlen] = '\0';
+    if (is_float) return v_float(strtod(tmp, NULL));
+    return v_int(strtoll(tmp, NULL, 10));
+}
+
+static Value json_parse_array(const char *src, size_t slen, size_t *pos, Gc *gc) {
+    (*pos)++;  // skip '['
+    jp_skip_ws(src, slen, pos);
+    BpArray *arr = gc_new_array(gc, 8);
+    if (*pos < slen && src[*pos] == ']') { (*pos)++; return v_array(arr); }
+    while (*pos < slen) {
+        Value elem = json_parse_value(src, slen, pos, gc);
+        gc_array_push(gc, arr, elem);
+        jp_skip_ws(src, slen, pos);
+        if (*pos < slen && src[*pos] == ',') { (*pos)++; jp_skip_ws(src, slen, pos); continue; }
+        break;
+    }
+    if (*pos < slen && src[*pos] == ']') (*pos)++;
+    return v_array(arr);
+}
+
+static Value json_parse_object(const char *src, size_t slen, size_t *pos, Gc *gc) {
+    (*pos)++;  // skip '{'
+    jp_skip_ws(src, slen, pos);
+    BpMap *map = gc_new_map(gc, 16);
+    if (*pos < slen && src[*pos] == '}') { (*pos)++; return v_map(map); }
+    while (*pos < slen) {
+        jp_skip_ws(src, slen, pos);
+        Value key = json_parse_string(src, slen, pos, gc);
+        jp_skip_ws(src, slen, pos);
+        if (*pos < slen && src[*pos] == ':') (*pos)++;
+        jp_skip_ws(src, slen, pos);
+        Value val = json_parse_value(src, slen, pos, gc);
+        gc_map_set(gc, map, key, val);
+        jp_skip_ws(src, slen, pos);
+        if (*pos < slen && src[*pos] == ',') { (*pos)++; continue; }
+        break;
+    }
+    if (*pos < slen && src[*pos] == '}') (*pos)++;
+    return v_map(map);
+}
+
+static Value json_parse_value(const char *src, size_t slen, size_t *pos, Gc *gc) {
+    jp_skip_ws(src, slen, pos);
+    if (*pos >= slen) return v_null();
+    char c = src[*pos];
+    if (c == '"') return json_parse_string(src, slen, pos, gc);
+    if (c == '[') return json_parse_array(src, slen, pos, gc);
+    if (c == '{') return json_parse_object(src, slen, pos, gc);
+    if (c == 't' && *pos + 3 < slen && memcmp(src + *pos, "true", 4) == 0) { *pos += 4; return v_bool(true); }
+    if (c == 'f' && *pos + 4 < slen && memcmp(src + *pos, "false", 5) == 0) { *pos += 5; return v_bool(false); }
+    if (c == 'n' && *pos + 3 < slen && memcmp(src + *pos, "null", 4) == 0) { *pos += 4; return v_null(); }
+    if (c == '-' || (c >= '0' && c <= '9')) return json_parse_number(src, slen, pos, gc);
+    bp_fatal("json_parse: unexpected character '%c' at position %zu", c, *pos);
+    return v_null();
+}
+
 Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_code, bool *exiting) {
     switch (id) {
         case BI_PRINT: return bi_print(args, argc, gc);
@@ -1817,7 +1953,62 @@ Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_co
                 free(buf);
                 return v_str(res);
             }
-            // For arrays and maps, fall back to simple representation
+            if (v.type == VAL_ARRAY) {
+                // Recursive JSON array serialization
+                BpArray *arr = v.as.arr;
+                size_t cap = 256;
+                char *buf = bp_xmalloc(cap);
+                size_t o = 0;
+                buf[o++] = '[';
+                for (size_t i = 0; i < arr->len; i++) {
+                    if (i > 0) { buf[o++] = ','; }
+                    // Recursively stringify each element
+                    Value elem_args[1] = { gc_array_get(arr, i) };
+                    Value elem_json = stdlib_call(BI_JSON_STRINGIFY, elem_args, 1, gc, exit_code, exiting);
+                    BpStr *es = elem_json.as.s;
+                    while (o + es->len + 2 > cap) { cap *= 2; buf = bp_xrealloc(buf, cap); }
+                    memcpy(buf + o, es->data, es->len);
+                    o += es->len;
+                }
+                buf[o++] = ']'; buf[o] = '\0';
+                BpStr *res = gc_new_str(gc, buf, o);
+                free(buf);
+                return v_str(res);
+            }
+            if (v.type == VAL_MAP) {
+                // Recursive JSON object serialization
+                BpMap *map = v.as.map;
+                size_t cap = 256;
+                char *buf = bp_xmalloc(cap);
+                size_t o = 0;
+                buf[o++] = '{';
+                bool first = true;
+                for (size_t i = 0; i < map->cap; i++) {
+                    if (map->entries[i].used != 1) continue;  // skip empty/tombstone
+                    if (!first) { buf[o++] = ','; }
+                    first = false;
+                    // Stringify key
+                    Value key_args[1] = { map->entries[i].key };
+                    Value key_json = stdlib_call(BI_JSON_STRINGIFY, key_args, 1, gc, exit_code, exiting);
+                    BpStr *ks = key_json.as.s;
+                    while (o + ks->len + 2 > cap) { cap *= 2; buf = bp_xrealloc(buf, cap); }
+                    memcpy(buf + o, ks->data, ks->len);
+                    o += ks->len;
+                    buf[o++] = ':';
+                    // Stringify value
+                    Value val_args[1] = { map->entries[i].value };
+                    Value val_json = stdlib_call(BI_JSON_STRINGIFY, val_args, 1, gc, exit_code, exiting);
+                    BpStr *vs = val_json.as.s;
+                    while (o + vs->len + 2 > cap) { cap *= 2; buf = bp_xrealloc(buf, cap); }
+                    memcpy(buf + o, vs->data, vs->len);
+                    o += vs->len;
+                }
+                buf[o++] = '}'; buf[o] = '\0';
+                BpStr *res = gc_new_str(gc, buf, o);
+                free(buf);
+                return v_str(res);
+            }
+            // Fallback for unsupported types
             BpStr *s = val_to_str(v, gc);
             return v_str(s);
         }
@@ -2086,6 +2277,7 @@ Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_co
                 case VAL_STRUCT: tname = "struct"; break;
                 case VAL_CLASS:  tname = "class"; break;
                 case VAL_PTR:    tname = "ptr"; break;
+                case VAL_FUNC:   tname = "func"; break;
             }
             return v_str(gc_new_str(gc, tname, strlen(tname)));
         }
@@ -2187,6 +2379,29 @@ Value stdlib_call(BuiltinId id, Value *args, uint16_t argc, Gc *gc, int *exit_co
                 gc_array_push(gc, arr, v_int((int64_t)(unsigned char)s->data[i]));
             }
             return v_array(arr);
+        }
+
+        case BI_JSON_PARSE: {
+            if (argc != 1 || args[0].type != VAL_STR)
+                bp_fatal("json_parse expects (str)");
+            const char *src = args[0].as.s->data;
+            size_t pos = 0;
+            size_t slen = args[0].as.s->len;
+            return json_parse_value(src, slen, &pos, gc);
+        }
+
+        case BI_TAG: {
+            if (argc != 1 || args[0].type != VAL_STRUCT)
+                bp_fatal("tag expects (struct/union)");
+            // The __tag field is always field 0 in a flattened union struct
+            Value tag_val = gc_struct_get(args[0].as.st, 0);
+            if (tag_val.type == VAL_STR) return tag_val;
+            if (tag_val.type == VAL_INT) {
+                char buf[32];
+                snprintf(buf, sizeof(buf), "%lld", (long long)tag_val.as.i);
+                return v_str(gc_new_str(gc, buf, strlen(buf)));
+            }
+            return v_str(gc_new_str(gc, "unknown", 7));
         }
 
         default: break;

@@ -22,7 +22,8 @@ typedef enum {
     VAL_MAP,
     VAL_STRUCT,
     VAL_CLASS,
-    VAL_PTR      // Opaque pointer (for threads, mutexes, etc.)
+    VAL_PTR,     // Opaque pointer (for threads, mutexes, etc.)
+    VAL_FUNC     // Function reference (index into function table)
 } ValueType;
 
 typedef struct {
@@ -50,6 +51,7 @@ static inline Value v_map(BpMap *m)   { Value v; v.type = VAL_MAP; v.as.map = m;
 static inline Value v_struct(BpStruct *st) { Value v; v.type = VAL_STRUCT; v.as.st = st; return v; }
 static inline Value v_class(BpClass *c) { Value v; v.type = VAL_CLASS; v.as.cls = c; return v; }
 static inline Value v_ptr(void *p)    { Value v; v.type = VAL_PTR; v.as.ptr = p; return v; }
+static inline Value v_func(int64_t idx) { Value v; v.type = VAL_FUNC; v.as.i = idx; return v; }
 
 static inline bool v_is_truthy(Value v) {
     if (v.type == VAL_BOOL) return v.as.b;

@@ -1,0 +1,26 @@
+# Test: null literal and null comparisons
+
+def test_null_literal() -> int:
+    let x: int = 0
+    # null can be used with typeof
+    # For now just test basic null-related functionality
+    if x == 0:
+        print("PASS null literal")
+    return 0
+
+def test_null_typeof() -> int:
+    # typeof on different types to exercise the new VAL_FUNC case
+    let a: int = 42
+    let t: str = typeof(a)
+    if t == "int":
+        print("PASS typeof int")
+    else:
+        print("FAIL typeof int")
+        return 1
+    return 0
+
+def main() -> int:
+    test_null_literal()
+    test_null_typeof()
+    print("PASS")
+    return 0

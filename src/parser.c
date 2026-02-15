@@ -26,6 +26,20 @@ static void skip_newlines(Parser *p) {
     while (p->cur.kind == TOK_NEWLINE) next(p);
 }
 
+// Deep-copy a Type into a heap-allocated Type*
+static Type *type_clone(Type src) {
+    Type *t = type_new(src.kind);
+    if (src.struct_name) t->struct_name = bp_xstrdup(src.struct_name);
+    if (src.elem_type) { t->elem_type = bp_xmalloc(sizeof(Type)); *t->elem_type = *src.elem_type; if (src.elem_type->struct_name) t->elem_type->struct_name = bp_xstrdup(src.elem_type->struct_name); }
+    if (src.key_type) { t->key_type = bp_xmalloc(sizeof(Type)); *t->key_type = *src.key_type; if (src.key_type->struct_name) t->key_type->struct_name = bp_xstrdup(src.key_type->struct_name); }
+    if (src.return_type) { t->return_type = bp_xmalloc(sizeof(Type)); *t->return_type = *src.return_type; }
+    t->param_types = src.param_types;
+    t->param_count = src.param_count;
+    t->tuple_types = src.tuple_types;
+    t->tuple_len = src.tuple_len;
+    return t;
+}
+
 static Type parse_type(Parser *p) {
     // Handle array types: [int], [str], etc.
     if (p->cur.kind == TOK_LBRACKET) {
@@ -33,12 +47,9 @@ static Type parse_type(Parser *p) {
         Type elem = parse_type(p);  // recursively parse element type
         expect(p, TOK_RBRACKET, "expected ']' after array element type");
         Type t;
+        memset(&t, 0, sizeof(t));
         t.kind = TY_ARRAY;
-        t.elem_type = type_new(elem.kind);
-        t.key_type = NULL;
-        if (elem.kind == TY_ARRAY && elem.elem_type) {
-            t.elem_type->elem_type = elem.elem_type;
-        }
+        t.elem_type = type_clone(elem);
         return t;
     }
 
@@ -50,18 +61,10 @@ static Type parse_type(Parser *p) {
         Type value = parse_type(p);  // parse value type
         expect(p, TOK_RBRACE, "expected '}' after map value type");
         Type t;
+        memset(&t, 0, sizeof(t));
         t.kind = TY_MAP;
-        t.key_type = type_new(key.kind);
-        if (key.kind == TY_ARRAY && key.elem_type) {
-            t.key_type->elem_type = key.elem_type;
-        }
-        t.elem_type = type_new(value.kind);
-        if (value.kind == TY_ARRAY && value.elem_type) {
-            t.elem_type->elem_type = value.elem_type;
-        } else if (value.kind == TY_MAP) {
-            t.elem_type->key_type = value.key_type;
-            t.elem_type->elem_type = value.elem_type;
-        }
+        t.key_type = type_clone(key);
+        t.elem_type = type_clone(value);
         return t;
     }
 
@@ -190,6 +193,16 @@ static Expr *parse_primary(Parser *p) {
     }
     if (accept(p, TOK_TRUE)) return parse_postfix(p, expr_new_bool(true, line));
     if (accept(p, TOK_FALSE)) return parse_postfix(p, expr_new_bool(false, line));
+    if (accept(p, TOK_NULL)) return parse_postfix(p, expr_new_null(line));
+
+    // Function reference: &func_name
+    if (p->cur.kind == TOK_AMP) {
+        next(p);  // consume '&'
+        if (p->cur.kind != TOK_IDENT) bp_fatal("expected function name after '&' at %zu:%zu", p->cur.line, p->cur.col);
+        char *name = dup_lexeme(p->cur);
+        next(p);
+        return expr_new_func_ref(name, line);
+    }
 
     // self keyword
     if (accept(p, TOK_SELF)) {
@@ -1336,6 +1349,72 @@ static ExternDef parse_extern(Parser *p) {
     return ed;
 }
 
+// Parse union definition:
+// union Expr:
+//     IntLit(value: int)
+//     BinOp(op: int, lhs: Expr, rhs: Expr)
+static UnionDef parse_union(Parser *p) {
+    UnionDef ud;
+    memset(&ud, 0, sizeof(ud));
+    ud.line = p->cur.line;
+    expect(p, TOK_UNION, "expected 'union'");
+    if (p->cur.kind != TOK_IDENT) bp_fatal("expected union name at %zu:%zu", p->cur.line, p->cur.col);
+    ud.name = dup_lexeme(p->cur);
+    next(p);
+    expect(p, TOK_COLON, "expected ':' after union name");
+    expect(p, TOK_NEWLINE, "expected newline after ':'");
+    expect(p, TOK_INDENT, "expected indent after union header");
+
+    UnionVariant *variants = NULL;
+    size_t vc = 0, vcap = 0;
+
+    while (p->cur.kind != TOK_DEDENT && p->cur.kind != TOK_EOF) {
+        skip_newlines(p);
+        if (p->cur.kind == TOK_DEDENT || p->cur.kind == TOK_EOF) break;
+
+        if (p->cur.kind != TOK_IDENT) bp_fatal("expected variant name at %zu:%zu", p->cur.line, p->cur.col);
+        UnionVariant v;
+        memset(&v, 0, sizeof(v));
+        v.name = dup_lexeme(p->cur);
+        next(p);
+
+        // Parse variant fields: VariantName(field: type, ...)
+        char **fnames = NULL;
+        Type *ftypes = NULL;
+        size_t fc = 0, fcap = 0;
+        if (accept(p, TOK_LPAREN)) {
+            if (p->cur.kind != TOK_RPAREN) {
+                for (;;) {
+                    if (p->cur.kind != TOK_IDENT) bp_fatal("expected field name in variant at %zu:%zu", p->cur.line, p->cur.col);
+                    char *fname = dup_lexeme(p->cur);
+                    next(p);
+                    expect(p, TOK_COLON, "expected ':' after variant field name");
+                    Type ft = parse_type(p);
+                    if (fc + 1 > fcap) { fcap = fcap ? fcap * 2 : 4; fnames = bp_xrealloc(fnames, fcap * sizeof(*fnames)); ftypes = bp_xrealloc(ftypes, fcap * sizeof(*ftypes)); }
+                    fnames[fc] = fname;
+                    ftypes[fc] = ft;
+                    fc++;
+                    if (!accept(p, TOK_COMMA)) break;
+                }
+            }
+            expect(p, TOK_RPAREN, "expected ')' after variant fields");
+        }
+        v.field_names = fnames;
+        v.field_types = ftypes;
+        v.field_count = fc;
+
+        if (vc + 1 > vcap) { vcap = vcap ? vcap * 2 : 4; variants = bp_xrealloc(variants, vcap * sizeof(*variants)); }
+        variants[vc++] = v;
+
+        skip_newlines(p);
+    }
+    if (p->cur.kind == TOK_DEDENT) next(p);
+
+    ud.variants = variants;
+    ud.variant_count = vc;
+    return ud;
+}
+
 Module parse_module(const char *src) {
     Parser p;
     memset(&p, 0, sizeof(p));
@@ -1345,7 +1424,7 @@ Module parse_module(const char *src) {
     Module m;
     memset(&m, 0, sizeof(m));
 
-    size_t fn_cap = 0, st_cap = 0, en_cap = 0, im_cap = 0, cl_cap = 0, ex_cap = 0, gv_cap = 0;
+    size_t fn_cap = 0, st_cap = 0, en_cap = 0, im_cap = 0, cl_cap = 0, ex_cap = 0, gv_cap = 0, un_cap = 0;
     skip_newlines(&p);
 
     while (p.cur.kind != TOK_EOF) {
@@ -1399,12 +1478,17 @@ Module parse_module(const char *src) {
             ExternDef ed = parse_extern(&p);
             if (m.externc + 1 > ex_cap) { ex_cap = ex_cap ? ex_cap * 2 : 8; m.externs = bp_xrealloc(m.externs, ex_cap * sizeof(*m.externs)); }
             m.externs[m.externc++] = ed;
+        } else if (p.cur.kind == TOK_UNION) {
+            UnionDef ud = parse_union(&p);
+            ud.is_export = is_export;
+            if (m.unionc + 1 > un_cap) { un_cap = un_cap ? un_cap * 2 : 8; m.unions = bp_xrealloc(m.unions, un_cap * sizeof(*m.unions)); }
+            m.unions[m.unionc++] = ud;
         } else if (p.cur.kind == TOK_LET) {
             Stmt *gv = parse_stmt(&p);
             if (m.global_varc + 1 > gv_cap) { gv_cap = gv_cap ? gv_cap * 2 : 8; m.global_vars = bp_xrealloc(m.global_vars, gv_cap * sizeof(*m.global_vars)); }
             m.global_vars[m.global_varc++] = gv;
         } else {
-            bp_fatal("expected 'def', 'struct', 'enum', 'class', 'import', 'extern', 'let', or 'export' at top level (line %zu)", p.cur.line);
+            bp_fatal("expected 'def', 'struct', 'enum', 'class', 'union', 'import', 'extern', 'let', or 'export' at top level (line %zu)", p.cur.line);
         }
 
         skip_newlines(&p);

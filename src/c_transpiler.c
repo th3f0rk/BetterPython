@@ -94,6 +94,7 @@ static void emit_type(CGen *cg, const Type *t) {
         case TY_FUNC:  fputs("void*", cg->out); break;
         case TY_CLASS: fputs("RtVal", cg->out); break;
         case TY_PTR:   fputs("void*", cg->out); break;
+        case TY_UNION: fputs("RtVal", cg->out); break;
     }
 }
 
@@ -437,6 +438,12 @@ static void emit_expr(CGen *cg, const Expr *e) {
             return;
         case EX_BOOL:
             fputs(e->as.bool_val ? "true" : "false", cg->out);
+            return;
+        case EX_NULL:
+            fputs("((void*)0) /* null */", cg->out);
+            return;
+        case EX_FUNC_REF:
+            fprintf(cg->out, "((void*)0) /* func_ref(%s) unsupported in C */", e->as.func_ref.func_name);
             return;
         case EX_STR:
             fputs("bp_str_from_cstr(", cg->out);

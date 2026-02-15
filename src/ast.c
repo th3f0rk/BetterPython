@@ -242,6 +242,18 @@ Expr *expr_new_super_call(char *method_name, Expr **args, size_t argc, size_t li
     return e;
 }
 
+Expr *expr_new_null(size_t line) {
+    Expr *e = expr_alloc(EX_NULL, line);
+    return e;
+}
+
+Expr *expr_new_func_ref(char *func_name, size_t line) {
+    Expr *e = expr_alloc(EX_FUNC_REF, line);
+    e->as.func_ref.func_name = func_name;
+    e->as.func_ref.fn_index = -1;
+    return e;
+}
+
 static Stmt *stmt_alloc(StmtKind k, size_t line) {
     Stmt *s = bp_xmalloc(sizeof(*s));
     memset(s, 0, sizeof(*s));
@@ -446,6 +458,10 @@ static void expr_free(Expr *e) {
             for (size_t i = 0; i < e->as.super_call.argc; i++) expr_free(e->as.super_call.args[i]);
             free(e->as.super_call.args);
             break;
+        case EX_NULL: break;
+        case EX_FUNC_REF:
+            free(e->as.func_ref.func_name);
+            break;
         default: break;
     }
     free(e);
@@ -613,6 +629,23 @@ void module_free(Module *m) {
     free(m->classes);
     m->classes = NULL;
     m->classc = 0;
+
+    // Free unions
+    for (size_t i = 0; i < m->unionc; i++) {
+        UnionDef *ud = &m->unions[i];
+        free(ud->name);
+        for (size_t j = 0; j < ud->variant_count; j++) {
+            free(ud->variants[j].name);
+            for (size_t k = 0; k < ud->variants[j].field_count; k++)
+                free(ud->variants[j].field_names[k]);
+            free(ud->variants[j].field_names);
+            free(ud->variants[j].field_types);
+        }
+        free(ud->variants);
+    }
+    free(m->unions);
+    m->unions = NULL;
+    m->unionc = 0;
 
     // Free global vars
     for (size_t i = 0; i < m->global_varc; i++) {

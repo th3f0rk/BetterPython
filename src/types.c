@@ -298,7 +298,49 @@ static void classtable_free(ClassTable *ct) {
     memset(ct, 0, sizeof(*ct));
 }
 
+// Forward declaration for union table lookup
+typedef struct {
+    char *name;
+    char **variant_names;
+    size_t variant_count;
+    // Flattened struct info
+    char *flat_struct_name;  // Name of the generated flat struct
+} UnionInfo;
+
+typedef struct {
+    UnionInfo *items;
+    size_t len;
+    size_t cap;
+} UnionTable;
+
+static UnionTable g_uniontable = {0};
+
+static UnionInfo *uniontable_get(const char *name);
+
 static bool type_eq(Type a, Type b) {
+    // Null (TY_VOID) is compatible with reference types (struct, class, array, map, str, union, func)
+    if (a.kind == TY_VOID && (b.kind == TY_STRUCT || b.kind == TY_CLASS ||
+        b.kind == TY_ARRAY || b.kind == TY_MAP || b.kind == TY_STR ||
+        b.kind == TY_UNION || b.kind == TY_FUNC || b.kind == TY_PTR)) return true;
+    if (b.kind == TY_VOID && (a.kind == TY_STRUCT || a.kind == TY_CLASS ||
+        a.kind == TY_ARRAY || a.kind == TY_MAP || a.kind == TY_STR ||
+        a.kind == TY_UNION || a.kind == TY_FUNC || a.kind == TY_PTR)) return true;
+
+    // Union type: a union is compatible with its flattened struct
+    if (a.kind == TY_UNION && b.kind == TY_STRUCT) {
+        UnionInfo *ui = uniontable_get(a.struct_name);
+        if (ui && ui->flat_struct_name && b.struct_name &&
+            strcmp(ui->flat_struct_name, b.struct_name) == 0) return true;
+    }
+    if (b.kind == TY_UNION && a.kind == TY_STRUCT) {
+        UnionInfo *ui = uniontable_get(b.struct_name);
+        if (ui && ui->flat_struct_name && a.struct_name &&
+            strcmp(ui->flat_struct_name, a.struct_name) == 0) return true;
+    }
+    if (a.kind == TY_UNION && b.kind == TY_UNION) {
+        if (a.struct_name && b.struct_name && strcmp(a.struct_name, b.struct_name) == 0) return true;
+    }
+
     if (a.kind != b.kind) return false;
     if (a.kind == TY_ARRAY) {
         if (!a.elem_type || !b.elem_type) return a.elem_type == b.elem_type;
@@ -392,8 +434,42 @@ static const char *type_name(Type t) {
         case TY_FUNC:
             snprintf(buf, sizeof(buf), "fn(...) -> %s", t.return_type ? type_name(*t.return_type) : "void");
             return buf;
+        case TY_UNION:
+            if (t.struct_name) return t.struct_name;
+            return "<union>";
         default: return "?";
     }
+}
+
+// Union table functions
+static void uniontable_add(const char *name, char **variant_names, size_t vc, const char *flat_struct_name) {
+    if (g_uniontable.len + 1 > g_uniontable.cap) {
+        g_uniontable.cap = g_uniontable.cap ? g_uniontable.cap * 2 : 8;
+        g_uniontable.items = bp_xrealloc(g_uniontable.items, g_uniontable.cap * sizeof(*g_uniontable.items));
+    }
+    UnionInfo *ui = &g_uniontable.items[g_uniontable.len++];
+    ui->name = bp_xstrdup(name);
+    ui->variant_names = variant_names;
+    ui->variant_count = vc;
+    ui->flat_struct_name = bp_xstrdup(flat_struct_name);
+}
+
+static UnionInfo *uniontable_get(const char *name) {
+    if (!name) return NULL;
+    for (size_t i = 0; i < g_uniontable.len; i++) {
+        if (strcmp(g_uniontable.items[i].name, name) == 0) return &g_uniontable.items[i];
+    }
+    return NULL;
+}
+
+static void uniontable_free(void) {
+    for (size_t i = 0; i < g_uniontable.len; i++) {
+        free(g_uniontable.items[i].name);
+        free(g_uniontable.items[i].flat_struct_name);
+        // variant_names are borrowed from the union AST, not freed here
+    }
+    free(g_uniontable.items);
+    memset(&g_uniontable, 0, sizeof(g_uniontable));
 }
 
 static Type check_expr(Expr *e, Scope *s);
@@ -607,6 +683,12 @@ static bool is_builtin(const char *name) {
     if (strcmp(name, "array_fill") == 0) return true;
     if (strcmp(name, "str_from_chars") == 0) return true;
     if (strcmp(name, "str_bytes") == 0) return true;
+
+    // JSON parser
+    if (strcmp(name, "json_parse") == 0) return true;
+
+    // Union tag introspection
+    if (strcmp(name, "tag") == 0) return true;
 
     return false;
 }
@@ -1552,6 +1634,28 @@ static Type check_builtin_call(Expr *e, Scope *s) {
         return e->inferred;
     }
 
+    // JSON parser: json_parse(str) -> any (we type as str for now - dynamic)
+    if (strcmp(name, "json_parse") == 0) {
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "json_parse expects 1 arg");
+        if (check_expr(e->as.call.args[0], s).kind != TY_STR) bp_fatal_at(e->line, "json_parse expects str");
+        // Returns a map - best approximation for dynamic JSON
+        Type t;
+        memset(&t, 0, sizeof(t));
+        t.kind = TY_MAP;
+        t.key_type = type_new(TY_STR);
+        t.elem_type = type_new(TY_STR);  // values typed as str, runtime is dynamic
+        e->inferred = t;
+        return e->inferred;
+    }
+
+    // tag(value) -> str: returns the union variant name
+    if (strcmp(name, "tag") == 0) {
+        if (e->as.call.argc != 1) bp_fatal_at(e->line, "tag expects 1 arg");
+        check_expr(e->as.call.args[0], s);
+        e->inferred = type_str();
+        return e->inferred;
+    }
+
     bp_fatal("unknown builtin '%s'", name);
     return type_void();
 }
@@ -1604,6 +1708,27 @@ static Type check_expr(Expr *e, Scope *s) {
         case EX_FLOAT: e->inferred = type_float(); return e->inferred;
         case EX_STR: e->inferred = type_str(); return e->inferred;
         case EX_BOOL: e->inferred = type_bool(); return e->inferred;
+        case EX_NULL: e->inferred = type_void(); return e->inferred;
+        case EX_FUNC_REF: {
+            // Look up function in function table
+            FnSig *sig = fntable_get(&g_fntable, e->as.func_ref.func_name);
+            if (!sig) bp_fatal_at(e->line, "unknown function '%s' in function reference", e->as.func_ref.func_name);
+            e->as.func_ref.fn_index = (int)sig->fn_index;
+            // Build TY_FUNC type
+            Type **param_types = NULL;
+            if (sig->param_count > 0) {
+                param_types = bp_xmalloc(sig->param_count * sizeof(Type*));
+                for (size_t i = 0; i < sig->param_count; i++) {
+                    param_types[i] = type_new(sig->param_types[i].kind);
+                    *param_types[i] = sig->param_types[i];
+                }
+            }
+            Type *ret = type_new(sig->ret_type.kind);
+            *ret = sig->ret_type;
+            e->inferred = *type_func(param_types, sig->param_count, ret);
+            e->inferred.struct_name = bp_xstrdup(e->as.func_ref.func_name);
+            return e->inferred;
+        }
         case EX_VAR: {
             Type t = type_void();
             if (!scope_get(s, e->as.var_name, &t)) bp_fatal("undefined variable '%s'", e->as.var_name);
@@ -1708,9 +1833,9 @@ static Type check_expr(Expr *e, Scope *s) {
                              si->name, fname, type_name(si->field_types[fidx]), type_name(fval_type));
                 }
             }
-            // Check all fields are provided
-            if (e->as.struct_literal.field_count != si->field_count) {
-                bp_fatal("struct '%s' requires %zu fields, got %zu",
+            // Allow partial initialization - missing fields default to null/zero
+            if (e->as.struct_literal.field_count > si->field_count) {
+                bp_fatal("struct '%s' has %zu fields, got %zu",
                          si->name, si->field_count, e->as.struct_literal.field_count);
             }
             Type st_type;
@@ -1748,8 +1873,14 @@ static Type check_expr(Expr *e, Scope *s) {
                 }
             }
             Type obj_type = check_expr(e->as.field_access.object, s);
-            if (obj_type.kind == TY_STRUCT) {
-                StructInfo *si = structtable_get(&g_structtable, obj_type.struct_name);
+            if (obj_type.kind == TY_STRUCT || obj_type.kind == TY_UNION) {
+                const char *sname = obj_type.struct_name;
+                // For unions, look up the flattened struct
+                if (obj_type.kind == TY_UNION) {
+                    UnionInfo *ui = uniontable_get(sname);
+                    if (ui) sname = ui->flat_struct_name;
+                }
+                StructInfo *si = structtable_get(&g_structtable, sname);
                 if (!si) {
                     bp_fatal("unknown struct type '%s'", obj_type.struct_name);
                 }
@@ -2233,6 +2364,7 @@ void typecheck_module(Module *m) {
         fntable_free(&g_fntable);  // Clean any previous state
     }
     structtable_free(&g_structtable);  // Clean any previous state
+    uniontable_free();  // Clean union table
     classtable_free(&g_classtable);  // Clean any previous state
     enumtable_free(&g_enumtable);  // Clean any previous state
 
@@ -2282,6 +2414,49 @@ void typecheck_module(Module *m) {
     for (size_t i = 0; i < m->enumc; i++) {
         EnumDef *ed = &m->enums[i];
         enumtable_add(&g_enumtable, ed->name, ed->variant_names, ed->variant_values, ed->variant_count);
+    }
+
+    // Process union definitions: flatten each union into a struct with __tag + all variant fields
+    for (size_t i = 0; i < m->unionc; i++) {
+        UnionDef *ud = &m->unions[i];
+        // Collect all unique field names across all variants
+        char **all_fnames = NULL;
+        Type *all_ftypes = NULL;
+        size_t all_fc = 0, all_fcap = 0;
+
+        // First field is always __tag (int)
+        if (all_fc + 1 > all_fcap) { all_fcap = 8; all_fnames = bp_xrealloc(all_fnames, all_fcap * sizeof(char*)); all_ftypes = bp_xrealloc(all_ftypes, all_fcap * sizeof(Type)); }
+        all_fnames[all_fc] = bp_xstrdup("__tag");
+        all_ftypes[all_fc] = type_int();
+        all_fc++;
+
+        for (size_t v = 0; v < ud->variant_count; v++) {
+            for (size_t f = 0; f < ud->variants[v].field_count; f++) {
+                const char *fname = ud->variants[v].field_names[f];
+                // Check if field already exists
+                bool found = false;
+                for (size_t e2 = 0; e2 < all_fc; e2++) {
+                    if (strcmp(all_fnames[e2], fname) == 0) { found = true; break; }
+                }
+                if (!found) {
+                    if (all_fc + 1 > all_fcap) { all_fcap = all_fcap * 2; all_fnames = bp_xrealloc(all_fnames, all_fcap * sizeof(char*)); all_ftypes = bp_xrealloc(all_ftypes, all_fcap * sizeof(Type)); }
+                    all_fnames[all_fc] = bp_xstrdup(fname);
+                    all_ftypes[all_fc] = ud->variants[v].field_types[f];
+                    all_fc++;
+                }
+            }
+        }
+
+        // Register the flattened struct (use the union name as the struct name)
+        size_t struct_idx = m->structc + i;  // Virtual index
+        structtable_add(&g_structtable, ud->name, all_fnames, all_ftypes, all_fc, struct_idx);
+
+        // Register union in union table with variant names
+        char **vnames = bp_xmalloc(ud->variant_count * sizeof(char*));
+        for (size_t v = 0; v < ud->variant_count; v++) {
+            vnames[v] = ud->variants[v].name;
+        }
+        uniontable_add(ud->name, vnames, ud->variant_count, ud->name);
     }
 
     // Build class table (classes must be defined before use)

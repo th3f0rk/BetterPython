@@ -211,6 +211,8 @@ int reg_vm_run(Vm *vm) {
         [R_BIT_SHR] = &&L_R_BIT_SHR,
         [R_LOAD_GLOBAL] = &&L_R_LOAD_GLOBAL,
         [R_STORE_GLOBAL] = &&L_R_STORE_GLOBAL,
+        [R_FUNC_REF] = &&L_R_FUNC_REF,
+        [R_CALL_INDIRECT] = &&L_R_CALL_INDIRECT,
     };
 
     #define VM_DISPATCH() do { \
@@ -881,6 +883,56 @@ L_R_STORE_GLOBAL: {
     vm->mod.globals[idx] = REG(src);
     VM_DISPATCH();
 }
+L_R_FUNC_REF: {
+    uint8_t dst = code[ip++];
+    uint16_t fn_idx = rd_u16(code, &ip);
+    REG(dst) = v_func((int64_t)fn_idx);
+    VM_DISPATCH();
+}
+L_R_CALL_INDIRECT: {
+    uint8_t dst = code[ip++];
+    uint8_t func_reg = code[ip++];
+    uint8_t arg_base = code[ip++];
+    uint8_t argc = code[ip++];
+
+    Value func_val = REG(func_reg);
+    if (func_val.type != VAL_FUNC) bp_fatal("call_indirect: not a function reference");
+    uint32_t fn_idx = (uint32_t)func_val.as.i;
+    if (UNLIKELY(fn_idx >= vm->mod.fn_len)) bp_fatal("call_indirect: bad function index");
+    BpFunc *callee = &vm->mod.funcs[fn_idx];
+    if (UNLIKELY(frame_count >= MAX_CALL_FRAMES)) bp_fatal("call stack overflow");
+
+    frames[frame_count - 1].ip = ip;
+
+    size_t new_reg_base = regs_top;
+    size_t needed = new_reg_base + callee->reg_count;
+    if (UNLIKELY(needed > total_regs_cap)) {
+        while (needed > total_regs_cap) total_regs_cap *= 2;
+        regs = bp_xrealloc(regs, total_regs_cap * sizeof(Value));
+        for (size_t i = regs_top; i < total_regs_cap; i++) regs[i] = v_null();
+    }
+
+    for (uint8_t i = 0; i < argc; i++) {
+        regs[new_reg_base + i] = REG(arg_base + i);
+    }
+    for (size_t i = argc; i < callee->reg_count; i++) {
+        regs[new_reg_base + i] = v_null();
+    }
+
+    frames[frame_count].fn = callee;
+    frames[frame_count].code = callee->code;
+    frames[frame_count].ip = 0;
+    frames[frame_count].reg_base = new_reg_base;
+    frames[frame_count].return_reg = dst;
+    frame_count++;
+
+    fn = callee;
+    code = callee->code;
+    ip = 0;
+    reg_base = new_reg_base;
+    regs_top = new_reg_base + callee->reg_count;
+    VM_DISPATCH();
+}
 
 vm_exit:
     free(regs);
@@ -1505,6 +1557,56 @@ vm_exit:
                 uint16_t idx; memcpy(&idx, code + ip, 2); ip += 2;
                 if (idx >= vm->mod.global_count) bp_fatal("global index out of bounds");
                 vm->mod.globals[idx] = REG(src);
+                break;
+            }
+            case R_FUNC_REF: {
+                uint8_t dst = code[ip++];
+                uint16_t fn_idx = rd_u16(code, &ip);
+                REG(dst) = v_func((int64_t)fn_idx);
+                break;
+            }
+            case R_CALL_INDIRECT: {
+                uint8_t dst = code[ip++];
+                uint8_t func_reg = code[ip++];
+                uint8_t arg_base = code[ip++];
+                uint8_t argc = code[ip++];
+
+                Value func_val = REG(func_reg);
+                if (func_val.type != VAL_FUNC) bp_fatal("call_indirect: not a function reference");
+                uint32_t fn_idx = (uint32_t)func_val.as.i;
+                if (fn_idx >= vm->mod.fn_len) bp_fatal("call_indirect: bad function index");
+                BpFunc *callee = &vm->mod.funcs[fn_idx];
+                if (frame_count >= MAX_CALL_FRAMES) bp_fatal("call stack overflow");
+
+                frames[frame_count - 1].ip = ip;
+
+                size_t new_reg_base = regs_top;
+                size_t needed = new_reg_base + callee->reg_count;
+                if (needed > total_regs_cap) {
+                    while (needed > total_regs_cap) total_regs_cap *= 2;
+                    regs = bp_xrealloc(regs, total_regs_cap * sizeof(Value));
+                    for (size_t i = regs_top; i < total_regs_cap; i++) regs[i] = v_null();
+                }
+
+                for (uint8_t i = 0; i < argc; i++) {
+                    regs[new_reg_base + i] = REG(arg_base + i);
+                }
+                for (size_t i = argc; i < callee->reg_count; i++) {
+                    regs[new_reg_base + i] = v_null();
+                }
+
+                frames[frame_count].fn = callee;
+                frames[frame_count].code = callee->code;
+                frames[frame_count].ip = 0;
+                frames[frame_count].reg_base = new_reg_base;
+                frames[frame_count].return_reg = dst;
+                frame_count++;
+
+                fn = callee;
+                code = callee->code;
+                ip = 0;
+                reg_base = new_reg_base;
+                regs_top = new_reg_base + callee->reg_count;
                 break;
             }
             default:

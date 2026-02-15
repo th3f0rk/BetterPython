@@ -91,7 +91,13 @@ typedef enum {
     // Match statement
     TOK_MATCH,      // match keyword
     TOK_CASE,       // case keyword
-    TOK_DEFAULT     // default keyword
+    TOK_DEFAULT,    // default keyword
+
+    // Null literal
+    TOK_NULL,       // null keyword
+
+    // Union types
+    TOK_UNION       // union keyword
 } TokenKind;
 
 typedef struct {

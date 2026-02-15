@@ -204,6 +204,14 @@ static bool first_pass(CompileCtx *ctx) {
                 ip += 3;  // reg(1) + global_idx(u16=2)
                 break;
 
+            case R_FUNC_REF:
+                ip += 3;  // dst(1) + fn_idx(u16=2)
+                break;
+
+            case R_CALL_INDIRECT:
+                ip += 4;  // dst(1) + func_reg(1) + arg_base(1) + argc(1)
+                break;
+
             default:
                 if (ctx->jit->debug) {
                     fprintf(stderr, "JIT: Unknown opcode %u in first pass at offset %zu\n", op, ip - 1);

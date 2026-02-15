@@ -30,7 +30,9 @@ typedef enum {
     // Class instance type
     TY_CLASS,
     // C pointer type (for FFI)
-    TY_PTR
+    TY_PTR,
+    // Union (tagged) type
+    TY_UNION
 } TypeKind;
 
 typedef struct Type Type;
@@ -96,7 +98,9 @@ typedef enum {
     EX_FSTRING,         // f-string: f"Hello {name}"
     EX_METHOD_CALL,     // Method call: obj.method(args)
     EX_NEW,             // Class instantiation: new ClassName(args)
-    EX_SUPER_CALL       // Super class call: super.method(args) or super().__init__()
+    EX_SUPER_CALL,      // Super class call: super.method(args) or super().__init__()
+    EX_NULL,            // null literal
+    EX_FUNC_REF         // Function reference: &func_name
 } ExprKind;
 
 typedef enum {
@@ -232,6 +236,12 @@ struct Expr {
             Expr **args;
             size_t argc;
         } super_call;
+
+        // Function reference: &func_name
+        struct {
+            char *func_name;
+            int fn_index;  // Set by type checker
+        } func_ref;
     } as;
 };
 
@@ -389,6 +399,23 @@ typedef struct {
     size_t line;
 } EnumDef;
 
+// Union variant definition
+typedef struct {
+    char *name;             // Variant name (e.g., "IntLit")
+    char **field_names;
+    Type *field_types;
+    size_t field_count;
+} UnionVariant;
+
+// Union (tagged) type definition
+typedef struct {
+    char *name;             // Union name (e.g., "Expr")
+    UnionVariant *variants;
+    size_t variant_count;
+    bool is_export;
+    size_t line;
+} UnionDef;
+
 // Import statement info
 typedef struct {
     char *module_name;      // "math" or "utils/helper"
@@ -436,6 +463,8 @@ typedef struct {
     size_t classc;
     ExternDef *externs;
     size_t externc;
+    UnionDef *unions;
+    size_t unionc;
     Stmt **global_vars;  // Module-level let statements
     size_t global_varc;
 } Module;
@@ -460,6 +489,8 @@ Expr *expr_new_fstring(Expr **parts, size_t partc, size_t line);
 Expr *expr_new_method_call(Expr *object, char *method_name, Expr **args, size_t argc, size_t line);
 Expr *expr_new_new(char *class_name, Expr **args, size_t argc, size_t line);
 Expr *expr_new_super_call(char *method_name, Expr **args, size_t argc, size_t line);
+Expr *expr_new_null(size_t line);
+Expr *expr_new_func_ref(char *func_name, size_t line);
 
 Stmt *stmt_new_let(char *name, Type t, Expr *init, size_t line);
 Stmt *stmt_new_assign(char *name, Expr *value, size_t line);

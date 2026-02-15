@@ -277,6 +277,8 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "array_fill") == 0) return BI_ARRAY_FILL;
     if (strcmp(name, "str_from_chars") == 0) return BI_STR_FROM_CHARS;
     if (strcmp(name, "str_bytes") == 0) return BI_STR_BYTES;
+    if (strcmp(name, "json_parse") == 0) return BI_JSON_PARSE;
+    if (strcmp(name, "tag") == 0) return BI_TAG;
 
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
@@ -916,6 +918,19 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             buf_u8(&fe->code, R_CONST_BOOL);
             buf_u8(&fe->code, dst);
             buf_u8(&fe->code, e->as.bool_val ? 1 : 0);
+            return dst;
+        }
+        case EX_NULL: {
+            uint8_t dst = reg_alloc_temp(&fe->ra);
+            buf_u8(&fe->code, R_CONST_NULL);
+            buf_u8(&fe->code, dst);
+            return dst;
+        }
+        case EX_FUNC_REF: {
+            uint8_t dst = reg_alloc_temp(&fe->ra);
+            buf_u8(&fe->code, R_FUNC_REF);
+            buf_u8(&fe->code, dst);
+            buf_u16(&fe->code, (uint16_t)e->as.func_ref.fn_index);
             return dst;
         }
         case EX_STR: {

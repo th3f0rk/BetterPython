@@ -91,6 +91,11 @@ typedef enum {
     OP_LOAD_GLOBAL,     // Load global variable: u16 global_idx
     OP_STORE_GLOBAL,    // Store global variable: u16 global_idx
 
+    OP_CONST_NULL,      // Push null value onto stack
+
+    OP_FUNC_REF,        // Push function reference: u16 fn_idx
+    OP_CALL_INDIRECT,   // Call through function value: u8 argc (func val + args on stack)
+
     OP_CALL_BUILTIN,
     OP_CALL,
     OP_RET,
@@ -190,6 +195,10 @@ typedef enum {
     // Global variables
     R_LOAD_GLOBAL,      // dst, global_idx(u16): r[dst] = globals[idx]
     R_STORE_GLOBAL,     // src, global_idx(u16): globals[idx] = r[src]
+
+    // Function values
+    R_FUNC_REF,         // dst, fn_idx(u16): r[dst] = func_ref(fn_idx)
+    R_CALL_INDIRECT,    // dst, func_reg, arg_base, argc: r[dst] = r[func_reg](r[arg_base..])
 
     // Bitwise (3-address)
     R_BIT_AND,          // dst, src1, src2: r[dst] = r[src1] & r[src2]
@@ -418,7 +427,13 @@ typedef enum {
 
     // Additional string ops needed for self-hosting
     BI_STR_FROM_CHARS,   // str_from_chars(char_array) -> str
-    BI_STR_BYTES         // str_bytes(s) -> [int]
+    BI_STR_BYTES,        // str_bytes(s) -> [int]
+
+    // JSON parser
+    BI_JSON_PARSE,       // json_parse(str) -> any (map/array/str/int/float/bool/null)
+
+    // Union tag introspection
+    BI_TAG               // tag(union_val) -> str (variant name)
 } BuiltinId;
 
 typedef struct {

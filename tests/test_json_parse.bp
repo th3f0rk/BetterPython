@@ -1,0 +1,48 @@
+# Test: json_parse builtin
+# json_parse returns {str: str} type (runtime values can be dynamic)
+
+def test_parse_object() -> int:
+    let obj: {str: str} = json_parse("{\"name\": \"Alice\", \"city\": \"NYC\"}")
+    if obj["name"] == "Alice" and obj["city"] == "NYC":
+        print("PASS parse object")
+    else:
+        print("FAIL parse object")
+        return 1
+    return 0
+
+def test_parse_nested_object() -> int:
+    let obj: {str: str} = json_parse("{\"key\": \"value\", \"foo\": \"bar\"}")
+    if obj["key"] == "value" and obj["foo"] == "bar":
+        print("PASS parse nested object")
+    else:
+        print("FAIL parse nested object")
+        return 1
+    return 0
+
+def test_parse_empty_object() -> int:
+    let obj: {str: str} = json_parse("{}")
+    if map_len(obj) == 0:
+        print("PASS parse empty object")
+    else:
+        print("FAIL parse empty object")
+        return 1
+    return 0
+
+def test_roundtrip() -> int:
+    let m: {str: str} = {"hello": "world", "test": "pass"}
+    let json_str: str = json_stringify(m)
+    let parsed: {str: str} = json_parse(json_str)
+    if parsed["hello"] == "world" and parsed["test"] == "pass":
+        print("PASS roundtrip")
+    else:
+        print("FAIL roundtrip")
+        return 1
+    return 0
+
+def main() -> int:
+    test_parse_object()
+    test_parse_nested_object()
+    test_parse_empty_object()
+    test_roundtrip()
+    print("PASS")
+    return 0

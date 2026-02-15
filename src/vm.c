@@ -428,6 +428,9 @@ int vm_run(Vm *vm) {
         [OP_STORE_LOCAL] = &&L_OP_STORE_LOCAL,
         [OP_LOAD_GLOBAL] = &&L_OP_LOAD_GLOBAL,
         [OP_STORE_GLOBAL] = &&L_OP_STORE_GLOBAL,
+        [OP_CONST_NULL] = &&L_OP_CONST_NULL,
+        [OP_FUNC_REF] = &&L_OP_FUNC_REF,
+        [OP_CALL_INDIRECT] = &&L_OP_CALL_INDIRECT,
         [OP_ADD_I64] = &&L_OP_ADD_I64,
         [OP_SUB_I64] = &&L_OP_SUB_I64,
         [OP_MUL_I64] = &&L_OP_MUL_I64,
@@ -593,6 +596,54 @@ L_OP_STORE_GLOBAL: {
     uint16_t idx = rd_u16(code, &ip);
     if (idx >= vm->mod.global_count) bp_fatal("global index out of bounds");
     vm->mod.globals[idx] = POP();
+    VM_DISPATCH();
+}
+L_OP_CONST_NULL: {
+    PUSH(v_null());
+    VM_DISPATCH();
+}
+L_OP_FUNC_REF: {
+    uint16_t fn_idx = rd_u16(code, &ip);
+    PUSH(v_func((int64_t)fn_idx));
+    VM_DISPATCH();
+}
+L_OP_CALL_INDIRECT: {
+    uint8_t argc = code[ip++];
+    // Stack: [..., func_val, arg0, arg1, ..., argN-1]
+    // func_val is below the args on the stack
+    if (UNLIKELY((size_t)argc + 1 > vm->sp)) bp_fatal("stack underflow in call_indirect");
+    Value func_val = vm->stack[vm->sp - argc - 1];
+    if (func_val.type != VAL_FUNC) bp_fatal("call_indirect: not a function reference");
+    uint32_t fn_idx = (uint32_t)func_val.as.i;
+    if (UNLIKELY(fn_idx >= vm->mod.fn_len)) bp_fatal("call_indirect: bad function index");
+    BpFunc *callee = &vm->mod.funcs[fn_idx];
+    if (UNLIKELY(frame_count >= MAX_CALL_FRAMES)) bp_fatal("call stack overflow");
+    frames[frame_count - 1].ip = ip;
+    size_t new_locals_base = locals_top;
+    size_t needed = new_locals_base + callee->locals;
+    if (UNLIKELY(needed > total_locals_cap)) {
+        while (needed > total_locals_cap) total_locals_cap *= 2;
+        vm->locals = bp_xrealloc(vm->locals, total_locals_cap * sizeof(Value));
+        for (size_t i = locals_top; i < total_locals_cap; i++) vm->locals[i] = v_null();
+    }
+    // Copy args from stack to locals
+    for (uint8_t i = 0; i < argc; i++) {
+        vm->locals[new_locals_base + i] = vm->stack[vm->sp - argc + i];
+    }
+    vm->sp -= (argc + 1);  // pop args + func_val
+    for (size_t i = argc; i < callee->locals; i++) {
+        vm->locals[new_locals_base + i] = v_null();
+    }
+    frames[frame_count].fn = callee;
+    frames[frame_count].code = callee->code;
+    frames[frame_count].ip = 0;
+    frames[frame_count].locals_base = new_locals_base;
+    frame_count++;
+    fn = callee;
+    code = callee->code;
+    ip = 0;
+    locals_base = new_locals_base;
+    locals_top = new_locals_base + callee->locals;
     VM_DISPATCH();
 }
 L_OP_ADD_I64: { Value b = POP(), a = POP(); PUSH(v_int(a.as.i + b.as.i)); VM_DISPATCH(); }
@@ -1074,6 +1125,50 @@ vm_exit:
                 uint16_t idx = rd_u16(code, &ip);
                 if (idx >= vm->mod.global_count) bp_fatal("global index out of bounds");
                 vm->mod.globals[idx] = pop(vm);
+                break;
+            }
+            case OP_CONST_NULL: {
+                push(vm, v_null());
+                break;
+            }
+            case OP_FUNC_REF: {
+                uint16_t fn_idx = rd_u16(code, &ip);
+                push(vm, v_func((int64_t)fn_idx));
+                break;
+            }
+            case OP_CALL_INDIRECT: {
+                uint8_t argc = code[ip++];
+                Value func_val = vm->stack[vm->sp - argc - 1];
+                if (func_val.type != VAL_FUNC) bp_fatal("call_indirect: not a function reference");
+                uint32_t fn_idx = (uint32_t)func_val.as.i;
+                if (fn_idx >= vm->mod.fn_len) bp_fatal("call_indirect: bad function index");
+                BpFunc *callee = &vm->mod.funcs[fn_idx];
+                if (frame_count >= MAX_CALL_FRAMES) bp_fatal("call stack overflow");
+                frames[frame_count - 1].ip = ip;
+                size_t new_locals_base = locals_top;
+                size_t needed = new_locals_base + callee->locals;
+                if (needed > total_locals_cap) {
+                    while (needed > total_locals_cap) total_locals_cap *= 2;
+                    vm->locals = bp_xrealloc(vm->locals, total_locals_cap * sizeof(Value));
+                    for (size_t i = locals_top; i < total_locals_cap; i++) vm->locals[i] = v_null();
+                }
+                for (uint8_t i = 0; i < argc; i++) {
+                    vm->locals[new_locals_base + i] = vm->stack[vm->sp - argc + i];
+                }
+                vm->sp -= (argc + 1);
+                for (size_t i = argc; i < callee->locals; i++) {
+                    vm->locals[new_locals_base + i] = v_null();
+                }
+                frames[frame_count].fn = callee;
+                frames[frame_count].code = callee->code;
+                frames[frame_count].ip = 0;
+                frames[frame_count].locals_base = new_locals_base;
+                frame_count++;
+                fn = callee;
+                code = callee->code;
+                ip = 0;
+                locals_base = new_locals_base;
+                locals_top = new_locals_base + callee->locals;
                 break;
             }
             case OP_ADD_I64: {

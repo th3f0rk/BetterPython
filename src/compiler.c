@@ -112,6 +112,9 @@ static int locals_try_get(Locals *ls, const char *name) {
 static char **g_global_names = NULL;
 static size_t g_global_count = 0;
 
+// Reference to AST module for struct lookup during partial init
+static const Module *g_compile_module = NULL;
+
 static int global_get(const char *name) {
     for (size_t i = 0; i < g_global_count; i++) {
         if (strcmp(g_global_names[i], name) == 0) return (int)i;
@@ -370,6 +373,8 @@ static BuiltinId builtin_id(const char *name) {
     if (strcmp(name, "array_fill") == 0) return BI_ARRAY_FILL;
     if (strcmp(name, "str_from_chars") == 0) return BI_STR_FROM_CHARS;
     if (strcmp(name, "str_bytes") == 0) return BI_STR_BYTES;
+    if (strcmp(name, "json_parse") == 0) return BI_JSON_PARSE;
+    if (strcmp(name, "tag") == 0) return BI_TAG;
 
     bp_fatal("unknown builtin '%s'", name);
     return BI_PRINT;
@@ -921,6 +926,13 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
             buf_u8(&fe->code, OP_CONST_F64);
             buf_f64(&fe->code, e->as.float_val);
             return;
+        case EX_NULL:
+            buf_u8(&fe->code, OP_CONST_NULL);
+            return;
+        case EX_FUNC_REF:
+            buf_u8(&fe->code, OP_FUNC_REF);
+            buf_u16(&fe->code, (uint16_t)e->as.func_ref.fn_index);
+            return;
         case EX_BOOL:
             buf_u8(&fe->code, OP_CONST_BOOL);
             buf_u8(&fe->code, e->as.bool_val ? 1 : 0);
@@ -1060,13 +1072,47 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
             return;
         }
         case EX_STRUCT_LITERAL: {
-            // Push all field values onto stack
-            for (size_t i = 0; i < e->as.struct_literal.field_count; i++) {
-                emit_expr(fe, e->as.struct_literal.field_values[i]);
+            // Check if partial init: look up struct in AST module for full field list
+            const char *sname = e->as.struct_literal.struct_name;
+            size_t total_fc = e->as.struct_literal.field_count;
+            char **def_fnames = NULL;
+
+            // Search module struct/union defs for full field list
+            if (g_compile_module) {
+                for (size_t si = 0; si < g_compile_module->structc; si++) {
+                    if (strcmp(g_compile_module->structs[si].name, sname) == 0) {
+                        total_fc = g_compile_module->structs[si].field_count;
+                        def_fnames = g_compile_module->structs[si].field_names;
+                        break;
+                    }
+                }
             }
-            buf_u8(&fe->code, OP_STRUCT_NEW);
-            buf_u16(&fe->code, 0);  // struct type ID (simple for now)
-            buf_u16(&fe->code, (uint16_t)e->as.struct_literal.field_count);
+
+            if (def_fnames && total_fc > e->as.struct_literal.field_count) {
+                // Partial init: push in definition order, null for missing
+                for (size_t f = 0; f < total_fc; f++) {
+                    bool found = false;
+                    for (size_t i = 0; i < e->as.struct_literal.field_count; i++) {
+                        if (strcmp(def_fnames[f], e->as.struct_literal.field_names[i]) == 0) {
+                            emit_expr(fe, e->as.struct_literal.field_values[i]);
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) buf_u8(&fe->code, OP_CONST_NULL);
+                }
+                buf_u8(&fe->code, OP_STRUCT_NEW);
+                buf_u16(&fe->code, 0);
+                buf_u16(&fe->code, (uint16_t)total_fc);
+            } else {
+                // Full init: push in literal order
+                for (size_t i = 0; i < e->as.struct_literal.field_count; i++) {
+                    emit_expr(fe, e->as.struct_literal.field_values[i]);
+                }
+                buf_u8(&fe->code, OP_STRUCT_NEW);
+                buf_u16(&fe->code, 0);
+                buf_u16(&fe->code, (uint16_t)e->as.struct_literal.field_count);
+            }
             return;
         }
         case EX_FIELD_ACCESS: {
@@ -1208,6 +1254,7 @@ BpModule compile_module(const Module *m) {
     BpModule out;
     memset(&out, 0, sizeof(out));
 
+    g_compile_module = m;  // Store for struct lookup during partial init
     StrPool pool = {0};
 
     // Count total functions: module functions + all class methods + lambdas

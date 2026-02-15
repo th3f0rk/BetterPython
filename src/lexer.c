@@ -183,7 +183,8 @@ static TokenKind keyword_kind(const char *s, size_t n) {
         {"try", TOK_TRY}, {"catch", TOK_CATCH}, {"finally", TOK_FINALLY}, {"throw", TOK_THROW},
         {"struct", TOK_STRUCT}, {"enum", TOK_ENUM}, {"fn", TOK_FN}, {"from", TOK_FROM}, {"self", TOK_SELF},
         {"class", TOK_CLASS}, {"new", TOK_NEW}, {"super", TOK_SUPER}, {"extern", TOK_EXTERN}, {"ptr", TOK_PTR},
-        {"match", TOK_MATCH}, {"case", TOK_CASE}, {"default", TOK_DEFAULT}
+        {"match", TOK_MATCH}, {"case", TOK_CASE}, {"default", TOK_DEFAULT},
+        {"null", TOK_NULL}, {"union", TOK_UNION}
     };
     for (size_t i = 0; i < sizeof(m) / sizeof(m[0]); i++) {
         if (strlen(m[i].k) == n && memcmp(s, m[i].k, n) == 0) return m[i].t;
@@ -421,6 +422,8 @@ const char *token_kind_name(TokenKind k) {
         case TOK_MATCH: return "MATCH";
         case TOK_CASE: return "CASE";
         case TOK_DEFAULT: return "DEFAULT";
+        case TOK_NULL: return "NULL";
+        case TOK_UNION: return "UNION";
         default: return "UNKNOWN";
     }
 }
