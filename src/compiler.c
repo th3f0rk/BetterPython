@@ -672,7 +672,7 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
                 buf_u16(&fe->code, coll_slot);
                 buf_u8(&fe->code, OP_CALL_BUILTIN);
                 buf_u16(&fe->code, (uint16_t)BI_MAP_KEYS);
-                buf_u8(&fe->code, 1);
+                buf_u16(&fe->code, 1);
                 buf_u8(&fe->code, OP_STORE_LOCAL);
                 buf_u16(&fe->code, coll_slot);
             }
@@ -682,7 +682,7 @@ static void emit_stmt(FnEmit *fe, const Stmt *s) {
             buf_u16(&fe->code, coll_slot);
             buf_u8(&fe->code, OP_CALL_BUILTIN);
             buf_u16(&fe->code, (uint16_t)BI_ARRAY_LEN);
-            buf_u8(&fe->code, 1);
+            buf_u16(&fe->code, 1);
             uint16_t len_slot = locals_add(&fe->locals, "__for_len");
             buf_u8(&fe->code, OP_STORE_LOCAL);
             buf_u16(&fe->code, len_slot);
@@ -1189,7 +1189,7 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
             if (e->as.fstring.parts[0]->inferred.kind != TY_STR) {
                 buf_u8(&fe->code, OP_CALL_BUILTIN);
                 buf_u16(&fe->code, (uint16_t)BI_TO_STR);
-                buf_u8(&fe->code, 1);
+                buf_u16(&fe->code, 1);
             }
             // Emit remaining parts and concatenate
             for (size_t i = 1; i < e->as.fstring.partc; i++) {
@@ -1197,7 +1197,7 @@ static void emit_expr(FnEmit *fe, const Expr *e) {
                 if (e->as.fstring.parts[i]->inferred.kind != TY_STR) {
                     buf_u8(&fe->code, OP_CALL_BUILTIN);
                     buf_u16(&fe->code, (uint16_t)BI_TO_STR);
-                    buf_u8(&fe->code, 1);
+                    buf_u16(&fe->code, 1);
                 }
                 buf_u8(&fe->code, OP_ADD_STR);
             }

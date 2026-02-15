@@ -132,17 +132,17 @@ static void patch_function_calls(BpFunc *func, size_t *fn_remap, size_t fn_count
             case OP_CALL: {
                 // Patch function index
                 i++;  // skip opcode
-                uint16_t old_idx;
-                memcpy(&old_idx, &code[i], 2);
+                uint32_t old_idx;
+                memcpy(&old_idx, &code[i], 4);
                 if (old_idx < fn_count) {
-                    uint16_t new_idx = (uint16_t)fn_remap[old_idx];
-                    memcpy(&code[i], &new_idx, 2);
+                    uint32_t new_idx = (uint32_t)fn_remap[old_idx];
+                    memcpy(&code[i], &new_idx, 4);
                 }
-                i += 3;  // fn_idx (2) + argc (1)
+                i += 6;  // fn_idx (u32=4) + argc (u16=2)
                 break;
             }
             case OP_CALL_BUILTIN:
-                i += 4;  // opcode + builtin_id (2) + argc (1)
+                i += 5;  // opcode + builtin_id (u16=2) + argc (u16=2)
                 break;
             case OP_ARRAY_NEW:
             case OP_MAP_NEW:

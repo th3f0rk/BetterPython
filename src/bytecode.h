@@ -244,8 +244,8 @@ typedef enum {
     BI_STR_ENDS_WITH,
     BI_STR_FIND,
     BI_STR_REPLACE,
-    BI_STR_SPLIT,
-    BI_STR_JOIN,
+    BI_STR_SPLIT,   // deprecated: use BI_STR_SPLIT_STR
+    BI_STR_JOIN,    // deprecated: use BI_STR_JOIN_ARR
     
     // Random numbers
     BI_RAND,

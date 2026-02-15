@@ -1182,7 +1182,9 @@ static Type check_builtin_call(Expr *e, Scope *s) {
 
     // Threading builtins
     if (strcmp(name, "thread_spawn") == 0) {
-        // thread_spawn(func_idx, ...args) -> ptr
+        // thread_spawn(func_ref, ...args) -> ptr
+        if (e->as.call.argc < 1) bp_fatal_at(e->line, "thread_spawn expects at least 1 arg");
+        for (size_t i = 0; i < e->as.call.argc; i++) check_expr(e->as.call.args[i], s);
         e->inferred.kind = TY_PTR;
         e->inferred.elem_type = NULL;
         return e->inferred;

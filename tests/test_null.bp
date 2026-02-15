@@ -1,26 +1,70 @@
-# Test: null literal and null comparisons
+# Test: null literal and typeof across all value types
 
-def test_null_literal() -> int:
-    let x: int = 0
-    # null can be used with typeof
-    # For now just test basic null-related functionality
-    if x == 0:
-        print("PASS null literal")
+def test_typeof_null() -> int:
+    let t: str = typeof(null)
+    if t == "null":
+        print("PASS typeof null")
+    else:
+        print("FAIL typeof null got " + t)
+        return 1
     return 0
 
-def test_null_typeof() -> int:
-    # typeof on different types to exercise the new VAL_FUNC case
-    let a: int = 42
-    let t: str = typeof(a)
+def test_typeof_int() -> int:
+    let x: int = 42
+    let t: str = typeof(x)
     if t == "int":
         print("PASS typeof int")
     else:
-        print("FAIL typeof int")
+        print("FAIL typeof int got " + t)
+        return 1
+    return 0
+
+def test_typeof_str() -> int:
+    let s: str = "hello"
+    let t: str = typeof(s)
+    if t == "str":
+        print("PASS typeof str")
+    else:
+        print("FAIL typeof str got " + t)
+        return 1
+    return 0
+
+def test_typeof_float() -> int:
+    let f: float = 3.14
+    let t: str = typeof(f)
+    if t == "float":
+        print("PASS typeof float")
+    else:
+        print("FAIL typeof float got " + t)
+        return 1
+    return 0
+
+def test_typeof_bool() -> int:
+    let b: bool = true
+    let t: str = typeof(b)
+    if t == "bool":
+        print("PASS typeof bool")
+    else:
+        print("FAIL typeof bool got " + t)
+        return 1
+    return 0
+
+def test_typeof_array() -> int:
+    let a: [int] = [1, 2, 3]
+    let t: str = typeof(a)
+    if t == "array":
+        print("PASS typeof array")
+    else:
+        print("FAIL typeof array got " + t)
         return 1
     return 0
 
 def main() -> int:
-    test_null_literal()
-    test_null_typeof()
+    test_typeof_null()
+    test_typeof_int()
+    test_typeof_str()
+    test_typeof_float()
+    test_typeof_bool()
+    test_typeof_array()
     print("PASS")
     return 0
