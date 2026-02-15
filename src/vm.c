@@ -407,10 +407,26 @@ static Value op_eq(Value a, Value b) {
     return v_bool(false);
 }
 
-static Value op_lt(Value a, Value b) { return v_bool(a.as.i < b.as.i); }
-static Value op_lte(Value a, Value b) { return v_bool(a.as.i <= b.as.i); }
-static Value op_gt(Value a, Value b) { return v_bool(a.as.i > b.as.i); }
-static Value op_gte(Value a, Value b) { return v_bool(a.as.i >= b.as.i); }
+static Value op_lt(Value a, Value b) {
+    if (a.type == VAL_STR && b.type == VAL_STR)
+        return v_bool(strcmp(a.as.s->data, b.as.s->data) < 0);
+    return v_bool(a.as.i < b.as.i);
+}
+static Value op_lte(Value a, Value b) {
+    if (a.type == VAL_STR && b.type == VAL_STR)
+        return v_bool(strcmp(a.as.s->data, b.as.s->data) <= 0);
+    return v_bool(a.as.i <= b.as.i);
+}
+static Value op_gt(Value a, Value b) {
+    if (a.type == VAL_STR && b.type == VAL_STR)
+        return v_bool(strcmp(a.as.s->data, b.as.s->data) > 0);
+    return v_bool(a.as.i > b.as.i);
+}
+static Value op_gte(Value a, Value b) {
+    if (a.type == VAL_STR && b.type == VAL_STR)
+        return v_bool(strcmp(a.as.s->data, b.as.s->data) >= 0);
+    return v_bool(a.as.i >= b.as.i);
+}
 
 int vm_run(Vm *vm) {
     if (vm->mod.entry >= vm->mod.fn_len) bp_fatal("no entry function");
@@ -772,14 +788,25 @@ L_OP_ARRAY_NEW: {
 L_OP_ARRAY_GET: {
     Value idx_val = POP();
     Value arr_val = POP();
-    if (arr_val.type != VAL_ARRAY) bp_fatal("cannot index non-array");
-    if (idx_val.type != VAL_INT) bp_fatal("array index must be int");
+    if (idx_val.type != VAL_INT) bp_fatal("index must be int");
     int64_t idx = idx_val.as.i;
-    if (idx < 0) idx = (int64_t)arr_val.as.arr->len + idx;
-    if (idx < 0 || (size_t)idx >= arr_val.as.arr->len) {
-        bp_fatal("array index out of bounds: %lld (len %zu)", (long long)idx, arr_val.as.arr->len);
+    if (arr_val.type == VAL_STR) {
+        BpStr *s = arr_val.as.s;
+        if (idx < 0) idx = (int64_t)s->len + idx;
+        if (idx < 0 || (size_t)idx >= s->len) {
+            bp_fatal("string index out of bounds: %lld (len %zu)", (long long)idx, s->len);
+        }
+        BpStr *ch = gc_new_str(&vm->gc, &s->data[idx], 1);
+        PUSH(v_str(ch));
+    } else if (arr_val.type == VAL_ARRAY) {
+        if (idx < 0) idx = (int64_t)arr_val.as.arr->len + idx;
+        if (idx < 0 || (size_t)idx >= arr_val.as.arr->len) {
+            bp_fatal("array index out of bounds: %lld (len %zu)", (long long)idx, arr_val.as.arr->len);
+        }
+        PUSH(gc_array_get(arr_val.as.arr, (size_t)idx));
+    } else {
+        bp_fatal("cannot index type");
     }
-    PUSH(gc_array_get(arr_val.as.arr, (size_t)idx));
     VM_DISPATCH();
 }
 L_OP_ARRAY_SET: {
@@ -1427,14 +1454,23 @@ vm_exit:
             case OP_ARRAY_GET: {
                 Value idx_val = pop(vm);
                 Value arr_val = pop(vm);
-                if (arr_val.type != VAL_ARRAY) bp_fatal("cannot index non-array");
-                if (idx_val.type != VAL_INT) bp_fatal("array index must be int");
+                if (idx_val.type != VAL_INT) bp_fatal("index must be int");
                 int64_t idx = idx_val.as.i;
-                if (idx < 0) idx = (int64_t)arr_val.as.arr->len + idx;  // Support negative indexing
-                if (idx < 0 || (size_t)idx >= arr_val.as.arr->len) {
-                    bp_fatal("array index out of bounds: %lld (len %zu)", (long long)idx, arr_val.as.arr->len);
+                if (arr_val.type == VAL_STR) {
+                    BpStr *s = arr_val.as.s;
+                    if (idx < 0) idx = (int64_t)s->len + idx;
+                    if (idx < 0 || (size_t)idx >= s->len)
+                        bp_fatal("string index out of bounds");
+                    BpStr *ch = gc_new_str(&vm->gc, &s->data[idx], 1);
+                    push(vm, v_str(ch));
+                } else if (arr_val.type == VAL_ARRAY) {
+                    if (idx < 0) idx = (int64_t)arr_val.as.arr->len + idx;
+                    if (idx < 0 || (size_t)idx >= arr_val.as.arr->len)
+                        bp_fatal("array index out of bounds");
+                    push(vm, gc_array_get(arr_val.as.arr, (size_t)idx));
+                } else {
+                    bp_fatal("cannot index type");
                 }
-                push(vm, gc_array_get(arr_val.as.arr, (size_t)idx));
                 break;
             }
             case OP_ARRAY_SET: {

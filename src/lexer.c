@@ -319,6 +319,11 @@ static Token lex_one(Lexer *lx) {
     if (c == '<' && nxt(lx) == '=') { adv(lx); adv(lx); return tok_make(TOK_LTE, NULL, 0, line, col); }
     if (c == '>' && nxt(lx) == '=') { adv(lx); adv(lx); return tok_make(TOK_GTE, NULL, 0, line, col); }
 
+    if (c == '+' && nxt(lx) == '=') { adv(lx); adv(lx); return tok_make(TOK_PLUS_EQ, NULL, 0, line, col); }
+    if (c == '-' && nxt(lx) == '=') { adv(lx); adv(lx); return tok_make(TOK_MINUS_EQ, NULL, 0, line, col); }
+    if (c == '*' && nxt(lx) == '=') { adv(lx); adv(lx); return tok_make(TOK_STAR_EQ, NULL, 0, line, col); }
+    if (c == '/' && nxt(lx) == '=') { adv(lx); adv(lx); return tok_make(TOK_SLASH_EQ, NULL, 0, line, col); }
+    if (c == '%' && nxt(lx) == '=') { adv(lx); adv(lx); return tok_make(TOK_PCT_EQ, NULL, 0, line, col); }
     if (c == '=') { adv(lx); return tok_make(TOK_ASSIGN, NULL, 0, line, col); }
     if (c == '+') { adv(lx); return tok_make(TOK_PLUS, NULL, 0, line, col); }
     if (c == '-') { adv(lx); return tok_make(TOK_MINUS, NULL, 0, line, col); }
@@ -424,6 +429,11 @@ const char *token_kind_name(TokenKind k) {
         case TOK_DEFAULT: return "DEFAULT";
         case TOK_NULL: return "NULL";
         case TOK_UNION: return "UNION";
+        case TOK_PLUS_EQ: return "PLUS_EQ";
+        case TOK_MINUS_EQ: return "MINUS_EQ";
+        case TOK_STAR_EQ: return "STAR_EQ";
+        case TOK_SLASH_EQ: return "SLASH_EQ";
+        case TOK_PCT_EQ: return "PCT_EQ";
         default: return "UNKNOWN";
     }
 }

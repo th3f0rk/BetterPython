@@ -97,7 +97,14 @@ typedef enum {
     TOK_NULL,       // null keyword
 
     // Union types
-    TOK_UNION       // union keyword
+    TOK_UNION,      // union keyword
+
+    // Compound assignment
+    TOK_PLUS_EQ,    // +=
+    TOK_MINUS_EQ,   // -=
+    TOK_STAR_EQ,    // *=
+    TOK_SLASH_EQ,   // /=
+    TOK_PCT_EQ      // %=
 } TokenKind;
 
 typedef struct {

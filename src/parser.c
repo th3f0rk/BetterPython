@@ -877,6 +877,27 @@ static Stmt *parse_stmt(Parser *p) {
             Expr *v = parse_expr(p);
             return stmt_new_assign(dup_lexeme(id), v, line);
         }
+        // Compound assignment: x += expr  =>  x = x + expr
+        if (peek.kind == TOK_PLUS_EQ || peek.kind == TOK_MINUS_EQ ||
+            peek.kind == TOK_STAR_EQ || peek.kind == TOK_SLASH_EQ ||
+            peek.kind == TOK_PCT_EQ) {
+            next(p);  // consume ident
+            TokenKind op_kind = p->cur.kind;
+            next(p);  // consume operator
+            Expr *rhs = parse_expr(p);
+            BinaryOp bop;
+            switch (op_kind) {
+                case TOK_PLUS_EQ:  bop = BOP_ADD; break;
+                case TOK_MINUS_EQ: bop = BOP_SUB; break;
+                case TOK_STAR_EQ:  bop = BOP_MUL; break;
+                case TOK_SLASH_EQ: bop = BOP_DIV; break;
+                default:           bop = BOP_MOD; break;
+            }
+            char *name = dup_lexeme(id);
+            Expr *var = expr_new_var(name, line);
+            Expr *binop = expr_new_binary(bop, var, rhs, line);
+            return stmt_new_assign(bp_xstrdup(name), binop, line);
+        }
         if (peek.kind == TOK_LBRACKET) {
             // Possible array index assignment: arr[idx] = value
             // Parse the full expression first

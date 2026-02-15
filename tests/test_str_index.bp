@@ -1,0 +1,116 @@
+# Test: string indexing and comparison
+
+def test_str_index() -> int:
+    let s: str = "hello"
+    if s[0] == "h" and s[1] == "e" and s[4] == "o":
+        print("PASS str indexing")
+    else:
+        print("FAIL str indexing")
+        return 1
+    return 0
+
+def test_str_negative_index() -> int:
+    let s: str = "world"
+    if s[-1] == "d" and s[-2] == "l":
+        print("PASS str negative indexing")
+    else:
+        print("FAIL str negative indexing")
+        return 1
+    return 0
+
+def test_str_compare() -> int:
+    if "apple" < "banana":
+        print("PASS str less than")
+    else:
+        print("FAIL str less than")
+        return 1
+    if "zoo" > "apple":
+        print("PASS str greater than")
+    else:
+        print("FAIL str greater than")
+        return 1
+    if "abc" <= "abc":
+        print("PASS str less equal")
+    else:
+        print("FAIL str less equal")
+        return 1
+    if "def" >= "abc":
+        print("PASS str greater equal")
+    else:
+        print("FAIL str greater equal")
+        return 1
+    return 0
+
+def test_compound_assign() -> int:
+    let x: int = 10
+    x += 5
+    if x == 15:
+        print("PASS += int")
+    else:
+        print("FAIL += int")
+        return 1
+
+    x -= 3
+    if x == 12:
+        print("PASS -= int")
+    else:
+        print("FAIL -= int")
+        return 1
+
+    x *= 2
+    if x == 24:
+        print("PASS *= int")
+    else:
+        print("FAIL *= int")
+        return 1
+
+    x /= 4
+    if x == 6:
+        print("PASS /= int")
+    else:
+        print("FAIL /= int")
+        return 1
+
+    x %= 4
+    if x == 2:
+        print("PASS %= int")
+    else:
+        print("FAIL %= int")
+        return 1
+    return 0
+
+def test_compound_str() -> int:
+    let s: str = "hello"
+    s += " world"
+    if s == "hello world":
+        print("PASS += str")
+    else:
+        print("FAIL += str")
+        return 1
+    return 0
+
+def test_str_loop() -> int:
+    # Build a string char by char using indexing
+    let s: str = "Hello"
+    let result: str = ""
+    let i: int = 0
+    while i < len(s):
+        let ch: str = s[i]
+        result += ch
+        i += 1
+    if result == "Hello":
+        print("PASS str loop indexing")
+    else:
+        print("FAIL str loop indexing")
+        return 1
+    return 0
+
+def main() -> int:
+    test_str_index()
+    test_str_negative_index()
+    test_str_compare()
+    test_compound_assign()
+    test_compound_str()
+    test_str_loop()
+    print("PASS")
+    return 0

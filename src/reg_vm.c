@@ -390,28 +390,40 @@ L_R_LT: {
     uint8_t dst = code[ip++];
     uint8_t src1 = code[ip++];
     uint8_t src2 = code[ip++];
-    REG(dst) = v_bool(REG(src1).as.i < REG(src2).as.i);
+    if (REG(src1).type == VAL_STR && REG(src2).type == VAL_STR)
+        REG(dst) = v_bool(strcmp(REG(src1).as.s->data, REG(src2).as.s->data) < 0);
+    else
+        REG(dst) = v_bool(REG(src1).as.i < REG(src2).as.i);
     VM_DISPATCH();
 }
 L_R_LTE: {
     uint8_t dst = code[ip++];
     uint8_t src1 = code[ip++];
     uint8_t src2 = code[ip++];
-    REG(dst) = v_bool(REG(src1).as.i <= REG(src2).as.i);
+    if (REG(src1).type == VAL_STR && REG(src2).type == VAL_STR)
+        REG(dst) = v_bool(strcmp(REG(src1).as.s->data, REG(src2).as.s->data) <= 0);
+    else
+        REG(dst) = v_bool(REG(src1).as.i <= REG(src2).as.i);
     VM_DISPATCH();
 }
 L_R_GT: {
     uint8_t dst = code[ip++];
     uint8_t src1 = code[ip++];
     uint8_t src2 = code[ip++];
-    REG(dst) = v_bool(REG(src1).as.i > REG(src2).as.i);
+    if (REG(src1).type == VAL_STR && REG(src2).type == VAL_STR)
+        REG(dst) = v_bool(strcmp(REG(src1).as.s->data, REG(src2).as.s->data) > 0);
+    else
+        REG(dst) = v_bool(REG(src1).as.i > REG(src2).as.i);
     VM_DISPATCH();
 }
 L_R_GTE: {
     uint8_t dst = code[ip++];
     uint8_t src1 = code[ip++];
     uint8_t src2 = code[ip++];
-    REG(dst) = v_bool(REG(src1).as.i >= REG(src2).as.i);
+    if (REG(src1).type == VAL_STR && REG(src2).type == VAL_STR)
+        REG(dst) = v_bool(strcmp(REG(src1).as.s->data, REG(src2).as.s->data) >= 0);
+    else
+        REG(dst) = v_bool(REG(src1).as.i >= REG(src2).as.i);
     VM_DISPATCH();
 }
 L_R_LT_F64: {
@@ -617,14 +629,20 @@ L_R_ARRAY_GET: {
     uint8_t idx_reg = code[ip++];
     Value arr_val = REG(arr_reg);
     Value idx_val = REG(idx_reg);
-    if (arr_val.type != VAL_ARRAY) bp_fatal("cannot index non-array");
-    if (idx_val.type != VAL_INT) bp_fatal("array index must be int");
+    if (idx_val.type != VAL_INT) bp_fatal("index must be int");
     int64_t idx = idx_val.as.i;
-    if (idx < 0) idx = (int64_t)arr_val.as.arr->len + idx;
-    if (idx < 0 || (size_t)idx >= arr_val.as.arr->len) {
-        bp_fatal("array index out of bounds");
+    if (arr_val.type == VAL_STR) {
+        BpStr *s = arr_val.as.s;
+        if (idx < 0) idx = (int64_t)s->len + idx;
+        if (idx < 0 || (size_t)idx >= s->len) bp_fatal("string index out of bounds");
+        REG(dst) = v_str(gc_new_str(&vm->gc, &s->data[idx], 1));
+    } else if (arr_val.type == VAL_ARRAY) {
+        if (idx < 0) idx = (int64_t)arr_val.as.arr->len + idx;
+        if (idx < 0 || (size_t)idx >= arr_val.as.arr->len) bp_fatal("array index out of bounds");
+        REG(dst) = gc_array_get(arr_val.as.arr, (size_t)idx);
+    } else {
+        bp_fatal("cannot index type");
     }
-    REG(dst) = gc_array_get(arr_val.as.arr, (size_t)idx);
     VM_DISPATCH();
 }
 L_R_ARRAY_SET: {
@@ -1102,28 +1120,40 @@ vm_exit:
                 uint8_t dst = code[ip++];
                 uint8_t src1 = code[ip++];
                 uint8_t src2 = code[ip++];
-                REG(dst) = v_bool(REG(src1).as.i < REG(src2).as.i);
+                if (REG(src1).type == VAL_STR && REG(src2).type == VAL_STR)
+                    REG(dst) = v_bool(strcmp(REG(src1).as.s->data, REG(src2).as.s->data) < 0);
+                else
+                    REG(dst) = v_bool(REG(src1).as.i < REG(src2).as.i);
                 break;
             }
             case R_LTE: {
                 uint8_t dst = code[ip++];
                 uint8_t src1 = code[ip++];
                 uint8_t src2 = code[ip++];
-                REG(dst) = v_bool(REG(src1).as.i <= REG(src2).as.i);
+                if (REG(src1).type == VAL_STR && REG(src2).type == VAL_STR)
+                    REG(dst) = v_bool(strcmp(REG(src1).as.s->data, REG(src2).as.s->data) <= 0);
+                else
+                    REG(dst) = v_bool(REG(src1).as.i <= REG(src2).as.i);
                 break;
             }
             case R_GT: {
                 uint8_t dst = code[ip++];
                 uint8_t src1 = code[ip++];
                 uint8_t src2 = code[ip++];
-                REG(dst) = v_bool(REG(src1).as.i > REG(src2).as.i);
+                if (REG(src1).type == VAL_STR && REG(src2).type == VAL_STR)
+                    REG(dst) = v_bool(strcmp(REG(src1).as.s->data, REG(src2).as.s->data) > 0);
+                else
+                    REG(dst) = v_bool(REG(src1).as.i > REG(src2).as.i);
                 break;
             }
             case R_GTE: {
                 uint8_t dst = code[ip++];
                 uint8_t src1 = code[ip++];
                 uint8_t src2 = code[ip++];
-                REG(dst) = v_bool(REG(src1).as.i >= REG(src2).as.i);
+                if (REG(src1).type == VAL_STR && REG(src2).type == VAL_STR)
+                    REG(dst) = v_bool(strcmp(REG(src1).as.s->data, REG(src2).as.s->data) >= 0);
+                else
+                    REG(dst) = v_bool(REG(src1).as.i >= REG(src2).as.i);
                 break;
             }
             case R_LT_F64: {
@@ -1320,14 +1350,20 @@ vm_exit:
                 uint8_t idx_reg = code[ip++];
                 Value arr_val = REG(arr_reg);
                 Value idx_val = REG(idx_reg);
-                if (arr_val.type != VAL_ARRAY) bp_fatal("cannot index non-array");
-                if (idx_val.type != VAL_INT) bp_fatal("array index must be int");
+                if (idx_val.type != VAL_INT) bp_fatal("index must be int");
                 int64_t idx = idx_val.as.i;
-                if (idx < 0) idx = (int64_t)arr_val.as.arr->len + idx;
-                if (idx < 0 || (size_t)idx >= arr_val.as.arr->len) {
-                    bp_fatal("array index out of bounds");
+                if (arr_val.type == VAL_STR) {
+                    BpStr *s = arr_val.as.s;
+                    if (idx < 0) idx = (int64_t)s->len + idx;
+                    if (idx < 0 || (size_t)idx >= s->len) bp_fatal("string index out of bounds");
+                    REG(dst) = v_str(gc_new_str(&vm->gc, &s->data[idx], 1));
+                } else if (arr_val.type == VAL_ARRAY) {
+                    if (idx < 0) idx = (int64_t)arr_val.as.arr->len + idx;
+                    if (idx < 0 || (size_t)idx >= arr_val.as.arr->len) bp_fatal("array index out of bounds");
+                    REG(dst) = gc_array_get(arr_val.as.arr, (size_t)idx);
+                } else {
+                    bp_fatal("cannot index type");
                 }
-                REG(dst) = gc_array_get(arr_val.as.arr, (size_t)idx);
                 break;
             }
             case R_ARRAY_SET: {

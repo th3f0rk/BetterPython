@@ -1782,6 +1782,11 @@ static Type check_expr(Expr *e, Scope *s) {
                 } else {
                     e->inferred = type_void();
                 }
+            } else if (container_type.kind == TY_STR) {
+                if (idx_type.kind != TY_INT) {
+                    bp_fatal_at(e->line, "string index must be int, got %s", type_name(idx_type));
+                }
+                e->inferred.kind = TY_STR;  // s[i] returns a single-char string
             } else {
                 bp_fatal("cannot index type: %s", type_name(container_type));
             }
@@ -1960,7 +1965,8 @@ static Type check_expr(Expr *e, Scope *s) {
                 case BOP_LT: case BOP_LTE: case BOP_GT: case BOP_GTE:
                     if (a.kind == TY_INT && b.kind == TY_INT) { e->inferred = type_bool(); return e->inferred; }
                     if (a.kind == TY_FLOAT && b.kind == TY_FLOAT) { e->inferred = type_bool(); return e->inferred; }
-                    bp_fatal("comparisons expect int or float");
+                    if (a.kind == TY_STR && b.kind == TY_STR) { e->inferred = type_bool(); return e->inferred; }
+                    bp_fatal("comparisons expect int, float, or str");
                     break;
                 case BOP_AND: case BOP_OR:
                     if (a.kind != TY_BOOL || b.kind != TY_BOOL) bp_fatal("and/or expect bool");
