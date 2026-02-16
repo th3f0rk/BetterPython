@@ -1,4 +1,4 @@
-# Test: Function references (&func) and indirect calls
+# Test: Function references (&func), indirect calls, and dynamic dispatch
 
 def add(a: int, b: int) -> int:
     return a + b
@@ -12,8 +12,10 @@ def greet(name: str) -> str:
 def square(x: int) -> int:
     return x * x
 
+def negate(x: int) -> int:
+    return 0 - x
+
 def test_basic_func_ref() -> int:
-    # Create a function reference and call through it
     let f: fn(int, int) -> int = &add
     let result: int = f(3, 4)
     if result == 7:
@@ -24,7 +26,6 @@ def test_basic_func_ref() -> int:
     return 0
 
 def test_func_ref_multiply() -> int:
-    # Create a separate function reference to multiply
     let f: fn(int, int) -> int = &multiply
     let result: int = f(10, 20)
     if result == 200:
@@ -34,8 +35,20 @@ def test_func_ref_multiply() -> int:
         return 1
     return 0
 
+def test_dynamic_dispatch() -> int:
+    # Reassign function reference - dispatch target changes at runtime
+    let f: fn(int) -> int = &square
+    let r1: int = f(5)
+    f = &negate
+    let r2: int = f(5)
+    if r1 == 25 and r2 == -5:
+        print("PASS dynamic dispatch")
+    else:
+        print("FAIL dynamic dispatch")
+        return 1
+    return 0
+
 def test_func_ref_str_return() -> int:
-    # Function reference with string return type
     let g: fn(str) -> str = &greet
     let msg: str = g("World")
     if msg == "Hello World":
@@ -46,7 +59,6 @@ def test_func_ref_str_return() -> int:
     return 0
 
 def test_func_ref_typeof() -> int:
-    # typeof on function reference
     let f: fn(int, int) -> int = &add
     let t: str = typeof(f)
     if t == "func":
@@ -57,7 +69,6 @@ def test_func_ref_typeof() -> int:
     return 0
 
 def test_func_ref_single_arg() -> int:
-    # Function reference with single argument
     let sq: fn(int) -> int = &square
     let result: int = sq(5)
     if result == 25:
@@ -70,6 +81,7 @@ def test_func_ref_single_arg() -> int:
 def main() -> int:
     test_basic_func_ref()
     test_func_ref_multiply()
+    test_dynamic_dispatch()
     test_func_ref_str_return()
     test_func_ref_typeof()
     test_func_ref_single_arg()

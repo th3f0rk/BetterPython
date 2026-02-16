@@ -1,36 +1,65 @@
 # Test: Union types (tagged unions / sum types)
 # Unions are flattened to structs with __tag (int) + all variant fields.
 # Variant 0 = first variant, 1 = second, etc.
+# Ergonomic constructors: VariantName{fields} auto-sets __tag and defaults.
 
 union Shape:
     Circle(radius: float)
     Rect(width: float, height: float)
 
-def test_union_create_circle() -> int:
-    # Create a Circle variant (tag 0)
-    let s: Shape = Shape{__tag: 0, radius: 3.14, width: 0.0, height: 0.0}
-    let t: int = s.__tag
-    if t == 0:
-        print("PASS union create circle")
+union Result:
+    Ok(value: int)
+    Err(msg: str)
+
+def test_ergonomic_circle() -> int:
+    # Ergonomic constructor auto-sets __tag=0 and defaults missing fields
+    let c: Shape = Circle{radius: 3.14}
+    if c.__tag == 0 and c.radius == 3.14:
+        print("PASS ergonomic circle")
     else:
-        print("FAIL union create circle")
+        print("FAIL ergonomic circle")
         return 1
     return 0
 
-def test_union_create_rect() -> int:
-    # Create a Rect variant (tag 1)
-    let s: Shape = Shape{__tag: 1, radius: 0.0, width: 10.0, height: 5.0}
-    let t: int = s.__tag
-    if t == 1:
-        print("PASS union create rect")
+def test_ergonomic_rect() -> int:
+    let r: Shape = Rect{width: 10.0, height: 5.0}
+    if r.__tag == 1 and r.width == 10.0 and r.height == 5.0:
+        print("PASS ergonomic rect")
     else:
-        print("FAIL union create rect")
+        print("FAIL ergonomic rect")
+        return 1
+    return 0
+
+def test_ergonomic_ok() -> int:
+    let r: Result = Ok{value: 42}
+    if r.__tag == 0 and r.value == 42:
+        print("PASS ergonomic Ok")
+    else:
+        print("FAIL ergonomic Ok")
+        return 1
+    return 0
+
+def test_ergonomic_err() -> int:
+    let r: Result = Err{msg: "not found"}
+    if r.__tag == 1 and r.msg == "not found":
+        print("PASS ergonomic Err")
+    else:
+        print("FAIL ergonomic Err")
+        return 1
+    return 0
+
+def test_manual_constructor() -> int:
+    # Manual __tag syntax still works
+    let s: Shape = Shape{__tag: 0, radius: 2.5, width: 0.0, height: 0.0}
+    if s.__tag == 0 and s.radius == 2.5:
+        print("PASS manual constructor")
+    else:
+        print("FAIL manual constructor")
         return 1
     return 0
 
 def test_union_field_access() -> int:
-    # Access variant fields
-    let c: Shape = Shape{__tag: 0, radius: 2.5, width: 0.0, height: 0.0}
+    let c: Shape = Circle{radius: 2.5}
     let r: float = c.radius
     if r == 2.5:
         print("PASS union field access")
@@ -40,8 +69,7 @@ def test_union_field_access() -> int:
     return 0
 
 def test_union_tag_fn() -> int:
-    # tag() returns the tag as a string
-    let s: Shape = Shape{__tag: 0, radius: 1.0, width: 0.0, height: 0.0}
+    let s: Shape = Circle{radius: 1.0}
     let t: str = tag(s)
     if t == "0":
         print("PASS union tag fn")
@@ -50,9 +78,8 @@ def test_union_tag_fn() -> int:
         return 1
     return 0
 
-def test_union_match_tag() -> int:
-    # Use match on the tag field to dispatch
-    let s: Shape = Shape{__tag: 1, radius: 0.0, width: 4.0, height: 3.0}
+def test_union_match() -> int:
+    let s: Shape = Rect{width: 4.0, height: 3.0}
     match s.__tag:
         case 0:
             print("FAIL union match - got circle")
@@ -60,7 +87,7 @@ def test_union_match_tag() -> int:
         case 1:
             let area: float = s.width * s.height
             if area == 12.0:
-                print("PASS union match tag")
+                print("PASS union match")
             else:
                 print("FAIL union match area")
                 return 1
@@ -69,11 +96,25 @@ def test_union_match_tag() -> int:
             return 1
     return 0
 
+def test_union_null() -> int:
+    # Union variables can be null
+    let r: Result = null
+    if r == null:
+        print("PASS union null")
+    else:
+        print("FAIL union null")
+        return 1
+    return 0
+
 def main() -> int:
-    test_union_create_circle()
-    test_union_create_rect()
+    test_ergonomic_circle()
+    test_ergonomic_rect()
+    test_ergonomic_ok()
+    test_ergonomic_err()
+    test_manual_constructor()
     test_union_field_access()
     test_union_tag_fn()
-    test_union_match_tag()
+    test_union_match()
+    test_union_null()
     print("PASS")
     return 0

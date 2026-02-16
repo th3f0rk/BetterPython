@@ -1,4 +1,8 @@
-# Test: null literal and typeof across all value types
+# Test: null literal, typeof, null assignment to reference types
+
+struct Node:
+    value: int
+    name: str
 
 def test_typeof_null() -> int:
     let t: str = typeof(null)
@@ -11,51 +15,101 @@ def test_typeof_null() -> int:
 
 def test_typeof_int() -> int:
     let x: int = 42
-    let t: str = typeof(x)
-    if t == "int":
+    if typeof(x) == "int":
         print("PASS typeof int")
     else:
-        print("FAIL typeof int got " + t)
+        print("FAIL typeof int")
         return 1
     return 0
 
 def test_typeof_str() -> int:
     let s: str = "hello"
-    let t: str = typeof(s)
-    if t == "str":
+    if typeof(s) == "str":
         print("PASS typeof str")
     else:
-        print("FAIL typeof str got " + t)
+        print("FAIL typeof str")
         return 1
     return 0
 
 def test_typeof_float() -> int:
     let f: float = 3.14
-    let t: str = typeof(f)
-    if t == "float":
+    if typeof(f) == "float":
         print("PASS typeof float")
     else:
-        print("FAIL typeof float got " + t)
+        print("FAIL typeof float")
         return 1
     return 0
 
 def test_typeof_bool() -> int:
     let b: bool = true
-    let t: str = typeof(b)
-    if t == "bool":
+    if typeof(b) == "bool":
         print("PASS typeof bool")
     else:
-        print("FAIL typeof bool got " + t)
+        print("FAIL typeof bool")
         return 1
     return 0
 
 def test_typeof_array() -> int:
     let a: [int] = [1, 2, 3]
-    let t: str = typeof(a)
-    if t == "array":
+    if typeof(a) == "array":
         print("PASS typeof array")
     else:
-        print("FAIL typeof array got " + t)
+        print("FAIL typeof array")
+        return 1
+    return 0
+
+def test_null_str() -> int:
+    # Assign null to string variable
+    let s: str = null
+    if s == null:
+        print("PASS null str")
+    else:
+        print("FAIL null str")
+        return 1
+    return 0
+
+def test_null_array() -> int:
+    let a: [int] = null
+    if a == null:
+        print("PASS null array")
+    else:
+        print("FAIL null array")
+        return 1
+    return 0
+
+def test_null_struct() -> int:
+    let n: Node = null
+    if n == null:
+        print("PASS null struct")
+    else:
+        print("FAIL null struct")
+        return 1
+    return 0
+
+def test_null_reassign() -> int:
+    # Assign null then reassign to a real value
+    let s: str = null
+    s = "hello"
+    if s != null and s == "hello":
+        print("PASS null reassign")
+    else:
+        print("FAIL null reassign")
+        return 1
+    return 0
+
+def find_node(x: int) -> Node:
+    if x > 0:
+        return Node{value: x, name: "found"}
+    return null
+
+def test_null_return() -> int:
+    # Return null from a function
+    let n1: Node = find_node(5)
+    let n2: Node = find_node(-1)
+    if n1 != null and n2 == null:
+        print("PASS null return")
+    else:
+        print("FAIL null return")
         return 1
     return 0
 
@@ -66,5 +120,10 @@ def main() -> int:
     test_typeof_float()
     test_typeof_bool()
     test_typeof_array()
+    test_null_str()
+    test_null_array()
+    test_null_struct()
+    test_null_reassign()
+    test_null_return()
     print("PASS")
     return 0

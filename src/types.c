@@ -1673,11 +1673,13 @@ static Type check_call(Expr *e, Scope *s) {
 
     // Look up user-defined function
     FnSig *fn = fntable_get(&g_fntable, name);
+    bool is_indirect = false;
     if (!fn) {
-        // Check if it's a variable with TY_FUNC type (lambda stored in variable)
+        // Check if it's a variable with TY_FUNC type (func ref or lambda in variable)
         Type var_type = type_void();
         if (scope_get(s, name, &var_type) && var_type.kind == TY_FUNC && var_type.struct_name) {
             fn = fntable_get(&g_fntable, var_type.struct_name);
+            is_indirect = true;  // Call through variable = dynamic dispatch
         }
         if (!fn) {
             bp_fatal("unknown function '%s'", name);
@@ -1699,7 +1701,11 @@ static Type check_call(Expr *e, Scope *s) {
     }
 
     // Set function index and return type
-    e->as.call.fn_index = (int)fn->fn_index;
+    if (is_indirect) {
+        e->as.call.fn_index = -3;  // Mark as indirect (dynamic dispatch through variable)
+    } else {
+        e->as.call.fn_index = (int)fn->fn_index;
+    }
     e->inferred = fn->ret_type;
     return e->inferred;
 }
@@ -1825,7 +1831,61 @@ static Type check_expr(Expr *e, Scope *s) {
             // Look up struct definition
             StructInfo *si = structtable_get(&g_structtable, e->as.struct_literal.struct_name);
             if (!si) {
-                bp_fatal("unknown struct type '%s'", e->as.struct_literal.struct_name);
+                // Check if it's a union variant name (e.g., Ok{value: 5} for union Result)
+                const char *variant_name = e->as.struct_literal.struct_name;
+                for (size_t ui = 0; ui < g_uniontable.len && !si; ui++) {
+                    UnionInfo *u = &g_uniontable.items[ui];
+                    for (size_t vi = 0; vi < u->variant_count; vi++) {
+                        if (strcmp(u->variant_names[vi], variant_name) != 0) continue;
+                        // Found variant! Rewrite to flattened struct with auto __tag
+                        si = structtable_get(&g_structtable, u->flat_struct_name);
+                        if (!si) bp_fatal("internal: union '%s' missing struct", u->name);
+
+                        size_t old_fc = e->as.struct_literal.field_count;
+                        size_t new_fc = si->field_count;
+                        char **new_fn = bp_xmalloc(new_fc * sizeof(char*));
+                        Expr **new_fv = bp_xmalloc(new_fc * sizeof(Expr*));
+
+                        for (size_t fi = 0; fi < new_fc; fi++) {
+                            new_fn[fi] = bp_xstrdup(si->field_names[fi]);
+                            if (strcmp(si->field_names[fi], "__tag") == 0) {
+                                new_fv[fi] = expr_new_int((int64_t)vi, e->line);
+                                continue;
+                            }
+                            // Check if user provided this field
+                            bool provided = false;
+                            for (size_t uf = 0; uf < old_fc; uf++) {
+                                if (strcmp(e->as.struct_literal.field_names[uf], si->field_names[fi]) == 0) {
+                                    new_fv[fi] = e->as.struct_literal.field_values[uf];
+                                    provided = true;
+                                    break;
+                                }
+                            }
+                            if (!provided) {
+                                // Default value based on field type
+                                Type ft = si->field_types[fi];
+                                if (ft.kind == TY_INT) new_fv[fi] = expr_new_int(0, e->line);
+                                else if (ft.kind == TY_FLOAT) new_fv[fi] = expr_new_float(0.0, e->line);
+                                else if (ft.kind == TY_STR) new_fv[fi] = expr_new_str(bp_xstrdup(""), e->line);
+                                else if (ft.kind == TY_BOOL) new_fv[fi] = expr_new_bool(false, e->line);
+                                else new_fv[fi] = expr_new_null(e->line);
+                            }
+                        }
+
+                        // Rewrite the struct literal in-place
+                        free(e->as.struct_literal.struct_name);
+                        e->as.struct_literal.struct_name = bp_xstrdup(u->name);
+                        for (size_t uf = 0; uf < old_fc; uf++)
+                            free(e->as.struct_literal.field_names[uf]);
+                        free(e->as.struct_literal.field_names);
+                        free(e->as.struct_literal.field_values);
+                        e->as.struct_literal.field_names = new_fn;
+                        e->as.struct_literal.field_values = new_fv;
+                        e->as.struct_literal.field_count = new_fc;
+                        break;
+                    }
+                }
+                if (!si) bp_fatal("unknown struct type '%s'", variant_name);
             }
             // Check that all fields are provided and match expected types
             for (size_t i = 0; i < e->as.struct_literal.field_count; i++) {

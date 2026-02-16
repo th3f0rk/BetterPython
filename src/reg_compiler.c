@@ -986,7 +986,32 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             // Result register
             uint8_t dst = reg_alloc_temp(&fe->ra);
 
-            if (e->as.call.fn_index <= -100) {
+            if (e->as.call.fn_index == -3) {
+                // Indirect call through function variable
+                uint8_t func_reg;
+                bool func_is_temp = false;
+                if (reg_has_var(&fe->ra, e->as.call.name)) {
+                    func_reg = reg_get_var(&fe->ra, e->as.call.name);
+                } else {
+                    int gi = global_get(e->as.call.name);
+                    if (gi >= 0) {
+                        func_reg = reg_alloc_temp(&fe->ra);
+                        func_is_temp = true;
+                        buf_u8(&fe->code, R_LOAD_GLOBAL);
+                        buf_u8(&fe->code, func_reg);
+                        buf_u16(&fe->code, (uint16_t)gi);
+                    } else {
+                        bp_fatal("variable '%s' not found for indirect call", e->as.call.name);
+                        func_reg = 0;
+                    }
+                }
+                buf_u8(&fe->code, R_CALL_INDIRECT);
+                buf_u8(&fe->code, dst);
+                buf_u8(&fe->code, func_reg);
+                buf_u8(&fe->code, arg_base);
+                buf_u8(&fe->code, (uint8_t)argc);
+                if (func_is_temp) reg_free_temp(&fe->ra, func_reg);
+            } else if (e->as.call.fn_index <= -100) {
                 // FFI extern function call
                 uint16_t extern_id = (uint16_t)(-(e->as.call.fn_index + 100));
                 buf_u8(&fe->code, R_FFI_CALL);
@@ -1399,11 +1424,11 @@ static uint8_t reg_emit_expr(RegFnEmit *fe, const Expr *e) {
             lfn->reg_count = reg_max_used(&lfe.ra) + 1;
             reg_alloc_free(&lfe.ra);
 
-            // Push function index as integer
+            // Push function reference (VAL_FUNC) so indirect calls work
             uint8_t dst = reg_alloc_temp(&fe->ra);
-            buf_u8(&fe->code, R_CONST_I64);
+            buf_u8(&fe->code, R_FUNC_REF);
             buf_u8(&fe->code, dst);
-            buf_i64(&fe->code, (int64_t)fn_idx);
+            buf_u16(&fe->code, (uint16_t)fn_idx);
             return dst;
         }
         case EX_FSTRING: {
