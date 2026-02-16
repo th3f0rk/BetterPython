@@ -98,6 +98,61 @@ def test_combined_bitwise() -> int:
     print("  Combined bitwise: PASS")
     return 0
 
+def test_operator_syntax() -> int:
+    # Test bitwise operators using syntax form (& | ^ ~ << >>)
+    let a: int = 0xFF
+    let b: int = 0x0F
+
+    # AND operator
+    let r_and: int = a & b
+    if r_and != 15:
+        print("FAIL: 0xFF & 0x0F")
+        return 1
+
+    # OR operator
+    let r_or: int = 0xF0 | 0x0F
+    if r_or != 255:
+        print("FAIL: 0xF0 | 0x0F")
+        return 1
+
+    # XOR operator
+    let r_xor: int = 0xFF ^ 0x0F
+    if r_xor != 240:
+        print("FAIL: 0xFF ^ 0x0F")
+        return 1
+
+    # NOT operator
+    let r_not: int = ~0
+    if r_not != -1:
+        print("FAIL: ~0")
+        return 1
+
+    # Shift left
+    let r_shl: int = 1 << 8
+    if r_shl != 256:
+        print("FAIL: 1 << 8")
+        return 1
+
+    # Shift right
+    let r_shr: int = 256 >> 4
+    if r_shr != 16:
+        print("FAIL: 256 >> 4")
+        return 1
+
+    # Combined: extract byte from value
+    let val: int = 0xDEAD
+    let low_byte: int = val & 0xFF
+    let high_byte: int = (val >> 8) & 0xFF
+    if low_byte != 0xAD:
+        print("FAIL: low byte extraction")
+        return 1
+    if high_byte != 0xDE:
+        print("FAIL: high byte extraction")
+        return 1
+
+    print("  Operator syntax: PASS")
+    return 0
+
 def main() -> int:
     print("Testing bitwise operations...")
     let failures: int = 0
@@ -108,6 +163,7 @@ def main() -> int:
     failures = failures + test_shift_left()
     failures = failures + test_shift_right()
     failures = failures + test_combined_bitwise()
+    failures = failures + test_operator_syntax()
     if failures == 0:
         print("All bitwise tests passed!")
     return failures

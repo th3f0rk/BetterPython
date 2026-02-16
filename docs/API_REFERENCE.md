@@ -6,7 +6,7 @@ Complete Function Reference
 OVERVIEW
 ================================================================================
 
-This document provides comprehensive API documentation for the 120+ built-in
+This document provides comprehensive API documentation for the 150+ built-in
 functions available in BetterPython. Each function includes:
 - Function signature with types
 - Detailed parameter descriptions

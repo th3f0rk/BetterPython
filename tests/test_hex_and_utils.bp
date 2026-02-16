@@ -85,6 +85,15 @@ def test_array_fill() -> int:
     print("FAIL array_fill")
     return 1
 
+def test_array_clear() -> int:
+    let a: [int] = [1, 2, 3, 4, 5]
+    array_clear(a)
+    if array_len(a) == 0:
+        print("PASS array_clear")
+        return 0
+    print("FAIL array_clear")
+    return 1
+
 def test_str_from_chars() -> int:
     let chars: [int] = [72, 105]
     let s: str = str_from_chars(chars)
@@ -114,6 +123,7 @@ def main() -> int:
     test_array_contains()
     test_array_reverse()
     test_array_fill()
+    test_array_clear()
     test_str_from_chars()
     test_str_bytes()
     return 0

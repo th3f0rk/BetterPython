@@ -229,7 +229,7 @@ def main() -> int:
 
 ---
 
-## Standard Library (125+ Functions)
+## Standard Library (150+ Functions)
 
 ### I/O Functions
 - `print(...)` - Print values to stdout
@@ -625,7 +625,7 @@ make clean && make
 - [x] Enum definitions with explicit values
 - [x] Exception handling (try/catch/finally/throw)
 - [x] For/while loops with break/continue
-- [x] 125+ built-in functions
+- [x] 150+ built-in functions
 - [x] Full float support with math library (20+ functions)
 - [x] Bitwise operations (AND, OR, XOR, NOT, SHL, SHR)
 - [x] String operations (25+ functions)
